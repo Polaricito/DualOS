@@ -49,6 +49,7 @@ SHORT = {
     "originos7-pd2609ma": "OriginOS 7",
     "coloros17-findx9u-in-1105": "ColorOS 17",
     "lineage24-infiniti": "LineageOS 24",
+    "lineage23-gsi": "LineageOS 23",
     "nothingos5-asteroids": "Nothing OS 5 (A series)",
 }
 CHIP = {

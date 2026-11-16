@@ -40,15 +40,16 @@ say() { echo "Google apps: $*"; }
 # 2022 CN stub without a launcher entry (F8U run 13: "Play Store missing"):
 # STORE_ONLY, One UI's Play Store over the stub and Play services left alone.
 STORE_ONLY=0
-# LineageOS (0.5.06, set "lineage"): the image has no Google apps at all, no
-# GmsCore folder to bind over and no Google permission files. FULL: One UI's
+# LineageOS (0.5.06, sets "lineage" and "lineage23"): the image has no Google
+# apps at all, no GmsCore folder to bind over and no Google permission files.
+# FULL: One UI's
 # Play services, Play Store and Google Services Framework (sign-in), with One
 # UI's own Google permission, sysconfig and default-permission files, added to
 # the guest's product partition through read-only overlays (prepare_full).
 FULL=0
 selected() {
     [ "${ONEOS_GUEST_GMS:-1}" = 1 ] && [ "${ONEOS_GUEST_HIDE_GMS:-0}" != 1 ] || return 1
-    if grep -q -E '"set": *"lineage"' "$STAGE/session/current.json" 2>/dev/null; then
+    if grep -q -E '"set": *"lineage(23)?"' "$STAGE/session/current.json" 2>/dev/null; then
         FULL=1
         return 0
     fi

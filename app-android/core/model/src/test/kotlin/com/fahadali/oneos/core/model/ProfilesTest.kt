@@ -302,12 +302,21 @@ class ProfilesTest {
             Profiles.BUILT_IN,
         )
         // 0.4.67: the phones still on One UI 8 take OxygenOS 16 only, untested, as bar phones.
-        for (p in listOf(Profiles.A06, Profiles.A07_5G, Profiles.A24, Profiles.A25, Profiles.A33, Profiles.A53, Profiles.E55,
+        for (p in listOf(Profiles.A06, Profiles.A07_5G, Profiles.A24, Profiles.A25, Profiles.A33, Profiles.E55,
                 Profiles.S_FE_9925, Profiles.S_FE_8450, Profiles.S_PLUS_9925, Profiles.S_ULTRA_9925, Profiles.S_ULTRA_8450, Profiles.S_8450, Profiles.M55S, Profiles.S_ULTRA_8450_JP,
                 Profiles.S_9925, Profiles.A16_MTK, Profiles.A15_5G)) {
             assertEquals(p.id, listOf(ImageChoice(Images.ID_OXYGEN16, PackageSets.ID_OXYGEN16, tested = false)), p.choices)
             assertEquals(p.id, FormFactor.BAR, p.form)
         }
+        // 0.5.xx: the A53 offers LineageOS 23 first (its own Android 16 QPR0 GSI), then OxygenOS 16; both untested.
+        assertEquals(
+            listOf(
+                ImageChoice(Images.ID_LINEAGE23, PackageSets.ID_LINEAGE23, tested = false),
+                ImageChoice(Images.ID_OXYGEN16, PackageSets.ID_OXYGEN16, tested = false),
+            ),
+            Profiles.A53.choices,
+        )
+        assertEquals(FormFactor.BAR, Profiles.A53.form)
         // 0.4.74: the A34 got One UI 9 (Android 17): the A07's systems, untested, and OxygenOS 16 for One UI 8.
         // 0.4.74: so did the A15 (MT6789, the A07's chip).
         for (p in listOf(Profiles.A34, Profiles.A15)) {

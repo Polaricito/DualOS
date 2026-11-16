@@ -235,6 +235,19 @@ BUILDS = [
         "service.incremental.so": "e24c296c9148f71faa35267e535e65d9ed527206e25d929d371eb400cc8f2279",
         "crashrecovery-aosp.apex": "626a82dda7c6cc0dfc7ee26397466b75a3d5d12bdaf0a1cd8d9c521c6142c548",
     }, [("vold", 0xfd49, NAME), ("vold", 0x758e4, TRY_START), ("service.incremental.so", 0x4f882, NAME)]),
+    # LineageOS 23.0 BP2A.250805.005 (MisterZtr's VANILLA EXT4 GSI, Android 16
+    # QPR0, SDK 36; 23-20260109-VANILLA-EXT4-GSI), built from source like
+    # LineageOS 24: start() takes "vold" at 0xd7fd (right after
+    # startCheckpoint's name; the 0xd7fc byte is its leading NUL), and
+    # try_start's tbz w19, #0, +0xd4 on the isDeclared() result is at 0x5ee4c
+    # (main+0x314c8). service.incremental.so has the same "\0vold\0" at
+    # 0x4e8b2, and the compressed crashrecovery APEX
+    # (com.android.crashrecovery.capex) is AOSP's.
+    ("LineageOS 23.0 BP2A.250805.005 (MisterZtr GSI)", {
+        "vold": "7b7319c3571ac7a004b795ffb4d2ddbeda267c97789a06e1ef9ad2f7dbc901c0",
+        "service.incremental.so": "86c26d2b45e4cada376a25dda533d2206558bdf4fac63a2f82f3b6cee5ebf9be",
+        "crashrecovery-aosp.capex": "3ce444e23e5f626ef1f0f6d0126f3e3ffe598846fc0fc9194be96b1eeb742d37",
+    }, [("vold", 0xd7fc, NAME), ("vold", 0x5ee4c, TRY_START), ("service.incremental.so", 0x4e8b2, NAME)]),
 ]
 def read(name):
     p = os.path.join(work, name)
@@ -982,21 +995,37 @@ if [ "${HYPEROS_FW:-0}" = 1 ] && [ -f "$OUT/framework_patched.jar" ]; then
     cp "$OUT/framework_patched.jar" "$WORK/framework-cam.jar"
 fi
 rm -f "$OUT/framework_patched.jar" "$OUT/libcamera_client_patched.so" "$OUT/libcameracompatbilityinfo_patched.so"
-# ONEOS_NO_CAMERA_ABI=1: no camera bridge in this set (0.4.66, the Android 16 OxygenOS set for One UI 8
-# phones: the host tables here are One UI 9's; One UI 8's camera numbering is not on the server yet).
-# The guest's camera then does not work; everything else is built as usual.
+# ONEOS_NO_CAMERA_ABI=1: no camera bridge in this set (0.4.66, the SDK 36
+# OxygenOS 16 sets, built while One UI 8's camera numbering was not on the
+# server). The guest's camera then does not work; everything else is built as
+# usual. The numbering the bridge speaks is the phone's One UI: One UI 9's
+# (host_camera.txt) for the SDK 37 images, One UI 8.0/8.5's (host_camera_a16.txt,
+# scripts/aidl-table.py on an A53's framework.jar) for the SDK 36 ones.
+ONEOS_CAMERA_TABLE="$ROOT/switcher/patches/host_camera.txt"
+if [ "$IMAGE_SDK" = 36 ]; then
+    ONEOS_CAMERA_TABLE="$ROOT/switcher/patches/host_camera_a16.txt"
+    [ -f "$ONEOS_CAMERA_TABLE" ] || { echo "camera: SDK 36 image, but $(basename "$ONEOS_CAMERA_TABLE") is missing" >&2; exit 1; }
+fi
+export ONEOS_CAMERA_TABLE
 if [ "${ONEOS_NO_CAMERA_ABI:-0}" = 1 ]; then
     echo "camera bridge: left out (ONEOS_NO_CAMERA_ABI=1)"
     rm -f "$WORK/framework-cam.jar"
 elif in_image /system/framework/framework.jar; then
+    echo "camera bridge: host table $(basename "$ONEOS_CAMERA_TABLE")"
     [ -f "$WORK/framework-cam.jar" ] || "$DEBUGFS" -R "dump /system/framework/framework.jar $WORK/framework-cam.jar" "$IMG" 2>/dev/null
     "$ROOT/scripts/patch-framework-camera.sh" "$WORK/framework-cam.jar" "$OUT"
     rm -f "$WORK/framework-cam.jar"
 fi
-if [ "${ONEOS_NO_CAMERA_ABI:-0}" != 1 ] && in_image /system/lib64/libcamera_client.so && in_image /system/lib64/libcameracompatbilityinfo.so; then
+if [ "${ONEOS_NO_CAMERA_ABI:-0}" != 1 ] && in_image /system/lib64/libcamera_client.so; then
     "$DEBUGFS" -R "dump /system/lib64/libcamera_client.so $WORK/libcamera_client.so" "$IMG" 2>/dev/null
-    "$DEBUGFS" -R "dump /system/lib64/libcameracompatbilityinfo.so $WORK/libcameracompatbilityinfo.so" "$IMG" 2>/dev/null
-    "$ROOT/scripts/patch-camera-native.sh" "$WORK/libcamera_client.so" "$WORK/libcameracompatbilityinfo.so" "$OUT"
+    # Android 16 QPR0 (the A53's One UI 8.0, LineageOS 23.0) has no
+    # libcameracompatbilityinfo.so: its calls carry rotationOverride as an int.
+    COMPAT=-
+    if in_image /system/lib64/libcameracompatbilityinfo.so; then
+        "$DEBUGFS" -R "dump /system/lib64/libcameracompatbilityinfo.so $WORK/libcameracompatbilityinfo.so" "$IMG" 2>/dev/null
+        COMPAT="$WORK/libcameracompatbilityinfo.so"
+    fi
+    "$ROOT/scripts/patch-camera-native.sh" "$WORK/libcamera_client.so" "$COMPAT" "$OUT"
     rm -f "$WORK/libcamera_client.so" "$WORK/libcameracompatbilityinfo.so"
 fi
 

@@ -405,3 +405,11 @@ Downloads: each system's own link below (the SourceForge mirror, resumable); all
   - Galaxy S23 (au) (SCG19, SM8550), not tested yet
   - Galaxy M35 5G (SM-M356, s5e8835), not tested yet
   - Galaxy S24+ (SM-S926, SM8650), not tested yet
+
+## LineageOS 23, Galaxy A53 5G GSI
+
+- File: `OneOS_LineageOS23_GalaxyA53.img.gz` (1.25 GB)
+- SHA-256: `b6159d3055c66ae2ab5578010a094f2aab96fec35917d837b698a6ec5edaf6e7`
+- Download: https://sourceforge.net/projects/oneos-mirror/files/images/OneOS_LineageOS23_GalaxyA53.img.gz/download
+- Phones:
+  - Galaxy A53 5G (SM-A536, s5e8825), not tested yet

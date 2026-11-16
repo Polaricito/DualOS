@@ -2136,6 +2136,12 @@
       "disabledReason": null,
       "systems": [
         {
+          "image": "lineage23-gsi",
+          "label": "LineageOS 23, Galaxy A53 5G GSI",
+          "set": "lineage23",
+          "tested": false
+        },
+        {
           "image": "oxygenos16-cph2745",
           "label": "OxygenOS 16, OnePlus CPH2745 build",
           "set": "oxygen16",

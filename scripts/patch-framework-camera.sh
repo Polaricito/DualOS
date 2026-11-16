@@ -1,8 +1,9 @@
 #!/bin/sh
 # framework_patched.jar for a Pixel (AOSP) guest: the image's framework.jar
 # with One UI's camera transaction codes (switcher/patches/pixel_camera_abi.py,
-# table switcher/patches/host_camera.txt from scripts/aidl-table.py on One UI's
-# framework.jar). Only the dex files the patcher changed are rebuilt; the rest
+# table switcher/patches/host_camera.txt for One UI 9, or host_camera_a16.txt
+# for One UI 8.0/8.5 through ONEOS_CAMERA_TABLE, both from scripts/aidl-table.py
+# on the host's framework.jar). Only the dex files the patcher changed are rebuilt; the rest
 # of the jar is the image's, byte for byte (as make-overlays.sh does for the
 # other jars). Nothing is written when the guest's tables already agree.
 #
@@ -17,7 +18,9 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # Absolute paths: the zip step runs inside a temp dir.
 JAR=$(cd "$(dirname "$1")" && pwd)/$(basename "$1"); OUT=$(cd "$2" && pwd)
 APKTOOL=${APKTOOL:-$(ls "$ROOT"/mysticgsi/tools/apktool/*.jar | head -1)}
-TABLE="$ROOT/switcher/patches/host_camera.txt"
+# One UI 9's table unless the caller names the host's own (make-overlays.sh
+# passes One UI 8.0/8.5's host_camera_a16.txt for an SDK 36 image).
+TABLE="${ONEOS_CAMERA_TABLE:-$ROOT/switcher/patches/host_camera.txt}"
 [ -f "$TABLE" ] || { echo "$TABLE missing (scripts/aidl-table.py on One UI's framework.jar)" >&2; exit 1; }
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

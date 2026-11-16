@@ -55,7 +55,7 @@ class ImagesTest {
         // (Nothing's are product/priv-app GmsCore, Phonesky, GooglePartnerSetup, GoogleRestore, ConfigUpdater
         // and system_ext/priv-app GoogleServicesFramework: six folders guest_prepare.sh's patterns cover).
         assertEquals(
-            listOf(n6, xin, pixel, Images.PIXEL_KODIAK, Images.PIXEL_KOMODO, Images.INFINITYX, Images.NOTHING_METROID, Images.NOTHING_ASTEROIDS, Images.OXYGEN16, Images.ORIGINOS7, Images.LINEAGE24),
+            listOf(n6, xin, pixel, Images.PIXEL_KODIAK, Images.PIXEL_KOMODO, Images.INFINITYX, Images.NOTHING_METROID, Images.NOTHING_ASTEROIDS, Images.OXYGEN16, Images.ORIGINOS7, Images.LINEAGE24, Images.LINEAGE23),
             Images.ALL.filter { it.googleServices },
         )
         // 0.5.06: LineageOS 24 has none of its own: its Google apps are One UI's, laid over the guest at session time
@@ -69,17 +69,30 @@ class ImagesTest {
         assertEquals(SystemFamily.LINEAGE, Images.LINEAGE24.family)
         assertEquals("LineageOS 24", Images.LINEAGE24.name)
         assertEquals("OnePlus 15", Images.LINEAGE24.shortName)
+        // 0.5.xx: LineageOS 23 is the Galaxy A53 5G's own Android 16 QPR0 GSI, the same shape as LineageOS 24.
+        assertEquals("lineage23-gsi", Images.ID_LINEAGE23)
+        assertTrue(Images.ID_LINEAGE23.startsWith("lineage"))
+        assertEquals("LineageOS 23", Images.LINEAGE23.name)
+        assertEquals("Galaxy A53 5G", Images.LINEAGE23.shortName)
+        assertEquals(36, Images.LINEAGE23.sdk)
+        assertEquals("BP2A.250805.005", Images.LINEAGE23.buildId)
+        assertEquals(2_685_145_088L, Images.LINEAGE23.rawBytes)
+        assertEquals("OneOS_LineageOS23_GalaxyA53.img.gz", Images.LINEAGE23.gzName)
+        assertTrue(Images.LINEAGE23.googleServices)
+        assertFalse(Images.LINEAGE23.presentsGms)
+        assertTrue(Images.LINEAGE23.gmsHideable)
+        assertEquals(SystemFamily.LINEAGE, Images.LINEAGE23.family)
         // 0.4.73: OriginOS 7 presents the Play services of its own gmssystem payload, as the Pixel images.
         assertEquals(listOf(pixel, Images.PIXEL_KODIAK, Images.PIXEL_KOMODO, Images.INFINITYX, Images.NOTHING_ASTEROIDS, Images.ORIGINOS7), Images.ALL.filter { it.presentsGms })
-        assertEquals(listOf(n6, xin, Images.NOTHING_METROID, Images.OXYGEN16, Images.LINEAGE24), Images.ALL.filter { it.gmsHideable })
+        assertEquals(listOf(n6, xin, Images.NOTHING_METROID, Images.OXYGEN16, Images.LINEAGE24, Images.LINEAGE23), Images.ALL.filter { it.gmsHideable })
         assertTrue(pixel.copy(presentsGms = false).gmsHideable)
         assertEquals(
             listOf(n6, xin, pixel, Images.PIXEL_KODIAK, Images.PIXEL_KOMODO, Images.INFINITYX, Images.HYPEROS_LHASA, Images.NOTHING_METROID, Images.NOTHING_ASTEROIDS, Images.OXYGEN16,
-                Images.ORIGINOS7, Images.LINEAGE24),
+                Images.ORIGINOS7, Images.LINEAGE24, Images.LINEAGE23),
             Images.ALL,
         )
-        // 0.4.67: OxygenOS 16 is the one SDK 36 image, of its own family; nothing past ARMv8.2 in its core binaries.
-        assertEquals(listOf(Images.OXYGEN16), Images.ALL.filter { it.sdk == 36 })
+        // 0.4.67: OxygenOS 16 and LineageOS 23 are the SDK 36 images, of their own families; nothing past ARMv8.2 in their core binaries.
+        assertEquals(listOf(Images.OXYGEN16, Images.LINEAGE23), Images.ALL.filter { it.sdk == 36 })
         assertEquals(SystemFamily.OXYGENOS, Images.OXYGEN16.family)
         assertEquals(emptyList<String>(), Images.OXYGEN16.cpuRequired)
         // HyperOS (docs/hyperos.md): on the shared folder from 0.4.31; its own system family.
@@ -142,6 +155,7 @@ class ImagesTest {
                 SystemFamily.COLOROS, SystemFamily.COLOROS,
                 SystemFamily.PIXEL, SystemFamily.PIXEL, SystemFamily.PIXEL,
                 SystemFamily.INFINITYX, SystemFamily.HYPEROS, SystemFamily.NOTHING, SystemFamily.NOTHING, SystemFamily.OXYGENOS, SystemFamily.ORIGINOS, SystemFamily.LINEAGE,
+                SystemFamily.LINEAGE,
             ),
             Images.ALL.map { it.family },
         )
@@ -151,8 +165,8 @@ class ImagesTest {
         for (i in Images.ALL) assertEquals(i.id, i.id.startsWith("coloros17-"), i.family == SystemFamily.COLOROS)
 
         for (i in Images.ALL) {
-            // 0.4.67: SDK 37 (One UI 9) for all but OxygenOS 16 (SDK 36, One UI 8).
-            assertEquals(i.id, if (i.family == SystemFamily.OXYGENOS) 36 else 37, i.sdk)
+            // 0.4.67: SDK 37 (One UI 9) for all but OxygenOS 16 and LineageOS 23 (SDK 36, One UI 8).
+            assertEquals(i.id, if (i.id == Images.ID_OXYGEN16 || i.id == Images.ID_LINEAGE23) 36 else 37, i.sdk)
             for (h in listOf(i.gzSha256, i.rawSha256)) assertTrue(h.matches(Regex("[0-9a-f]{64}")))
         }
         // Sizes tell the images apart (the picker identifies by size first).

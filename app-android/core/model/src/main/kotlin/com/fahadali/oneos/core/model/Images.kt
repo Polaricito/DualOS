@@ -134,6 +134,8 @@ object Images {
     const val ID_ORIGINOS7 = "originos7-pd2609ma"
     /** Starts with "lineage": switcher/assets/boot_status.sh names the boot splash from it. */
     const val ID_LINEAGE = "lineage24-infiniti"
+    /** Also starts with "lineage" (the A53's Android 16 QPR0 GSI). */
+    const val ID_LINEAGE23 = "lineage23-gsi"
 
     /** Where root stages the unpacked image. */
     const val STAGE_NAME = "system.raw"
@@ -566,13 +568,44 @@ object Images {
     )
 
     /**
+     * LineageOS 23 (0.5.18, experimental): LineageOS's Android 16 QPR0 GSI of 2026-01-09 for the Galaxy A53 5G
+     * (MisterZtr's VANILLA EXT4 build, ro.lineage.version 23.0-20260109-VANILLA-EXT4-GSI; BP2A.250805.005,
+     * SDK 36.0, security patch 2026-01-01): the A53's own QPR0, so the camera and installd tables need no
+     * translation. Like LineageOS 24 it has no Google apps: a session with Google services takes One UI's Play
+     * services, Play Store and Services Framework as overlays on the guest's product partition (guest_google.sh,
+     * set id "lineage23"), and googleServices is true with presentsGms false.
+     */
+    val LINEAGE23 = ImageRef(
+        id = ID_LINEAGE23,
+        label = "LineageOS 23, Galaxy A53 5G GSI",
+        shortName = "Galaxy A53 5G",
+        name = "LineageOS 23",
+        variant = null,
+        blurb = "LineageOS for the Galaxy A53 5G (Android 16). Experimental. Google apps come from One UI.",
+        downloadUrl = SHARED_FOLDER_URL,
+        sdk = 36,
+        buildId = "BP2A.250805.005",
+        gzName = "OneOS_LineageOS23_GalaxyA53.img.gz",
+        gzBytes = 1_250_952_887L,
+        gzSha256 = "b6159d3055c66ae2ab5578010a094f2aab96fec35917d837b698a6ec5edaf6e7",
+        rawBytes = 2_685_145_088L,
+        rawSha256 = "c92d7d5f9962ebc2a93ff4ef4cd155aca254399687f6907593fbf6931c9991fe",
+        testedOn = null,
+        cpuRequired = emptyList(),
+        cpuUsedByApps = emptyList(),
+        googleServices = true,
+        presentsGms = false,
+        family = SystemFamily.LINEAGE,
+    )
+
+    /**
      * 0.5.10: a stage whose guest data an image (key) made may keep it when its phone is set up with the
      * newer build of the same system (value), as an over-the-air update would: the first Find X9 Ultra IN
      * build is retired for the 1105 build (owner), and nothing else moves. Never the other way.
      */
     val DATA_UPGRADES: Map<String, String> = mapOf(ID_FIND_X9U_IN to ID_FIND_X9U_IN_1105)
 
-    val ALL: List<ImageRef> = listOf(FIND_N6, FIND_X9U_IN_1105, PIXEL_YOGI, PIXEL_KODIAK, PIXEL_KOMODO, INFINITYX, HYPEROS_LHASA, NOTHING_METROID, NOTHING_ASTEROIDS, OXYGEN16, ORIGINOS7, LINEAGE24)
+    val ALL: List<ImageRef> = listOf(FIND_N6, FIND_X9U_IN_1105, PIXEL_YOGI, PIXEL_KODIAK, PIXEL_KOMODO, INFINITYX, HYPEROS_LHASA, NOTHING_METROID, NOTHING_ASTEROIDS, OXYGEN16, ORIGINOS7, LINEAGE24, LINEAGE23)
 
     fun byId(id: String, images: List<ImageRef> = ALL): ImageRef? = images.firstOrNull { it.id == id }
 

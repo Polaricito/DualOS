@@ -960,7 +960,11 @@ The fix (0.4.24, untested on a phone): `switcher/patches/pixel_camera_abi.py`,
 table-driven like the installd bridge. The host table is
 `switcher/patches/host_camera.txt`, `scripts/aidl-table.py` on One UI 9's
 `framework.jar` (the Z Fold8 Ultra's, CP2A.260605.016; the other One UI 9 phones
-are expected to match, as installd's table did). For every interface in it the
+are expected to match, as installd's table did). For an SDK 36 guest on One UI
+8.0/8.5 (LineageOS 23 on the A53), `make-overlays.sh` uses
+`switcher/patches/host_camera_a16.txt`, `scripts/aidl-table.py` on that phone's
+`framework.jar`; Android 16 QPR0 has no `CameraCompatibilityInfo`, so only the
+codes move. For every interface in it the
 guest's `Stub$Proxy` gets the host's code in the `const` that feeds
 `IBinder.transact`, method by method, only with equal signatures; a guest-only
 method on a service interface stops the build. For the interfaces the host

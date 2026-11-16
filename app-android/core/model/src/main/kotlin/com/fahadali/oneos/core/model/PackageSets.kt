@@ -168,6 +168,8 @@ object PackageSets {
     const val ID_OXYGEN16 = "oxygen16"
     const val ID_ORIGINOS = "originos"
     const val ID_LINEAGE = "lineage"
+    /** LineageOS 23, the Galaxy A53 5G's Android 16 GSI (0.5.xx). */
+    const val ID_LINEAGE23 = "lineage23"
 
     /** Never mounted (guest_prepare.sh only keeps the host module); left out of every set. */
     const val TETHERING = "tethering_payload.img"
@@ -841,7 +843,47 @@ object PackageSets {
         hasReturnApp = true,
     )
 
-    val ALL: List<PackageSet> = listOf(N6_GLOBAL_F8, N6_F8U, X9U_IN_1105_SULTRA, PIXEL_F8U, PIXEL_SULTRA, PIXEL_F8, PIXEL9_SULTRA, INFINITYX, HYPER_F8U, NOTHING_F8U, NOTHING_A, OXYGEN16, ORIGINOS, LINEAGE)
+    /**
+     * LineageOS 23 (0.5.18, experimental), the Galaxy A53 5G's Android 16 QPR0 GSI of 2026-01-09, from
+     * out/overlays_lineage23_r1: LineageOS 24's shape, built from that image (its camera and installd tables are the
+     * phone's own). The image has no ims-ext-common.jar and no telephonycore APEX, and its bootanimation has none of
+     * the sites the multidisplay patch needs, so the set leaves those three out; the Doze overlay, the in-guest app
+     * and the two Samsung Camera tars are the shared ones (packages/lineage23.sha256). No gmssystem payload:
+     * guest_google.sh lays One UI's Google apps over the guest's product partition (set id "lineage23").
+     */
+    val LINEAGE23 = PackageSet(
+        id = ID_LINEAGE23,
+        imageId = Images.ID_LINEAGE23,
+        sourceDir = "out/overlays_lineage23_r1",
+        files = listOf(
+            PackageFile("services_patched.jar", FileRole.GUARD_JAR),
+            PackageFile("framework_patched.jar", FileRole.GUARD_JAR),
+            PackageFile("vold_patched", FileRole.GUARD_EXECUTABLE),
+            PackageFile("service.incremental_patched.so", FileRole.GUARD_LIBRARY),
+            PackageFile("libcamera_client_patched.so", FileRole.GUARD_LIBRARY),
+            PackageFile("telephony-common_patched.jar", FileRole.GUARD_JAR),
+            PackageFile("guards.txt", FileRole.GUARDS),
+            PackageFile("oneos-telephony.jar", FileRole.INJECTION_JAR),
+            PackageFile("oneos-telephony.sha256", FileRole.INJECTION_SHA256),
+            PackageFile("OneOSPhoneInjection.apk", FileRole.RRO),
+            PackageFile(GUEST_APP, FileRole.GUEST_APP),
+            PackageFile("OneOSPixelStatusBar.apk", FileRole.RRO),
+            PackageFile("OneOSFoldCutout.apk", FileRole.RRO),
+            PackageFile("OneOSTabletQs.apk", FileRole.RRO),
+            PackageFile("oneos-apex-requires.txt", FileRole.GUEST_FIX),
+        ) + (COMMON_PAYLOADS + listOf("bt", "nfcservices", "conscrypt", "profiling"))
+            .map { PackageFile("${it}_payload.img", FileRole.APEX_PAYLOAD) } +
+            // AOSP's DozeService (as on LineageOS 24), the shared overlay.
+            PackageFile("OneOSPixelDoze.apk", FileRole.RRO) +
+            // The A-series camera (samcam_a.tar) on the A53, and the bar phone's (samcam_bar.tar): the shared builds.
+            PackageFile("samcam_a.tar", FileRole.GUEST_FIX) +
+            PackageFile("samcam_bar.tar", FileRole.GUEST_FIX),
+        omitted = listOf(TETHERING, CELLBROADCAST),
+        approxBytes = 549_695_756L,
+        hasReturnApp = true,
+    )
+
+    val ALL: List<PackageSet> = listOf(N6_GLOBAL_F8, N6_F8U, X9U_IN_1105_SULTRA, PIXEL_F8U, PIXEL_SULTRA, PIXEL_F8, PIXEL9_SULTRA, INFINITYX, HYPER_F8U, NOTHING_F8U, NOTHING_A, OXYGEN16, ORIGINOS, LINEAGE, LINEAGE23)
 
     fun byId(id: String, sets: List<PackageSet> = ALL): PackageSet? = sets.firstOrNull { it.id == id }
 }

@@ -32,7 +32,8 @@ scripts/aidl-table.py's output for One UI's framework.jar (patches/host_camera.t
     so the host's call is ignored (returns false) instead of misparsed.
   - android.content.res.CameraCompatibilityInfo: a sixth field
     (mShouldOverrideLensFacingFrontToBack) is no longer written or read; the
-    five Samsung reads stay as they are.
+    five Samsung reads stay as they are. Android 16 QPR0 has no such class
+    (the calls pass rotationOverride as an int, like One UI 8.0): nothing to do.
 Every target must match exactly once, or the build stops (fail closed).
 
 Usage: pixel_camera_abi.py <apktool decoded framework.jar dir> <host_camera.txt>
@@ -75,16 +76,24 @@ def read_table(path):
     return out
 
 
-def find_smali(root, cls):
+def find_smali_or_none(root, cls):
+    """The class, or None when this build does not have it (Android 16 QPR0)."""
     hits = []
     for d in sorted(os.listdir(root)):
         if d.startswith("smali"):
             p = os.path.join(root, d, cls)
             if os.path.isfile(p):
                 hits.append(p)
-    if len(hits) != 1:
+    if len(hits) > 1:
         die(f"{cls} found {len(hits)} times under {root} (one expected)")
-    return hits[0]
+    return hits[0] if hits else None
+
+
+def find_smali(root, cls):
+    path = find_smali_or_none(root, cls)
+    if path is None:
+        die(f"{cls} not found under {root} (one expected)")
+    return path
 
 
 def method_bodies(text):
@@ -233,7 +242,11 @@ READ6 = re.compile(
 
 
 def patch_compat(root, changed):
-    path = find_smali(root, COMPAT)
+    path = find_smali_or_none(root, COMPAT)
+    if path is None:
+        # Android 16 QPR0 has no CameraCompatibilityInfo: the calls carry
+        # rotationOverride as an int, as One UI 8.0 does (nothing to do).
+        return None
     text = open(path).read()
     if "mShouldOverrideLensFacingFrontToBack" not in text:
         return None

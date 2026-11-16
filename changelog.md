@@ -50,6 +50,14 @@ read-only there, and the guest now has its own), **no more boot failures from fa
 **ColorOS lock screen depth effect** (0.4.60 gave its files to the wrong app; OPPO's AI engine from the
 Find X9 Ultra's own firmware is in ColorOS too), and the **Samsung Camera on the A56** (its sensor crop).
 
+New in 0.5.18: **LineageOS 23 on the Galaxy A53 5G**, untested: LineageOS's own Android 16 build on the one phone it
+was made for, with the camera working from the first session.
+- **LineageOS 23, new system:** LineageOS 23.0 (Android 16 QPR0), the build for this phone's Android 16, so its camera
+  and storage bridges are the phone's own: no translation layer, and Samsung Camera opens from the first session.
+- **One set for the A53:** tethering and the cell broadcast module stay One UI's, the always-on display and Back to One
+  UI work as in LineageOS 24, and Google apps come from One UI (no Google apps in the system image).
+- Offered on the Galaxy A53 5G next to OxygenOS 16; no other phone gets it yet.
+
 New in 0.5.17: Record full logs from inside a system, Nothing OS's Essential key on Volume Down.
 - **Groundwork for fingerprint unlock with One UI's fingerprints** (off for now: the in-display sensor still needs
   its touch signals from Nothing's lock screen). Nothing OS can never delete a fingerprint from the phone, and Settings no

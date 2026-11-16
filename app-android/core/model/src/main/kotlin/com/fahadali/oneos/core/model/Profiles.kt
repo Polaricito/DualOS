@@ -203,6 +203,12 @@ object Profiles {
     private val LINEAGE_CHOICE = ImageChoice(Images.ID_LINEAGE, PackageSets.ID_LINEAGE, tested = false)
 
     /**
+     * 0.5.18: LineageOS 23 (the Galaxy A53 5G's own Android 16 QPR0 GSI, experimental) first on that phone, untested.
+     * Unlike LineageOS 24 it is SDK 36, so it is the A53's build: its camera and installd tables are the phone's.
+     */
+    private val LINEAGE23_CHOICE = ImageChoice(Images.ID_LINEAGE23, PackageSets.ID_LINEAGE23, tested = false)
+
+    /**
      * HyperOS (0.4.31, owner: "Allow all users to try"), made for the Z Fold8 Ultra
      * and Z Fold8: on every phone, last, after Infinity-X. One set everywhere; on a
      * bar phone its cover-screen layout runs as the phone's screen.
@@ -1130,7 +1136,8 @@ object Profiles {
         codename = "a53x",
         socModel = "s5e8825",
         form = FormFactor.BAR,
-        choices = listOf(OXYGEN16_CHOICE),
+        // 0.5.18: LineageOS 23 first (the phone's own Android 16 QPR0 GSI), then One UI-based OxygenOS 16.
+        choices = listOf(LINEAGE23_CHOICE, OXYGEN16_CHOICE),
         notes = listOf(EXYNOS),
     )
 

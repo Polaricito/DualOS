@@ -48,7 +48,8 @@ class PackageSetsTest {
         assertEquals("out/overlays_pixel_f8u_r19", pixel.sourceDir)
         assertEquals(
             listOf(PackageSets.N6_GLOBAL_F8, n6, PackageSets.X9U_IN_1105_SULTRA, pixel, PackageSets.PIXEL_SULTRA, PackageSets.PIXEL_F8, PackageSets.PIXEL9_SULTRA,
-                PackageSets.INFINITYX, PackageSets.HYPER_F8U, PackageSets.NOTHING_F8U, PackageSets.NOTHING_A, PackageSets.OXYGEN16, PackageSets.ORIGINOS, PackageSets.LINEAGE),
+                PackageSets.INFINITYX, PackageSets.HYPER_F8U, PackageSets.NOTHING_F8U, PackageSets.NOTHING_A, PackageSets.OXYGEN16, PackageSets.ORIGINOS, PackageSets.LINEAGE,
+                PackageSets.LINEAGE23),
             PackageSets.ALL,
         )
         // Infinity-X (0.4.27): both guard jars, the camera codes (Java and native), the guest vold, the
@@ -87,6 +88,31 @@ class PackageSetsTest {
             lineage.files.filter { it.role in PackageFile.GUARDED }.map { it.name },
         )
         assertTrue(lineage.hasReturnApp && lineage.file(PackageSets.GUEST_APP)?.role == FileRole.GUEST_APP)
+        // LineageOS 23 (0.5.xx): the Galaxy A53 5G's own Android 16 QPR0 GSI (the camera and installd tables are
+        // the phone's own, no translation). The image has no ims-ext-common.jar, no telephonycore APEX and none of
+        // the bootanimation sites the multidisplay patch needs, so LineageOS 24's set loses those three files: 37
+        // files, 19 payloads.
+        val lineage23 = PackageSets.LINEAGE23
+        assertEquals("lineage23", lineage23.id)
+        assertEquals(Images.ID_LINEAGE23, lineage23.imageId)
+        assertEquals("out/overlays_lineage23_r1", lineage23.sourceDir)
+        assertEquals(37, lineage23.files.size)
+        assertEquals(19, lineage23.files.count { it.role == FileRole.APEX_PAYLOAD })
+        assertEquals(listOf(PackageSets.TETHERING, PackageSets.CELLBROADCAST), lineage23.omitted)
+        assertTrue(lineage23.file(PackageSets.GMS_PAYLOAD) == null && lineage23.file("oplus-services_patched.jar") == null &&
+            lineage23.file("ims-ext-common_patched.jar") == null && lineage23.file("telephonycore_payload.img") == null &&
+            lineage23.file("libbootanimation_preapex_patched.so") == null)
+        assertEquals(
+            listOf("services_patched.jar", "framework_patched.jar", "vold_patched", "service.incremental_patched.so",
+                "libcamera_client_patched.so", "telephony-common_patched.jar"),
+            lineage23.files.filter { it.role in PackageFile.GUARDED }.map { it.name },
+        )
+        assertTrue(lineage23.hasReturnApp && lineage23.file(PackageSets.GUEST_APP)?.role == FileRole.GUEST_APP)
+        assertEquals(lineage.omitted, lineage23.omitted)
+        // The shared files are the same builds as LineageOS 24's: the in-guest app, the Doze overlay and both cameras.
+        val l23Sums = ShaList.parse(shas(lineage23)).entries
+        for (n in listOf(PackageSets.GUEST_APP, "OneOSPixelDoze.apk", "samcam_a.tar", "samcam_bar.tar"))
+            assertEquals(n, ShaList.parse(shas(lineage)).entries[n], l23Sums[n])
         // HyperOS (0.4.31 on every phone; made for the Z Fold8 Ultra and Z Fold8): services.jar, Xiaomi's guard jars,
         // framework.jar and the guest vold (r7), the native camera client (r10), the 15 common payloads and bt.
         val hyper = PackageSets.HYPER_F8U

@@ -494,15 +494,21 @@ add)
         fi
         [ -z "$out" ] || echo "guest_props: ColorOS's last-boot records from an earlier session blanked for the session:$out"
     fi
-    # LineageOS (0.5.06): About phone shows OneOS's build, not the OnePlus 15
-    # nightly it came from (owner: "20261114-OneOS"). Only the version strings;
-    # the build fingerprint and device stay the image's.
+    # LineageOS (0.5.06): About phone shows OneOS's build, not the nightly it
+    # came from (owner: "20261114-OneOS"). Only the version strings; the build
+    # fingerprint and device stay the image's. The version is the image's own
+    # (23.0 for LineageOS 23, 24.0 for LineageOS 24); an image whose version
+    # string has no number is left alone.
     if grep -q '^ro\.lineage\.version=' "$NEW"; then
-        for kv in ro.lineage.version=24.0-20261114-OneOS ro.lineage.display.version=24-20261114-OneOS ro.lineage.releasetype=OneOS; do
-            sed -i "/^${kv%%=*}=/d" "$NEW"
-            echo "$kv" >> "$NEW"
-        done
-        echo "guest_props: LineageOS version shown as 24.0-20261114-OneOS"
+        lv=$(sed -n 's/^ro\.lineage\.version=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' "$NEW" | head -n 1)
+        if [ -n "$lv" ]; then
+            today=$(date +%Y%m%d)
+            for kv in ro.lineage.version=$lv-$today-OneOS ro.lineage.display.version=$lv-OneOS ro.lineage.releasetype=OneOS; do
+                sed -i "/^${kv%%=*}=/d" "$NEW"
+                echo "$kv" >> "$NEW"
+            done
+            echo "guest_props: LineageOS version shown as $lv-$today-OneOS"
+        fi
     fi
     # The S23 family (SM8550, HIDL audio HAL), any system (0.5.00):
     # guest_prepare.sh gave the guest the vendor's Bluetooth audio module, as

@@ -10,6 +10,10 @@ the thermal term from updateBlurEnabled(): the Developer options setting
 CROSS_WINDOW_BLUR_SUPPORTED still decide as before; mDisabledByThermal is still
 kept up to date, it is just no longer read there.
 
+Android 16 QPR0's form (LineageOS 23, the A53) keeps the same term in
+mCriticalThermalStatus, a boolean set at THERMAL_STATUS_CRITICAL: the same
+instructions, the other field name, and it is removed the same way.
+
 Usage: guest_blur_no_thermal.py <smali root dir>
 Prints the smali_* directory (dex file) it changed. Exits with a message and
 changes nothing unless exactly one such check is found.
@@ -20,7 +24,8 @@ import sys
 
 CLASS = re.compile(r"^\.class (?:public |final )*Lcom/android/server/wm/BlurController;$")
 METHOD = re.compile(r"^\.method (?:public |private |final )*updateBlurEnabled\(\)V$")
-IGET = re.compile(r"^\s*iget-boolean (v\d+|p\d+), p0, Lcom/android/server/wm/BlurController;->mDisabledByThermal:Z$")
+IGET = re.compile(r"^\s*iget-boolean (v\d+|p\d+), p0, Lcom/android/server/wm/BlurController;->"
+                  r"(?:mDisabledByThermal|mCriticalThermalStatus):Z$")
 
 
 def main(root):
