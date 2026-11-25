@@ -30,12 +30,13 @@ class StringsNeutralSystemsTest {
     @Test
     fun theSystemsCodeAndLayoutsNameNoSystem() {
         val ui = File(src, "full/kotlin/com/fahadali/oneos/ui")
-        val layouts = File(src, "full/res/layout")
-        val files = listOf("SystemsActivity.kt", "SetupProgressActivity.kt", "SetupRingView.kt", "ChipFlowLayout.kt").map { File(ui, it) } +
-            listOf(
-                "activity_systems.xml", "systems_screen.xml", "systems_card.xml", "systems_chip.xml",
-                "activity_setup_progress.xml", "setup_progress_screen.xml", "setup_step.xml",
-            ).map { File(layouts, it) }
+        val files = listOf(
+            "SystemsActivity.kt",
+            "SetupProgressActivity.kt",
+            "EnvironmentActivity.kt",
+            "BootProgressActivity.kt",
+            "OnboardingActivity.kt",
+        ).map { File(ui, it) }
         for (f in files) {
             assertTrue("${f.name} is missing", f.isFile)
             // Comments may say what the text was; the code's own strings may not name a system.

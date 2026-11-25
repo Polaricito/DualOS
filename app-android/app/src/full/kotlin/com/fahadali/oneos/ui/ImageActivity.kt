@@ -1,16 +1,33 @@
 package com.fahadali.oneos.ui
 
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
-import android.widget.LinearLayout
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContract
 import androidx.appcompat.app.AlertDialog
-import androidx.fragment.app.Fragment
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.device.FactProbe
 import com.fahadali.oneos.core.model.ImageIdentifier
@@ -27,96 +44,54 @@ import com.fahadali.oneos.core.root.RootScript
 import com.fahadali.oneos.session.ImageCheckJob
 import com.fahadali.oneos.session.SessionPrefs
 import com.fahadali.oneos.session.StageCheck
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveLoadingBox
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
 import java.util.concurrent.Executors
-import dev.oneuiproject.oneui.R as OuiIcons
 
-/**
- * Use a downloaded file (Advanced; Choose a system's last row): Pick the
- * file (the system file picker; no storage permission), Check the file
- * (SHA-256 of the whole .gz, with progress), and reuse the system already on
- * this phone when the stage holds a system.raw of one this phone takes. Both
- * say which system it is (ImageIdentifier) in plain words (Plain); a file
- * this phone does not take is a BLOCK naming the ones it does. The systems
- * this phone takes are listed last. From For the OneOS team it is "File
- * details and checks": the same page with Details open (file names, sizes,
- * labels, the raw findings, what the checks said).
- */
-class ImageActivity : ToolbarActivity() {
+/** Use a downloaded file: pick .img.gz, verify SHA-256, or reuse staged system.raw. */
+class ImageActivity : AppCompatActivity() {
     private val team: Boolean get() = intent.getBooleanExtra(EXTRA_TEAM, false)
-
-    override val screenTitle: CharSequence get() = getString(if (team) R.string.image_title_team else R.string.image_title)
-
-    override fun createFragment(): Fragment = ImageFragment()
-
-    lateinit var pick: ActivityResultLauncher<Unit>
+    private lateinit var pick: ActivityResultLauncher<Unit>
+    private val io = Executors.newSingleThreadExecutor()
+    private var unsubscribe: (() -> Unit)? = null
+    private var unsubscribeCheck: (() -> Unit)? = null
+    private var profile: PhoneProfile? by mutableStateOf(null)
+    private var profileRead by mutableStateOf(false)
+    private var detailsOpen by mutableStateOf(false)
+    private var tick by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        pick = registerForActivityResult(OpenGz()) { uri -> if (uri != null) picked(uri) }
+        enableEdgeToEdge()
+        pick = registerForActivityResult(SystemsNav.OpenGz()) { uri -> if (uri != null) picked(uri) }
         super.onCreate(savedInstanceState)
-    }
-
-    private fun picked(uri: Uri) {
-        runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        var name: String? = null
-        var size: Long? = null
-        runCatching {
-            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
-                if (c.moveToFirst()) {
-                    name = c.getString(0)
-                    size = if (c.isNull(1)) null else c.getLong(1)
+        detailsOpen = team
+        val app = applicationContext
+        io.execute {
+            val f = runCatching { FactProbe(app).collect(RootProbe(app).signals()) }.getOrNull()
+            runOnUiThread {
+                if (!isDestroyed) {
+                    profile = f?.let { Profiles.resolve(it).profile }
+                    profileRead = true
+                    tick++
                 }
             }
         }
-        SessionPrefs.setPicked(this, uri, name, size)
-        SessionPrefs.setSource(this, SessionPrefs.Source.GZ)
-        (supportFragmentManager.findFragmentById(R.id.fragment_container) as? ImageFragment)?.redraw()
-    }
-
-    /** ACTION_OPEN_DOCUMENT for the .img.gz (any type: providers label .gz differently). */
-    private class OpenGz : ActivityResultContract<Unit, Uri?>() {
-        override fun createIntent(context: Context, input: Unit): Intent =
-            Intent(Intent.ACTION_OPEN_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("*/*")
-                .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/gzip", "application/x-gzip", "application/octet-stream", "*/*"))
-
-        override fun parseResult(resultCode: Int, intent: Intent?): Uri? = if (resultCode == Activity.RESULT_OK) intent?.data else null
-    }
-
-    companion object {
-        /** Opened from For the OneOS team: titled "File details and checks", Details open. */
-        const val EXTRA_TEAM = "com.fahadali.oneos.extra.TEAM"
-    }
-}
-
-class ImageFragment : CardsFragment() {
-    private var unsubscribe: (() -> Unit)? = null
-    private var unsubscribeCheck: (() -> Unit)? = null
-    private val io = Executors.newSingleThreadExecutor()
-    private var profile: PhoneProfile? = null
-    private var profileRead = false
-
-    private val team: Boolean get() = activity?.intent?.getBooleanExtra(ImageActivity.EXTRA_TEAM, false) == true
-
-    override val detailsOpenAtStart: Boolean get() = team
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val app = requireContext().applicationContext
-        io.execute {
-            val f = runCatching { FactProbe(app).collect(RootProbe(app).signals()) }.getOrNull()
-            activity?.runOnUiThread {
-                profile = f?.let { Profiles.resolve(it).profile }
-                profileRead = true
-                redraw()
+        setContent {
+            DualOsTheme {
+                Screen()
             }
         }
     }
 
     override fun onStart() {
         super.onStart()
-        unsubscribe = ImageCheckJob.observe { redraw() }
-        unsubscribeCheck = StageCheck.observe { redraw() }
+        unsubscribe = ImageCheckJob.observe { tick++ }
+        unsubscribeCheck = StageCheck.observe { tick++ }
     }
 
     override fun onStop() {
@@ -132,157 +107,263 @@ class ImageFragment : CardsFragment() {
         super.onDestroy()
     }
 
-    override fun build(column: LinearLayout) {
-        val ctx = column.context
-        if (!profileRead) {
-            CardRows.text(Cards.section(column, title = null), getString(R.string.report_reading))
-            return
-        }
-        val p = profile
-        val images = p?.images().orEmpty()
-        if (p == null || images.isEmpty()) {
-            val none = Cards.section(column, getString(R.string.image_no_profile_title), null, Level.BLOCK)
-            CardRows.text(none, getString(R.string.image_no_profile_summary))
-            return
-        }
+    private fun picked(uri: Uri) {
+        SystemsNav.persistPick(this, uri)
+        tick++
+    }
 
-        // Your file: pick it, check it, use it (or forget it).
-        val source = SessionPrefs.source(ctx)
-        val picked = SessionPrefs.picked(ctx)
-        val job = ImageCheckJob.state
-        val file = Cards.section(column, getString(R.string.image_cat_file), rows = true)
-        Cards.row(file, OuiIcons.drawable.ic_oui_folder_open, getString(R.string.image_pick_title), getString(R.string.image_pick_summary)) {
-            (activity as? ImageActivity)?.pick?.launch(Unit)
-        }
-        var id: ImageIdentity? = null
-        if (picked != null) {
-            val pid = ImageIdentifier.identify(picked.check, p)
-            id = pid
-            val size = picked.bytes?.let { Units.bytes(it) } ?: getString(R.string.image_size_unknown)
-            Cards.row(
-                file, OuiIcons.drawable.ic_oui_file_type_zip,
-                picked.name ?: getString(R.string.image_picked_unnamed),
-                if (source == SessionPrefs.Source.GZ) size else getString(R.string.image_not_used, size),
-            )
-            identity(file, pid, p, onPhone = false)
-            val busy = job.busy && job.uri == picked.uri
-            if (busy) {
-                val total = (job.total ?: pid.image?.gzBytes ?: picked.bytes ?: 0L).coerceAtLeast(1)
-                CardRows.tint(
-                    Cards.row(
-                        file, OuiIcons.drawable.ic_oui_refresh,
-                        getString(R.string.image_checking, (job.read * 100 / total).toInt()),
-                        getString(R.string.image_checking_bytes, Units.bytes(job.read), Units.bytes(total)),
-                    ),
-                    Level.INFO,
+    @Composable
+    private fun Screen() {
+        @Suppress("UNUSED_VARIABLE") val t = tick
+        DualOsScaffold(
+            title = stringResource(if (team) R.string.image_title_team else R.string.image_title),
+            onBack = { finish() },
+        ) { padding ->
+            if (!profileRead) {
+                ExpressiveLoadingBox(
+                    label = stringResource(R.string.report_reading),
+                    modifier = Modifier.fillMaxSize().padding(padding),
                 )
-                Cards.row(file, OuiIcons.drawable.ic_oui_close, getString(R.string.tests_stop_title), getString(R.string.image_stop_summary)) { ImageCheckJob.cancel() }
-            } else if (pid.state == ImageState.NOT_CHECKED || pid.state == ImageState.DAMAGED) {
-                Cards.row(file, OuiIcons.drawable.ic_oui_security_outline, getString(R.string.image_check_title), getString(R.string.image_check_summary)) {
-                    ImageCheckJob.start(ctx, picked.uri, picked.bytes)
-                }
-            } else if (pid.state == ImageState.VERIFIED && source != SessionPrefs.Source.GZ) {
-                Cards.row(file, OuiIcons.drawable.ic_oui_checkbox_checked_outline, getString(R.string.image_use_gz_title), getString(R.string.image_use_gz_summary)) {
-                    SessionPrefs.setSource(ctx, SessionPrefs.Source.GZ)
-                    redraw()
-                }
+                return@DualOsScaffold
             }
-            Cards.row(file, OuiIcons.drawable.ic_oui_delete_outline, getString(R.string.image_forget_title), getString(R.string.image_forget_summary)) {
-                SessionPrefs.clearPicked(ctx)
-                redraw()
-            }
-        }
-
-        // Already on this phone (owner's request): which system it is, reused when setup keeps it.
-        val onPhone = Cards.section(column, getString(R.string.image_cat_on_phone), rows = true)
-        val check = StageCheck.state
-        val st = check.result?.status
-        when {
-            check.busy -> CardRows.tint(Cards.row(onPhone, OuiIcons.drawable.ic_oui_refresh, getString(R.string.image_looking), null), Level.INFO)
-            st == null -> Cards.row(
-                onPhone, OuiIcons.drawable.ic_oui_search, getString(R.string.image_look_title),
-                getString(if (check.message != null) R.string.image_look_failed else R.string.image_look_summary),
-            ) { confirmLook() }
-            st.rawSize == null -> CardRows.status(onPhone, Level.INFO, getString(R.string.image_on_phone_none), null)
-            else -> {
-                val sid = ImageIdentifier.identifyStaged(st.stagedRaw, p)
-                identity(onPhone, sid, p, onPhone = true)
-                // It can be reused only when setup keeps the stage: not when the stage is set aside
-                // (another system's data, an older system's, leftovers OneOS did not prepare).
-                val keepable = RootScript.BeginMode.KEEP in st.beginModes(sid.image?.id)
-                if (sid.finding.level == Level.OK && !keepable) {
-                    Cards.row(onPhone, 0, getString(R.string.image_on_phone_aside), getString(R.string.image_on_phone_aside_summary))
-                } else if (sid.finding.level == Level.OK) {
-                    if (source == SessionPrefs.Source.ON_PHONE) {
-                        CardRows.status(onPhone, Level.OK, getString(R.string.image_on_phone_chosen), getString(R.string.image_on_phone_chosen_summary))
-                    } else {
-                        Cards.row(onPhone, OuiIcons.drawable.ic_oui_checkbox_checked_outline, getString(R.string.image_use_on_phone_title), getString(R.string.image_use_on_phone_summary)) {
-                            SessionPrefs.setSource(ctx, SessionPrefs.Source.ON_PHONE)
-                            redraw()
+            val p = profile
+            val images = p?.images().orEmpty()
+            if (p == null || images.isEmpty()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp, padding.calculateTopPadding() + 8.dp, 16.dp, 24.dp),
+                ) {
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(
+                                title = stringResource(R.string.image_no_profile_title),
+                                subtitle = stringResource(R.string.image_no_profile_summary),
+                                icon = levelIcon(Level.BLOCK),
+                                iconTint = levelColor(Level.BLOCK),
+                            )
                         }
                     }
-                } else {
-                    Cards.row(onPhone, 0, getString(R.string.image_on_phone_replaced), null)
+                }
+                return@DualOsScaffold
+            }
+
+            val source = SessionPrefs.source(this)
+            val picked = SessionPrefs.picked(this)
+            val job = ImageCheckJob.state
+            val check = StageCheck.state
+            val st = check.result?.status
+            val pickedId = picked?.let { ImageIdentifier.identify(it.check, p) }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 32.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { ExpressiveSectionHeader(stringResource(R.string.image_cat_file)) }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = stringResource(R.string.image_pick_title),
+                            subtitle = stringResource(R.string.image_pick_summary),
+                            icon = DualOsIcons.FolderOpen,
+                            showChevron = true,
+                            onClick = { pick.launch(Unit) },
+                        )
+                        if (picked != null && pickedId != null) {
+                            val size = picked.bytes?.let { Units.bytes(it) } ?: stringResource(R.string.image_size_unknown)
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = picked.name ?: stringResource(R.string.image_picked_unnamed),
+                                subtitle = if (source == SessionPrefs.Source.GZ) size else stringResource(R.string.image_not_used, size),
+                                icon = DualOsIcons.Save,
+                            )
+                            ExpressiveListDivider()
+                            IdentityRow(pickedId, p, onPhone = false)
+                            val busy = job.busy && job.uri == picked.uri
+                            if (busy) {
+                                val total = (job.total ?: pickedId.image?.gzBytes ?: picked.bytes ?: 0L).coerceAtLeast(1)
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.image_checking, (job.read * 100 / total).toInt()),
+                                    subtitle = stringResource(R.string.image_checking_bytes, Units.bytes(job.read), Units.bytes(total)),
+                                    icon = Icons.Rounded.Refresh,
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.tests_stop_title),
+                                    subtitle = stringResource(R.string.image_stop_summary),
+                                    icon = Icons.Rounded.Close,
+                                    onClick = { ImageCheckJob.cancel() },
+                                )
+                            } else if (pickedId.state == ImageState.NOT_CHECKED || pickedId.state == ImageState.DAMAGED) {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.image_check_title),
+                                    subtitle = stringResource(R.string.image_check_summary),
+                                    icon = DualOsIcons.Security,
+                                    showChevron = true,
+                                    onClick = { ImageCheckJob.start(this@ImageActivity, picked.uri, picked.bytes) },
+                                )
+                            } else if (pickedId.state == ImageState.VERIFIED && source != SessionPrefs.Source.GZ) {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.image_use_gz_title),
+                                    subtitle = stringResource(R.string.image_use_gz_summary),
+                                    icon = Icons.Rounded.CheckCircle,
+                                    showChevron = true,
+                                    onClick = { SessionPrefs.setSource(this@ImageActivity, SessionPrefs.Source.GZ); tick++ },
+                                )
+                            }
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.image_forget_title),
+                                subtitle = stringResource(R.string.image_forget_summary),
+                                icon = Icons.Rounded.Delete,
+                                iconTint = MaterialTheme.colorScheme.error,
+                                onClick = { SessionPrefs.clearPicked(this@ImageActivity); tick++ },
+                            )
+                        }
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.image_cat_on_phone)) }
+                item {
+                    ExpressiveGroupedCard {
+                        when {
+                            check.busy -> ExpressiveListItem(title = stringResource(R.string.image_looking), icon = Icons.Rounded.Refresh)
+                            st == null -> ExpressiveListItem(
+                                title = stringResource(R.string.image_look_title),
+                                subtitle = stringResource(if (check.message != null) R.string.image_look_failed else R.string.image_look_summary),
+                                icon = Icons.Rounded.Search,
+                                showChevron = true,
+                                onClick = { confirmLook() },
+                            )
+                            st.rawSize == null -> ExpressiveListItem(title = stringResource(R.string.image_on_phone_none), icon = levelIcon(Level.INFO), iconTint = levelColor(Level.INFO))
+                            else -> {
+                                val sid = ImageIdentifier.identifyStaged(st.stagedRaw, p)
+                                IdentityRow(sid, p, onPhone = true)
+                                val keepable = RootScript.BeginMode.KEEP in st.beginModes(sid.image?.id)
+                                ExpressiveListDivider()
+                                when {
+                                    sid.finding.level == Level.OK && !keepable ->
+                                        ExpressiveListItem(title = stringResource(R.string.image_on_phone_aside), subtitle = stringResource(R.string.image_on_phone_aside_summary))
+                                    sid.finding.level == Level.OK && source == SessionPrefs.Source.ON_PHONE ->
+                                        ExpressiveListItem(title = stringResource(R.string.image_on_phone_chosen), subtitle = stringResource(R.string.image_on_phone_chosen_summary), icon = levelIcon(Level.OK), iconTint = levelColor(Level.OK))
+                                    sid.finding.level == Level.OK ->
+                                        ExpressiveListItem(
+                                            title = stringResource(R.string.image_use_on_phone_title),
+                                            subtitle = stringResource(R.string.image_use_on_phone_summary),
+                                            icon = Icons.Rounded.CheckCircle,
+                                            showChevron = true,
+                                            onClick = { SessionPrefs.setSource(this@ImageActivity, SessionPrefs.Source.ON_PHONE); tick++ },
+                                        )
+                                    else -> ExpressiveListItem(title = stringResource(R.string.image_on_phone_replaced))
+                                }
+                            }
+                        }
+                        if (!check.busy && st != null) {
+                            ExpressiveListDivider()
+                            ExpressiveListItem(title = stringResource(R.string.image_look_again), icon = Icons.Rounded.Refresh, showChevron = true, onClick = { confirmLook() })
+                        }
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.image_takes_title, p.label)) }
+                item {
+                    ExpressiveGroupedCard {
+                        Text(
+                            text = stringResource(R.string.image_takes_summary),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                        images.forEach { image ->
+                            ExpressiveListDivider()
+                            val notes = buildList {
+                                add(getString(R.string.image_choice_sizes, Units.bytes(image.gzBytes), Units.bytes(image.rawBytes)))
+                                add(getString(if (p.choice(image.id)?.tested == true) R.string.systems_chip_tested else R.string.systems_chip_untested))
+                                if (image.googleServices) add(getString(R.string.systems_chip_google))
+                            }
+                            ExpressiveListItem(title = Images.systemName(image, p), subtitle = notes.joinToString(" · "), icon = DualOsIcons.Layers)
+                        }
+                    }
+                }
+
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = stringResource(R.string.details_title),
+                            subtitle = stringResource(R.string.image_details_summary),
+                            icon = if (detailsOpen) DualOsIcons.ArrowDropUp else DualOsIcons.ArrowDropDown,
+                            onClick = { detailsOpen = !detailsOpen },
+                        )
+                        if (detailsOpen) {
+                            images.forEach { image ->
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.image_choice_title, image.shortName),
+                                    subtitle = stringResource(R.string.image_details_file, image.gzName, Units.bytes(image.gzBytes), Units.bytes(image.rawBytes), image.label),
+                                )
+                            }
+                            pickedId?.let {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = it.finding.title, subtitle = it.finding.detail, icon = levelIcon(it.finding.level), iconTint = levelColor(it.finding.level))
+                            }
+                            picked?.sha256?.let {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = stringResource(R.string.image_details_sha), subtitle = it)
+                            }
+                            job.message?.takeIf { job.uri == picked?.uri }?.let {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = stringResource(R.string.setup_details_result), subtitle = it)
+                            }
+                            if (st?.rawSize != null) {
+                                val sf = ImageIdentifier.identifyStaged(st.stagedRaw, p).finding
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = sf.title, subtitle = sf.detail, icon = levelIcon(sf.level), iconTint = levelColor(sf.level))
+                            }
+                            (check.step ?: check.message)?.let {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = stringResource(R.string.image_details_look), subtitle = it)
+                            }
+                        }
+                    }
                 }
             }
-        }
-        if (!check.busy && st != null) Cards.row(onPhone, OuiIcons.drawable.ic_oui_refresh, getString(R.string.image_look_again), null) { confirmLook() }
-
-        // The systems this phone takes: which file to download.
-        val systems = Cards.section(column, getString(R.string.image_takes_title, p.label), rows = true)
-        CardRows.text(systems, getString(R.string.image_takes_summary), R.style.OneOS_Text_Caption, inList = true)
-        for ((i, image) in images.withIndex()) {
-            val notes = buildList {
-                add(getString(R.string.image_choice_sizes, Units.bytes(image.gzBytes), Units.bytes(image.rawBytes)))
-                add(getString(if (p.choice(image.id)?.tested == true) R.string.systems_chip_tested else R.string.systems_chip_untested))
-                if (image.googleServices) add(getString(R.string.systems_chip_google))
-            }
-            Cards.row(systems, GLYPHS[i % GLYPHS.size], Images.systemName(image, p), notes.joinToString(" · "))
-        }
-
-        // Details: the files' names and labels, the raw findings, what the checks said (the OneOS team's).
-        val more = Cards.section(column, title = null, rows = true)
-        details(more, getString(R.string.image_details_summary)) { card ->
-            for (image in images) {
-                Cards.row(
-                    card, 0, getString(R.string.image_choice_title, image.shortName),
-                    getString(R.string.image_details_file, image.gzName, Units.bytes(image.gzBytes), Units.bytes(image.rawBytes), image.label),
-                )
-            }
-            CardRows.text(card, getString(R.string.image_details_check), R.style.OneOS_Text_Caption, inList = true)
-            id?.let { CardRows.finding(card, it.finding) }
-            picked?.sha256?.let { Cards.row(card, 0, getString(R.string.image_details_sha), it) }
-            job.message?.takeIf { job.uri == picked?.uri }?.let { Cards.row(card, 0, getString(R.string.setup_details_result), it) }
-            if (st?.rawSize != null) CardRows.finding(card, ImageIdentifier.identifyStaged(st.stagedRaw, p).finding)
-            (check.step ?: check.message)?.let { Cards.row(card, 0, getString(R.string.image_details_look), it) }
         }
     }
 
-    /** Which system the file (or the system on this phone) is, in plain words; the finding itself is under Details. */
-    private fun identity(card: LinearLayout, id: ImageIdentity, p: PhoneProfile, onPhone: Boolean) {
+    @Composable
+    private fun IdentityRow(id: ImageIdentity, p: PhoneProfile, onPhone: Boolean) {
         val f = id.finding
         if (f.level == Level.OK) {
             val system = Images.systemName(id.image, p)
-            CardRows.status(card, Level.OK, getString(if (onPhone) R.string.image_on_phone_ok else R.string.image_file_ok, system), null)
+            ExpressiveListItem(
+                title = stringResource(if (onPhone) R.string.image_on_phone_ok else R.string.image_file_ok, system),
+                icon = levelIcon(Level.OK),
+                iconTint = levelColor(Level.OK),
+            )
             return
         }
         val m = Plain.of(f, id.image, p)
-        // Not checked yet stops nothing: setup checks the download first.
-        val level = if (f.reason == ImageIdentifier.R_NOT_CHECKED) Level.INFO else f.level
-        CardRows.status(card, level, m.title, m.line)
+        val lv = if (f.reason == ImageIdentifier.R_NOT_CHECKED) Level.INFO else f.level
+        ExpressiveListItem(title = m.title, subtitle = m.line, icon = levelIcon(lv), iconTint = levelColor(lv))
     }
 
     private fun confirmLook() {
-        AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(this)
             .setTitle(R.string.image_look_dialog_title)
             .setMessage(R.string.image_look_dialog_message)
-            .setPositiveButton(R.string.image_look_run) { _, _ -> StageCheck.start(requireContext(), StageCheck.Mode.STAGE_ONLY) }
+            .setPositiveButton(R.string.image_look_run) { _, _ -> StageCheck.start(this, StageCheck.Mode.STAGE_ONLY) }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private companion object {
-        /** Device glyphs by the system's place in the phone's list (as Choose a system: never by brand). */
-        val GLYPHS = intArrayOf(R.drawable.ic_oneos_system_0, R.drawable.ic_oneos_system_1, R.drawable.ic_oneos_system_2)
+    companion object {
+        const val EXTRA_TEAM = "com.fahadali.oneos.extra.TEAM"
     }
 }

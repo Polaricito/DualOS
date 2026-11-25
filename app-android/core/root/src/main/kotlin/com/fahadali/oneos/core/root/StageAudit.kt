@@ -467,7 +467,7 @@ object StageAudit {
     private const val LAUNCH_WAIT_FUNCTION = "switch_verdict"
     private const val UPSRC_VALUE = "\"\$DATA/user/0/\$APP_PACKAGE/files/oneos-update/OneOS.apk\""
     private val SELFUPDATE_PM = listOf("install", "-r", "--pkg", "\"\$APP_PACKAGE\"", "\"\$upapk\"")
-    private val SELFUPDATE_AM = listOf("start", "-n", "\"\$APP_PACKAGE/.ui.MainActivity\"")
+    private val SELFUPDATE_AM = listOf("start", "-n", "\"\$APP_PACKAGE/com.fahadali.oneos.ui.MainActivity\"")
 
     /**
      * An app's kernel tool (do_tool_app only, 0.5.10): `pm disable-user` of a package whose libtimer.so

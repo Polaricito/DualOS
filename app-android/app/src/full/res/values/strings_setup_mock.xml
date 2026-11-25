@@ -5,8 +5,8 @@
     <string name="setup_check_phone">Check your phone</string>
     <string name="setup_check_files">Check the download</string>
     <string name="setup_image">Install the system</string>
-    <string name="setup_files_patches">Install OneOS\'s fixes</string>
-    <string name="setup_download_files">Download OneOS\'s fixes</string>
+    <string name="setup_files_patches">Install DualOS\'s fixes</string>
+    <string name="setup_download_files">Download DualOS\'s fixes</string>
     <string name="setup_table">Get app installs ready</string>
     <string name="setup_session">Save switch settings</string>
     <string name="setup_cleanup">Tidy up</string>
@@ -29,5 +29,5 @@
     <string name="setup_keep_going">Keep going</string>
     <!-- 0.4.49: Set up tapped before the phone check finished, or on a phone OneOS has no profile for. -->
     <string name="setup_wait_check">Checking your phone first. Tap Set up again in a moment.</string>
-    <string name="setup_no_profile">OneOS has no system for this phone, so it can\'t set one up.</string>
+    <string name="setup_no_profile">DualOS has no system for this phone, so it can\'t set one up.</string>
 </resources>

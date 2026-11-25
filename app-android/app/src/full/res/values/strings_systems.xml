@@ -10,7 +10,7 @@
     <string name="systems_subtitle_unknown">One UI stays as it is.</string>
     <string name="systems_reading">Reading this phone…</string>
     <string name="systems_none_title">No system for this phone yet</string>
-    <string name="systems_none_line">This version of OneOS has none for this phone. Phone details, in Settings › For the OneOS team, shows why.</string>
+    <string name="systems_none_line">This version of DualOS has none for this phone. Phone details, in Settings › For the DualOS team, shows why.</string>
     <string name="systems_chip_android">Android %1$s</string>
     <string name="systems_chip_tested">Tested on this phone</string>
     <string name="systems_chip_untested">Not tested on this phone yet</string>
@@ -70,7 +70,7 @@
     <string name="setup_state_stopped">stopped</string>
     <string name="setup_state_failed">didn\'t finish</string>
 
-    <string name="setup_keep_open">Keep OneOS open and your phone plugged in.</string>
+    <string name="setup_keep_open">Keep DualOS open and your phone plugged in.</string>
     <string name="setup_stop">Stop</string>
     <string name="setup_stopping">Stopping…</string>
     <string name="setup_done_title">%1$s is ready</string>
@@ -89,7 +89,7 @@
     <string name="setup_idle_subtitle">Choose a system on the main screen to set one up.</string>
 
     <string name="setup_details">Details</string>
-    <string name="setup_details_summary">Every step, for the OneOS team</string>
+    <string name="setup_details_summary">Every step, for the DualOS team</string>
     <string name="setup_details_result">What it said</string>
     <string name="setup_details_moved">Kept as old copies</string>
     <string name="setup_expanded">Expanded</string>

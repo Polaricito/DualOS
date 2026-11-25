@@ -27,7 +27,7 @@ object SetDownloader {
     class Refused(message: String) : Failed(message)
 
     /** The repository whose releases hold the set files as assets named by their SHA-256 (0.4.53). */
-    const val FILES_REPO = "fahadalijaved/OneOS-files"
+    const val FILES_REPO = "Polaricito/DualOS"
 
     /** SourceForge's folder of the set files, each named by its SHA-256 (0.4.65; the source "sf"). */
     const val SF_FILES = "https://downloads.sourceforge.net/project/oneos-mirror/files/"

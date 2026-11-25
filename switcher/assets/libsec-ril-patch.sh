@@ -24,13 +24,13 @@
 #   a8 01 00 34   cbz  w8, <queue>       <- replaced with 1f 20 03 d5 (nop)
 #   08 48 88 52   mov  w8, #0xf4240
 #   e8 01 a0 72
-#   9f 03 08 6b   cmp  w28, w8
+#   9f 03 08 6b   cmp  w28, w8           (A53/Exynos uses another register, e.g. w26: 5f 03 08 6b)
 #
 # 0.4.65: the S23 family's library (SM8550, S918BXXUAGZIF) loads the object
 # from x20 (88 06 40 f9) instead of x21, so the sequence above is not there
 # and the guest got no SMS (0.4.62 S23+ 43ca7db8). When it is not found, the
 # same check from the ldrb on is looked for instead (the 20 bytes from
-# 08 05 44 39 to 9f 03 08 6b, the cbz the fourth word): its first 6 bytes by
+# 08 05 44 39 to `cmp wRn, w8`, the cbz the second word): its first 6 bytes by
 # grep (a shell pattern holds no zero byte), then all 20 read back at each hit.
 #
 # Usage: libsec-ril-patch.sh apply|restore
@@ -47,7 +47,6 @@ ORIG_PAT="$(printf '\250\006\100\371\010\005\104\071\250\001')"
 # Patched: the ldrb followed by the nop (either form of the load before it).
 PATCHED_PAT="$(printf '\010\005\104\071\037\040\003\325')"
 ALT_HEAD="$(printf '\010\005\104\071\250\001')"
-ALT_HEX=08054439a801003408488852e801a0729f03086b
 
 BB=""
 for c in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox; do
@@ -149,7 +148,10 @@ apply() {
         hits=""; m=0
         for c in $(LC_ALL=C /system/bin/grep -aobF "$ALT_HEAD" "$LIB" 2>/dev/null | "$BB" cut -d: -f1); do
             case "$c" in ''|*[!0-9]*) continue ;; esac
-            [ "$(readn "$LIB" "$c" 20)" = "$ALT_HEX" ] && { hits=$c; m=$((m + 1)); }
+            # Match cmp wRn, w8 (subs wzr, wRn, w8, LSL #0) for any register Rn (0..31).
+            case "$(readn "$LIB" "$c" 20)" in
+                08054439a801003408488852e801a072[13579bdf]f0[0-3]086b) hits=$c; m=$((m + 1)) ;;
+            esac
         done
         [ "$m" = 1 ] || {
             echo "inbound SMS: found 0 matches for the rild SMS queue sequence and $m for its check from the ldrb on in $LIB; left alone"

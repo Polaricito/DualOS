@@ -34,6 +34,7 @@ SMALI = PATCHES / 'OneOSGuestLock.smali'
 
 W = 'Lcom/android/internal/widget/'
 CRED = W + 'LockscreenCredential;'
+LPU = W + 'LockPatternUtils;'
 VCR = W + 'VerifyCredentialResponse;'
 CB = W + 'ICheckCredentialProgressCallback;'
 LSS = 'Lcom/android/server/locksettings/LockSettingsService;'
@@ -95,7 +96,121 @@ TYPE_BODIES = {
 
     :cond_0
     return v0''',
+    # Android 16 QPR0 (LineageOS 23 / Infinity-X 3.5): .locals 0 and answer moved into p0.
+    'a16_p0': f'''    .locals 0
+
+    invoke-virtual {{p0}}, {LSS}->checkPasswordHavePermission()V
+
+    invoke-virtual {{p0, p1}}, {LSS}->getCredentialTypeInternal(I)I
+
+    move-result p0
+
+    return p0''',
 }
+
+
+def lss_a16_text(guard='decoded', with_profile_key=True, with_lpu_cache=True, with_timeout=True):
+    lpu_call = (f'    invoke-static {{}}, {LPU}->invalidateCredentialTypeCache()V\n'
+                if with_lpu_cache else '    nop\n')
+    timeout_call = (f'    invoke-static {{v1}}, {VCR}->fromTimeout(I){VCR}\n'
+                    if with_timeout else '    nop\n')
+    profile_key = ('''
+.method public final removeKeystoreProfileKey(I)V
+    .locals 2
+
+    iget-object v0, p0, Lcom/android/server/locksettings/LockSettingsService;->mKeyStore:Ljava/security/KeyStore;
+
+    const-string v1, "profile_key_name_encrypt_0"
+
+    invoke-virtual {v0, v1}, Ljava/security/KeyStore;->deleteEntry(Ljava/lang/String;)V
+
+    return-void
+.end method
+''' if with_profile_key else '')
+    return f'''.class public {LSS}
+.super {W}ILockSettings$Stub;
+.source "LockSettingsService.java"
+
+
+# instance fields
+.field public final mStrongAuth:Lcom/android/server/locksettings/LockSettingsStrongAuth;
+
+
+# direct methods
+.method public final doVerifyCredential({CRED}I{CB}I){VCR}
+    .locals 10
+
+    invoke-virtual {{p1}}, {CRED}->isNone()Z
+
+    move-result v0
+
+    if-eqz v0, :cond_0
+
+    invoke-virtual {{p1}}, {CRED}->getType()I
+
+    invoke-virtual {{p1}}, {CRED}->getCredential()[B
+
+    invoke-interface {{p3}}, {CB}->onCredentialVerified()V
+
+    const/16 v1, 0x7530
+
+{timeout_call}
+    sget-object v0, {VCR}->ERROR:{VCR}
+
+    return-object v0
+
+    :cond_0
+    sget-object v0, {VCR}->OK:{VCR}
+
+    return-object v0
+.end method
+
+.method public final enforceFrpNotActive()V
+    .locals 3
+
+    new-instance v0, Ljava/lang/SecurityException;
+
+    const-string v1, "Cannot change credential while factory reset protection is active"
+
+    invoke-direct {{v0, v1}}, Ljava/lang/SecurityException;-><init>(Ljava/lang/String;)V
+
+    throw v0
+.end method
+
+.method public final notifyLockSettingsStateListeners(ZI)V
+    .locals 0
+
+    return-void
+.end method
+{profile_key}
+.method public final setLockCredentialInternal({CRED}{CRED}IZ)Z
+    .locals 9
+
+''' + '\n'.join(GUARDS[guard] + [lpu_call.rstrip('\n'), '    const/4 v0, 0x1', '', '    return v0']) + f'''
+.end method
+
+
+# virtual methods
+.method public getCredentialType(I)I
+{TYPE_BODIES['a16_p0']}
+.end method
+
+.method public verifyGatekeeperPasswordHandle(JJI){VCR}
+    .locals 8
+
+    invoke-virtual {{p0}}, {LSS}->checkPasswordReadPermission()V
+
+    sget-object v0, {VCR}->ERROR:{VCR}
+
+    return-object v0
+.end method
+
+.method public requireStrongAuth(II)V
+    .locals 0
+
+    return-void
+.end method
+'''
 
 
 def lss_text(guard='decoded', type_body='plain', helpers='private'):
@@ -535,6 +650,47 @@ class PatcherTest(unittest.TestCase):
         done = patch(self.root, str(self.root / 'nowhere.smali'))
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(snapshot(self.root), before)
+
+    def test_android16_qpr0_framework_is_patched_with_int_timeout_and_lpu_cache(self):
+        done = self.patched(lss=lss_a16_text())
+        self.assertEqual(done.stdout.split(), ['smali', 'smali_classes2', 'smali_classes3'])
+        text = self.read(LSS_FILE)
+        added = text.split('.method private oneosGuestLockSet(', 1)[1]
+        # A16 cache invalidation uses static LockPatternUtils.invalidateCredentialTypeCache().
+        self.assertIn(f'invoke-static {{}}, {LPU}->invalidateCredentialTypeCache()V', added)
+        self.assertNotIn('invalidateCredentialTypeCaches(', added)
+        # A16 uses VerifyCredentialResponse.ERROR and int-ms fromTimeout(I), never Duration/credIncorrect.
+        self.assertIn(f'sget-object v7, {VCR}->ERROR:{VCR}', added)
+        self.assertIn('const-wide/32 v2, 0x7fffffff', added)
+        self.assertIn('long-to-int v5, v0', added)
+        self.assertIn(f'invoke-static {{v5}}, {VCR}->fromTimeout(I){VCR}', added)
+        self.assertNotIn('Ljava/time/Duration;', added)
+        self.assertNotIn('->credIncorrect(', added)
+        # getCredentialType (.locals 0 -> .locals 1, result in p0) is hooked safely.
+        t_method = text.split('.method public getCredentialType(I)I\n', 1)[1].split('.end method')[0]
+        self.assertTrue(t_method.startswith('    .locals 1\n'))
+        self.assertIn(f'invoke-static {{p1, p0}}, {HELPER}->credentialType(II)I', t_method)
+        # Defense-in-depth: removeKeystoreProfileKey(I)V returns immediately at entry.
+        self.assertEqual(body(text, ' removeKeystoreProfileKey(I)V')[0], 'return-void')
+        # A second run on the patched A16 tree leaves it untouched.
+        before = snapshot(self.root)
+        again = patch(self.root)
+        self.assert_untouched(again, before)
+        self.assertIn('already has the guest screen lock', again.stderr)
+
+    def test_android16_without_cache_or_timeout_is_left_untouched(self):
+        for name, kwargs in (
+            ('missing LPU invalidateCredentialTypeCache', dict(with_lpu_cache=False)),
+            ('missing A16 fromTimeout(I)', dict(with_timeout=False)),
+        ):
+            with self.subTest(name):
+                shutil.rmtree(self.root)
+                self.root.mkdir()
+                make_tree(self.root, lss=lss_a16_text(**kwargs))
+                before = snapshot(self.root)
+                done = patch(self.root)
+                self.assert_untouched(done, before)
+                self.assertIn('this framework gets no guest screen lock', done.stderr)
 
 
 DRIVER = r'''

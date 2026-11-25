@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OneOS</string>
+    <string name="app_name">DualOS</string>
     <string name="before_link_summary">Что может сломаться, резервные копии и блокировка экрана</string>
-    <string name="before_experimental_title">OneOS экспериментальная</string>
+    <string name="before_experimental_title">DualOS экспериментальная</string>
     <string name="before_backup_title">Сначала сделайте резервную копию</string>
     <string name="before_backup_summary">Сначала сохраните аккаунты и данные: Samsung Cloud, Google, Smart Switch.</string>
     <string name="before_lock_title">Уберите блокировку экрана</string>
@@ -10,7 +10,7 @@
     <string name="before_tested_title">Проверено на одном телефоне</string>
     <string name="before_ack">Я сделал резервную копию и убрал блокировку экрана</string>
     <string name="home_subtitle">Другая система рядом с One UI</string>
-    <string name="home_about_title">О OneOS</string>
+    <string name="home_about_title">О DualOS</string>
     <string name="home_checking">Проверка телефона…</string>
     <string name="home_choose">Выберите систему</string>
     <string name="home_system_ready">%1$s готова</string>
@@ -20,20 +20,20 @@
     <string name="home_setting_up_start">Настройка %1$s</string>
     <string name="home_eta">Осталось около %1$d мин</string>
     <string name="home_eta_wait">Оценка времени…</string>
-    <string name="home_setup_keep_open">Не закрывайте OneOS и держите телефон на зарядке.</string>
+    <string name="home_setup_keep_open">Не закрывайте DualOS и держите телефон на зарядке.</string>
     <string name="home_switching">Подготовка %1$s…</string>
     <string name="home_closing">One UI закрывается…</string>
     <string name="home_restoring">Восстановление настроек One UI…</string>
     <string name="home_welcome">С возвращением</string>
     <string name="home_welcome_line_short">%1$s</string>
     <string name="home_minutes">%1$d мин</string>
-    <string name="home_send_report">Отправить отчёт команде OneOS</string>
+    <string name="home_send_report">Отправить отчёт команде DualOS</string>
     <string name="home_send_report_summary">Личные данные сначала удаляются: номера, названия Wi-Fi, аккаунты.</string>
     <string name="home_dismiss">Закрыть</string>
     <string name="home_details">Подробнее</string>
     <string name="home_details_all">Все проверки</string>
     <string name="menu_how">Прежде чем начать</string>
-    <string name="menu_about">О OneOS</string>
+    <string name="menu_about">О DualOS</string>
     <string name="image_choice_title">Образ %1$s</string>
     <string name="image_pick_title">Выбрать скачанный файл</string>
     <string name="image_picked_unnamed">Выбранный файл</string>
@@ -67,7 +67,7 @@
     <string name="switch_starting">Запуск…</string>
     <string name="switch_launched">Запущено</string>
     <string name="switch_not_started">Не запущено</string>
-    <string name="switch_dry_dialog_message">One UI закроется примерно на минуту, пока root настраивает %1$s и проверяет её. Затем One UI вернётся, обычно без перезагрузки. OneOS закроется вместе с One UI.</string>
+    <string name="switch_dry_dialog_message">One UI закроется примерно на минуту, пока root настраивает %1$s и проверяет её. Затем One UI вернётся, обычно без перезагрузки. DualOS закроется вместе с One UI.</string>
     <string name="switch_go_dialog_title">Переключиться на %1$s сейчас?</string>
     <string name="last_title">Последний сеанс</string>
     <string name="last_id">Сеанс %1$s</string>
@@ -79,7 +79,7 @@
     <string name="last_restore_title">Восстановить настройки One UI</string>
     <string name="last_restore_run">Восстановить</string>
     <string name="last_forget_title">С этим сеансом покончено</string>
-    <string name="about_title">О OneOS</string>
+    <string name="about_title">О DualOS</string>
     <string name="confirm_switch_title">Переключиться на %1$s?</string>
     <string name="confirm_switch_msg">One UI закроется, и %1$s запустится примерно через минуту. Ваши приложения и файлы в One UI останутся как есть.</string>
     <string name="confirm_back_title">Чтобы вернуться</string>
@@ -96,14 +96,14 @@
     <string name="confirm_switch_go">Переключиться</string>
     <string name="confirm_refused_tail">Ничего не изменилось. One UI продолжает работать.</string>
     <string name="confirm_setup_title">Настроить %1$s?</string>
-    <string name="confirm_setup_file">Используется скачанный вами файл, займёт около 15 минут. Ваши приложения и данные в %1$s сохранятся. Не закрывайте OneOS и держите телефон на зарядке.</string>
+    <string name="confirm_setup_file">Используется скачанный вами файл, займёт около 15 минут. Ваши приложения и данные в %1$s сохранятся. Не закрывайте DualOS и держите телефон на зарядке.</string>
     <string name="confirm_setup_go">Настроить</string>
-    <string name="confirm_new_setup_msg">Потребуется около %1$s, займёт около 15 минут. Не закрывайте OneOS и держите телефон на зарядке. One UI в это время продолжает работать.</string>
+    <string name="confirm_new_setup_msg">Потребуется около %1$s, займёт около 15 минут. Не закрывайте DualOS и держите телефон на зарядке. One UI в это время продолжает работать.</string>
     <string name="confirm_setup_keep_data">Ваши приложения и данные %1$s сохраняются.</string>
     <string name="confirm_setup_aside">Ваши приложения и данные %1$s сохраняются как старая копия. Позже её можно удалить в «Настройки › Освободить место».</string>
     <string name="confirm_setup_aside_unknown">То, что настроено сейчас, сохраняется как старая копия. Позже её можно удалить в «Настройки › Освободить место».</string>
     <string name="confirm_choose_download">Выберите загрузку %1$s</string>
-    <string name="fix_open_root_app">Откройте приложение root и разрешите OneOS.</string>
+    <string name="fix_open_root_app">Откройте приложение root и разрешите DualOS.</string>
     <string name="fix_no_app">Не найдено приложение, чтобы открыть это</string>
     <string name="environment_what_stops">Что мешает переключению</string>
 </resources>

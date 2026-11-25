@@ -6,8 +6,8 @@
     <string name="setup_check_phone">Проверка телефона</string>
     <string name="setup_check_files">Проверка загрузки</string>
     <string name="setup_image">Установка системы</string>
-    <string name="setup_files_patches">Установка исправлений OneOS</string>
-    <string name="setup_download_files">Загрузка исправлений OneOS</string>
+    <string name="setup_files_patches">Установка исправлений DualOS</string>
+    <string name="setup_download_files">Загрузка исправлений DualOS</string>
     <string name="setup_table">Подготовка установки приложений</string>
     <string name="setup_session">Сохранение настроек переключения</string>
     <string name="setup_cleanup">Уборка</string>
@@ -27,5 +27,5 @@
     <string name="setup_stop_title">Остановить настройку %1$s?</string>
     <string name="setup_keep_going">Продолжить</string>
     <string name="setup_wait_check">Сначала проверяется телефон. Через мгновение нажмите «Настроить» снова.</string>
-    <string name="setup_no_profile">В OneOS нет системы для этого телефона, поэтому настроить её нельзя.</string>
+    <string name="setup_no_profile">В DualOS нет системы для этого телефона, поэтому настроить её нельзя.</string>
 </resources>

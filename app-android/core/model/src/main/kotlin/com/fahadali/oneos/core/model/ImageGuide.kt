@@ -13,8 +13,8 @@ object ImageGuide {
         val out = StringBuilder()
         out.append("# Which system image to download\n\n")
         out.append("Generated from the app's phone list (`ImageGuide`); `ImageGuideTest` keeps it in step. ")
-        out.append("Download only the `.gz` of a system your phone is listed under, then pick it in OneOS. ")
-        out.append("OneOS checks the file's SHA-256 before it uses it.\n\n")
+        out.append("Download only the `.gz` of a system your phone is listed under, then pick it in DualOS. ")
+        out.append("DualOS checks the file's SHA-256 before it uses it.\n\n")
         out.append("Downloads: each system's own link below (the SourceForge mirror, resumable); all of them are also in ")
             .append("the Google Drive folder ").append(Images.SHARED_FOLDER_URL).append("\n")
         for (image in images) {

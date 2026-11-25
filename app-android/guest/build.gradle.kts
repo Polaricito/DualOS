@@ -1,18 +1,16 @@
 import java.util.Properties
 
-// OneOS inside the guest (Pixel, ColorOS): "Back to One UI" in one tap, from
-// its screen or its Quick Settings tile. It only writes a request file in its
-// own data folder (files/oneos_return); the session's watcher on the host
-// (switcher/assets/oneos_switch.sh) sees it and returns. guest_prepare.sh
-// installs it in every guest as a system app (/oem/app/OneOSGuest), from
-// $STAGE/OneOSGuest.apk (scripts/make-overlays.sh copies the release build).
-// SESL9 supplies the same native components on Pixel and ColorOS.
-// Package metadata and module update checks need package visibility and network access.
+// DualOS inside the guest (LineageOS 23, Project Infinity-X 3.5): "Back to One UI"
+// in one tap, from its screen or its Quick Settings tile. It only writes a request
+// file in its own data folder (files/oneos_return); the session's watcher on the host
+// (switcher/assets/oneos_switch.sh) sees it and returns. guest_prepare.sh installs it
+// in every guest as a system app (/oem/app/OneOSGuest), from $STAGE/OneOSGuest.apk.
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
-// The OneOS release key, as :app signs with it (never in the repo; /srv/projects is shared).
+// The release key, as :app signs with it (never in the repo).
 val releaseKeys: Properties? =
     File(System.getProperty("user.home"), ".oneos-release/keystore.properties").takeIf { it.isFile }?.let { f ->
         Properties().apply { f.inputStream().use(::load) }
@@ -24,12 +22,13 @@ android {
     compileSdk { version = release(37) }
 
     defaultConfig {
+        // Kept as com.fahadali.oneos.guest because host/guest scripts & guest_root broker
+        // authenticate and poll /data/user/0/com.fahadali.oneos.guest/files/.
         applicationId = "com.fahadali.oneos.guest"
         minSdk = 31
         targetSdk = 36
-        // 0.2 (OneOS 0.4.30): How's it going?, the checklist for Send to the OneOS team.
-        versionCode = 12
-        versionName = "0.12"
+        versionCode = 20
+        versionName = "2.0"
     }
 
     signingConfigs {
@@ -45,12 +44,15 @@ android {
 
     buildTypes {
         release {
-            // R8 drops the unused Kotlin stdlib: the APK sits in the guest's /oem.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
+    }
+
+    buildFeatures {
+        compose = true
     }
 
     compileOptions {
@@ -75,35 +77,19 @@ tasks.matching { it.name == "packageRelease" }.configureEach {
     }
 }
 
-configurations.configureEach {
-    exclude(group = "androidx.core", module = "core")
-    exclude(group = "androidx.core", module = "core-ktx")
-    exclude(group = "androidx.customview", module = "customview")
-    exclude(group = "androidx.coordinatorlayout", module = "coordinatorlayout")
-    exclude(group = "androidx.drawerlayout", module = "drawerlayout")
-    exclude(group = "androidx.viewpager2", module = "viewpager2")
-    exclude(group = "androidx.viewpager", module = "viewpager")
-    exclude(group = "androidx.appcompat", module = "appcompat")
-    // Play Services pulls stock Fragment, but One UI Design supplies the SESL
-    // implementation under the same AndroidX package names.
-    exclude(group = "androidx.fragment", module = "fragment")
-    // SESL9 Core and Fragment include their Kotlin extensions.
-    exclude(group = "sesl.androidx.core", module = "core-ktx")
-    exclude(group = "androidx.fragment", module = "fragment-ktx")
-    exclude(group = "androidx.preference", module = "preference")
-    exclude(group = "androidx.recyclerview", module = "recyclerview")
-    exclude(group = "androidx.swiperefreshlayout", module = "swiperefreshlayout")
-    exclude(group = "androidx.slidingpanelayout", module = "slidingpanelayout")
-    exclude(group = "com.google.android.material", module = "material")
-}
-
 dependencies {
     implementation(project(":core:model"))
-    implementation(libs.oneui.icons)
-    implementation(libs.oneui.design) {
-        // The design library's optional barcode scanner is unused; keep OneOS offline.
-        exclude(group = "com.google.android.gms", module = "play-services-mlkit-barcode-scanning")
-        exclude(group = "com.google.mlkit", module = "barcode-scanning-common")
-    }
-    implementation(libs.bundles.sesl9)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.google.material)
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
 }

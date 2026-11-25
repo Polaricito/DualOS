@@ -13,7 +13,7 @@ import java.io.File
 /** StageAudit on the shipped root script and launcher, and the script's tables against the model. */
 class StageAuditTest {
     private val script = Shipped.rootScriptText
-    private val launcher = RootScript.launcher(RootScript.Verb.BEGIN, listOf("new", "f8u", "coloros17-findn6", "n6-f8u", "4"), "a".repeat(64), 1000)
+    private val launcher = RootScript.launcher(RootScript.Verb.BEGIN, listOf("new", "a53", "lineage23-gsi", "lineage23", "4"), "a".repeat(64), 1000)
 
     @Test
     fun shippedScriptPassesTheAudit() {
@@ -29,7 +29,7 @@ class StageAuditTest {
         }
         bad("pm install -r --pkg \"\$APP_PACKAGE\" \"\$upapk\"", "pm install -r \"\$upapk\"")
         bad("pm install -r --pkg \"\$APP_PACKAGE\" \"\$upapk\"", "pm install -r --pkg \"\$APP_PACKAGE\" \"\$upsrc\"")
-        bad("am start -n \"\$APP_PACKAGE/.ui.MainActivity\"", "am start -n com.android.settings/.Settings")
+        bad("am start -n \"\$APP_PACKAGE/com.fahadali.oneos.ui.MainActivity\"", "am start -n com.android.settings/.Settings")
         bad("trap '' PIPE", "trap '' INT")
         bad("upsrc=\"\$DATA/user/0/\$APP_PACKAGE/files/oneos-update/OneOS.apk\"", "upsrc=\"\$DATA/user/0/com.android.chrome/x.apk\"")
         bad("    upd=\"\$STAGE/update\"\n", "    upd=\"\$STAGE/update\"\n    x=\"\$DATA/user/0\"\n")
@@ -65,7 +65,7 @@ class StageAuditTest {
         assertTrue(names.containsAll(listOf("head", "sha256sum", "mv", "chown", "awk", "do_begin", "refuse", "\"\$BB\"")))
         assertTrue(scan.functions.containsAll(listOf("do_begin", "do_launch", "to_attic", "check_table", "profile_info", "profile_set", "set_image", "pair_set")))
         // Commands inside case branches and $(...) are found.
-        assertTrue(scan.commands.any { it.name == "echo" && it.args.firstOrNull()?.contains("SM-S948") == true })
+        assertTrue(scan.commands.any { it.name == "echo" && it.args.firstOrNull()?.contains("SM-A536") == true })
         assertTrue(scan.commands.any { it.name == "stat" && it.args.contains("'%d:%i:%s:%Y'") })
     }
 
@@ -215,14 +215,13 @@ class StageAuditTest {
         assertEquals(RootScript.SCRIPTS, shVar("SCRIPTS").split(' '))
         assertEquals(SessionEnv.ALLOWED.keys.toList(), shVar("ENV_KEYS").split(' '))
         // 0.4.66: SDK per image: IMAGE_SDK (37) for all but IMAGES_SDK36, and each SDK's installd tables.
-        assertEquals("37", shVar("IMAGE_SDK"))
+        assertEquals("36", shVar("IMAGE_SDK"))
         assertTrue(Images.ALL.all { it.sdk == 36 || it.sdk == 37 })
         assertEquals(Images.ALL.filter { it.sdk == 36 }.map { it.id }, shVar("IMAGES_SDK36").split(' ').filter { it.isNotEmpty() })
         assertEquals(InstalldExpected.carried(36), shVar("INSTALLD_SHA_36"))
         assertEquals(InstalldExpected.accepted(36), shVar("INSTALLD_OK_36").split(' ').toSet())
         assertEquals(InstalldExpected.accepted(37), setOf(shVar("INSTALLD_SHA")))
-        // Enabled profiles only, each with its ids and form (SM- model numbers, and docomo's SC- ones;
-        // 0.4.17: the Z Flip7's flip, which root runs with the phone settings; 0.4.74: au's SCG ones).
+        // Enabled profiles only, each with its ids and form.
         val rows = Regex("""^\s+([a-z0-9-]+)\) echo "(S[MC]-\S+|SCG\S+) (\S+) (\S+) (fold|bar|flip)" ;;$""", RegexOption.MULTILINE)
             .findAll(script).associate { it.groupValues[1] to it.groupValues.drop(2) }
         val enabled = Profiles.BUILT_IN.filter { it.enabled }
@@ -238,14 +237,11 @@ class StageAuditTest {
         for (img in Images.ALL) {
             assertTrue(img.id, script.contains("${img.id}) echo \"${img.rawBytes} ${img.rawSha256}\" ;;"))
         }
-        // The system each image is a build of (keep never crosses systems): exactly the model's families,
-        // and the retired images' (0.4.51: the CN Find X9 Ultra build), so their stages are still known.
         val families = Regex("""^\s+([a-z0-9|-]+)\) echo ([a-z]+) ;;$""", RegexOption.MULTILINE)
             .findAll(function("image_family")).flatMap { m -> m.groupValues[1].split('|').map { it to m.groupValues[2] } }.toMap()
-        assertEquals(listOf("coloros17-findx9u", "coloros17-findx9u-in"), Images.RETIRED.map { it.id })
-        assertEquals(Images.ALL.associate { it.id to it.family.name.lowercase() } + ("coloros17-findx9u" to "coloros") + ("coloros17-findx9u-in" to "coloros"), families)
-        // data_family reads the same words as status.list, in the same order as StageStatus (Infinity-X first,
-        // 0.4.27: its data has OPPO's packages too; then ColorOS, then Pixel, then HyperOS).
+        assertTrue(Images.RETIRED.isEmpty())
+        assertEquals(Images.ALL.associate { it.id to it.family.name.lowercase() }, families)
+        // data_family reads the same words as status.list, in the same order as StageStatus.
         val data = function("data_family")
         assertTrue(data.indexOf(StageStatus.INFINITYX_WORD) in 0 until data.indexOf("com.oplus."))
         assertTrue(data.indexOf("com.oplus.") in 0 until data.indexOf(StageStatus.PIXEL_WORD))
@@ -253,25 +249,12 @@ class StageAuditTest {
         assertTrue(data.contains("com.coloros."))
         val status = File(Shipped.fullAssets, "root/status.list").readText()
         assertTrue(status.contains("for w in com.oplus. com.coloros. org.lineageos. ${StageStatus.PIXEL_WORD} ${StageStatus.INFINITYX_WORD} ${StageStatus.HYPEROS_WORD} ${StageStatus.OXYGENOS_WORD} ${StageStatus.ORIGINOS_WORD}; do"))
-        // 0.4.67: OxygenOS's word right after Infinity-X's and before ColorOS's (its data has com.oplus. too).
         assertTrue(data.indexOf(StageStatus.INFINITYX_WORD) < data.indexOf(StageStatus.OXYGENOS_WORD))
         assertTrue(data.indexOf(StageStatus.OXYGENOS_WORD) in 0 until data.indexOf("com.oplus."))
-        // 0.4.73: vivo's launcher (OriginOS 7) before ColorOS's words too.
         assertTrue(data.indexOf(StageStatus.ORIGINOS_WORD) in 0 until data.indexOf("com.oplus."))
-        // Google services: the images whose services a session may hide (0.3.7: none; the Pixel image's sessions present them).
         assertEquals(Images.ALL.filter { it.gmsHideable }.map { it.id }, shVar("IMAGES_GMS").split(' ').filter { it.isNotEmpty() })
-        // The sets' files (SET_COMMON for the ColorOS sets, SET_PIXEL for the Pixel set) and the image each was built from.
-        val common = shVar("SET_COMMON").split(' ')
-        // 0.4.51: no set is SET_COMMON alone any more (the debloated Find X9 Ultra set retired); the IN set is
-        // SET_COMMON and its own files.
-        assertTrue(PackageSets.X9U_IN_1105_SULTRA.names.containsAll(common))
-        assertEquals(
-            setOf("oplus-framework_patched.jar", "cellbroadcast_payload.img", "framework_patched.jar", "telephony-common_patched.jar", "libcamera_client_patched.so", "samcam.tar", PackageSets.THEME_STORE_APK, PackageSets.ODM_AI, "ColorPanoramicSystemUI.apk"), // 0.4.97: + wallpaper AOD SystemUI
-            PackageSets.X9U_IN_1105_SULTRA.names.toSet() - common.toSet(),
-        )
-        // 0.4.59: the bar Pixel sets add double tap to sleep (their own SystemUI and launcher) to SET_PIXEL.
-        assertEquals(PackageSets.PIXEL_SULTRA.names.toSet() - setOf("OneOSPixelSystemUI.apk", "OneOSPixelLauncher.apk"),
-            shVar("SET_PIXEL").split(' ').toSet())
+        assertEquals(PackageSets.LINEAGE23.names.toSet(), shVar("SET_LINEAGE23").split(' ').toSet())
+        assertEquals(PackageSets.INFINITYX35.names.toSet(), shVar("SET_INFINITYX35").split(' ').toSet())
         val setFiles = Regex("""^\s+([a-z0-9-]+)\) echo "\${'$'}(SET_[A-Z0-9_]+)([^"]*)" ;;$""", RegexOption.MULTILINE)
             .findAll(script).associate { it.groupValues[1] to (shVar(it.groupValues[2]).split(' ') + it.groupValues[3].split(' ').filter { n -> n.isNotEmpty() }) }
         assertEquals(PackageSets.ALL.map { it.id }.toSet(), setFiles.keys)

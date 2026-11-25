@@ -38,14 +38,12 @@ object CompatEvaluator {
     const val ID_OUT_OF_SCOPE = "model-out-of-scope"
 
     /**
-     * The owner's scope: a Z Fold, Z Flip or S Ultra by model number, or a
-     * phone that matches an explicit profile (all three ids, [Profiles]), such
-     * as the Galaxy S25. Any other S-series model stays out of scope.
+     * DualOS is exclusive to the Galaxy A53 5G (SM-A536 / a53x / s5e8825) or any explicitly provided profile.
      */
-    fun inScope(family: ModelFamily, profile: PhoneProfile?): Boolean = family.inScope || profile != null
+    fun inScope(family: ModelFamily, profile: PhoneProfile?): Boolean = profile != null
 
     /**
-     * [app] is the app that asks for root ("OneOS", or "OneOS Probe" in the
+     * [app] is the app that asks for root ("DualOS", or "DualOS Probe" in the
      * probe edition): the root findings tell the user which app to allow.
      */
     fun evaluate(
@@ -53,28 +51,27 @@ object CompatEvaluator {
         profiles: List<PhoneProfile> = Profiles.BUILT_IN,
         images: List<ImageRef> = Images.ALL,
         sets: List<PackageSet> = PackageSets.ALL,
-        app: String = "OneOS",
+        app: String = "DualOS",
     ): CompatReport {
         val out = mutableListOf<Finding>()
         val family = f.family
         val profile = Profiles.resolve(f, profiles).profile
         // The profile's usual image for the CPU rule and free space: its first choice made for this
-        // phone's Android version (0.4.85: a One UI 8.5 phone was measured against an Android 17 image
-        // it cannot run), else its first; Prepare and Switch use the image actually picked or staged.
+        // phone's Android version, else its first; Prepare and Switch use the image actually picked or staged.
         val offered = profile?.choices.orEmpty().mapNotNull { c -> Images.byId(c.imageId, images)?.let { c to it } }
         val choice = offered.firstOrNull { it.second.sdk == f.sdk }?.first ?: profile?.choices?.firstOrNull()
         val image = choice?.let { Images.byId(it.imageId, images) }
         val set = choice?.let { PackageSets.byId(it.packageSetId, sets) }
 
-        // Brand, ABI, model scope (G11 and the owner's target list).
+        // Brand, ABI, model scope.
         if (!f.isSamsung) {
             out += Finding(
                 "not-samsung", Level.BLOCK, "Not a Samsung phone",
-                "OneOS runs next to One UI, so it needs a Samsung phone " +
+                "DualOS runs next to One UI, so it needs a Samsung phone " +
                     "(brand '${f.brand}', maker '${f.manufacturer}').",
             )
         }
-        // 0.4.74: custom ROMs (ports of One UI, ROMs without One UI) are refused outright.
+        // Custom ROMs (ports of One UI, ROMs without One UI) are refused outright.
         f.customRom?.let { out += it }
         if ("arm64-v8a" !in f.abis64) {
             out += Finding(
@@ -84,12 +81,10 @@ object CompatEvaluator {
             )
         }
         if (f.isSamsung && !inScope(family, profile)) {
-            val extra = profiles.filter { !ModelFamily.of(it.modelPrefix).inScope }
             out += Finding(
                 ID_OUT_OF_SCOPE, Level.BLOCK, "Not a supported model",
-                "OneOS supports Samsung flagships only: Galaxy Z Fold, Z Flip and S Ultra" +
-                    extra.joinToString("") { ", and the ${it.label} (${it.ids})" } +
-                    ". ${f.model} (${f.device.ifEmpty { "?" }}, ${f.soc.model.ifEmpty { "?" }}) is not one of them.",
+                "DualOS supports the Galaxy A53 5G (SM-A536, a53x, s5e8825) only. " +
+                    "${f.model} (${f.device.ifEmpty { "?" }}, ${f.soc.model.ifEmpty { "?" }}) is not supported.",
             )
         }
 
@@ -110,11 +105,11 @@ object CompatEvaluator {
                     "but no session has run on one yet. You can continue after reading the warnings.",
             )
             f.isSamsung && family.inScope -> out += Finding(
-                ID_NO_PROFILE, Level.WARN, "No OneOS package for this model yet",
+                ID_NO_PROFILE, Level.WARN, "No DualOS package for this model yet",
                 "${testedScope(profiles, images)} This build switches only on " +
                     profiles.filter { it.enabled }.joinToString(", ") { it.label } +
                     ". A ${family.label} (${f.model}, ${f.device.ifEmpty { "?" }}, ${f.soc.model.ifEmpty { "?" }}) " +
-                    "needs its own profile; the tests and findings help make one.",
+                    "needs its own profile.",
             )
         }
         if (profile != null && f.form.form != profile.form) {
@@ -129,22 +124,25 @@ object CompatEvaluator {
         when (f.soc.vendor) {
             SocVendor.QUALCOMM -> out += Finding(
                 "soc-snapdragon", Level.OK, "Snapdragon",
-                "${f.soc.display}: the display path OneOS knows.",
+                "${f.soc.display}: the display path DualOS knows.",
             )
-            // 0.4.17: an Exynos phone with its own profile (Galaxy S26+ Exynos, Z
-            // Flip7, from 0.4.29 the A57) is a first run, not a block; any other stays blocked.
-            SocVendor.EXYNOS -> out += if (profile != null) Finding(
-                "soc-exynos", Level.WARN, "Exynos: first runs",
-                "${f.soc.display}. Exynos phones have had only a few test sessions so far; the ${profile.label} profile " +
-                    "is for its first sessions.",
-            ) else Finding(
-                "soc-exynos", Level.BLOCK, "Exynos is not supported yet",
-                "${f.soc.display}. Only the Snapdragon display path is known; Exynos stays " +
-                    "blocked until an Exynos profile exists.",
-            )
+            SocVendor.EXYNOS -> out += when {
+                profile != null && profile.testedWithAnyImage -> Finding(
+                    "soc-exynos", Level.OK, "Exynos",
+                    "${f.soc.display}: supported on the ${profile.label}.",
+                )
+                profile != null -> Finding(
+                    "soc-exynos", Level.WARN, "Exynos: first runs",
+                    "${f.soc.display}. The ${profile.label} profile is ready for its first sessions.",
+                )
+                else -> Finding(
+                    "soc-exynos", Level.BLOCK, "Exynos is not supported",
+                    "${f.soc.display}. Only profiled Exynos devices (Galaxy A53 5G) are supported.",
+                )
+            }
             SocVendor.MEDIATEK, SocVendor.UNKNOWN -> out += Finding(
                 "soc-unknown", Level.WARN, "Chip not recognised",
-                "${f.soc.display}. Only Snapdragon has been tested.",
+                "${f.soc.display}. Only Galaxy A53 5G (Exynos 1280) is supported.",
             )
         }
 
@@ -154,7 +152,7 @@ object CompatEvaluator {
             out += Finding(
                 "form-prefix-mismatch", Level.WARN, "Form factor unclear",
                 "The hardware says $hw, the model number ${f.model} says " +
-                    "${f.form.prefixForm?.label}. OneOS goes by the hardware: ${f.form.form.label}.",
+                    "${f.form.prefixForm?.label}. DualOS goes by the hardware: ${f.form.form.label}.",
             )
         }
 
@@ -164,11 +162,11 @@ object CompatEvaluator {
             if (f.isSamsung) {
                 out += Finding(
                     "oneui-missing", Level.WARN, "One UI version not found",
-                    "ro.build.version.oneui is '${f.oneUiRaw}'. OneOS has only run next to One UI.",
+                    "ro.build.version.oneui is '${f.oneUiRaw}'. DualOS has only run next to One UI.",
                 )
             }
         } else if (oneUi.raw !in Profiles.ONE_UI_SEEN &&
-            // One UI 8.0 and 8.5 are known where the phone has an Android 16 system (0.4.85).
+            // One UI 8.0 and 8.5 are known where the phone has an Android 16 system.
             !(oneUi.raw in Profiles.ONE_UI_SEEN_A16 && offered.any { it.second.sdk == f.sdk })
         ) {
             val seen = Profiles.ONE_UI_SEEN.sorted().mapNotNull { OneUiVersion.parse(it.toString()) }
@@ -178,10 +176,7 @@ object CompatEvaluator {
             )
         }
 
-        // Android version vs the OneOS images (a guest must match the host SDK).
-        // WARN here; switching refuses a different version (BLOCK at switch time).
-        // With a profile, its own systems count (0.4.85: every image of the build counted, so a
-        // Galaxy A56 on One UI 8.5 read "Packages for Android SDK 36" with no system it can use).
+        // Android version vs the DualOS images (a guest must match the host SDK).
         val candidates = offered.map { it.second }.ifEmpty { images }
         val matching = candidates.filter { it.sdk == f.sdk }
         if (matching.isEmpty()) {
@@ -199,8 +194,8 @@ object CompatEvaluator {
             } else {
                 Finding(
                     ID_ANDROID_DIFFERS, Level.WARN,
-                    "Android version differs from the OneOS images ($releases); switching may not work",
-                    have + "the OneOS images are Android $releases (SDK ${sdks.joinToString()}). " + shared +
+                    "Android version differs from the DualOS images ($releases); switching may not work",
+                    have + "the DualOS images are Android $releases (SDK ${sdks.joinToString()}). " + shared +
                         "Switching will refuse this phone until there is an image for its Android version.",
                 )
             }

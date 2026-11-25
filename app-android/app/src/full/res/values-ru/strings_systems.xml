@@ -5,7 +5,7 @@
     <string name="systems_subtitle_unknown">One UI остаётся как есть.</string>
     <string name="systems_reading">Чтение данных телефона…</string>
     <string name="systems_none_title">Для этого телефона пока нет системы</string>
-    <string name="systems_none_line">В этой версии OneOS для этого телефона ничего нет. Причина показана в «Сведения о телефоне» (Настройки › Для команды OneOS).</string>
+    <string name="systems_none_line">В этой версии DualOS для этого телефона ничего нет. Причина показана в «Сведения о телефоне» (Настройки › Для команды DualOS).</string>
     <string name="systems_chip_android">Android %1$s</string>
     <string name="systems_chip_tested">Проверено на этом телефоне</string>
     <string name="systems_chip_untested">Ещё не проверено на этом телефоне</string>
@@ -60,7 +60,7 @@
     <string name="setup_state_pending">ещё не начато</string>
     <string name="setup_state_stopped">остановлено</string>
     <string name="setup_state_failed">не завершилось</string>
-    <string name="setup_keep_open">Не закрывайте OneOS и держите телефон на зарядке.</string>
+    <string name="setup_keep_open">Не закрывайте DualOS и держите телефон на зарядке.</string>
     <string name="setup_stop">Остановить</string>
     <string name="setup_stopping">Остановка…</string>
     <string name="setup_done_title">%1$s готова</string>
@@ -78,7 +78,7 @@
     <string name="setup_idle_title">Ничего не настраивается</string>
     <string name="setup_idle_subtitle">Выберите систему на главном экране, чтобы настроить её.</string>
     <string name="setup_details">Подробнее</string>
-    <string name="setup_details_summary">Каждый шаг, для команды OneOS</string>
+    <string name="setup_details_summary">Каждый шаг, для команды DualOS</string>
     <string name="setup_details_result">Что она сообщила</string>
     <string name="setup_details_moved">Сохранено как старые копии</string>
     <string name="setup_expanded">Развёрнуто</string>

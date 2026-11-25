@@ -1,134 +1,312 @@
 package com.fahadali.oneos.guest
 
+import android.content.Intent
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowInsets
-import android.widget.Button
-import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.widget.NestedScrollView
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import com.fahadali.oneos.shared.DualOsIcons
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.core.model.GuestModuleBundle
-import com.fahadali.oneos.shared.ModuleCards
-import com.fahadali.oneos.shared.NativeCards
-import dev.oneuiproject.oneui.layout.ToolbarLayout
-import dev.oneuiproject.oneui.utils.applyEdgeToEdge
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveLoadingBox
+import com.fahadali.oneos.shared.ExpressiveModuleCard
+import com.fahadali.oneos.shared.ModuleUpdates
+import com.fahadali.oneos.shared.StatusTone
 import java.io.File
 
-/** Same module cards/import layout as pre-boot; changes are staged for the next guest boot. */
-class GuestModulesActivity : AppCompatActivity() {
-    private var state = GuestRuntime.State()
-    private var busy = false
+/** Guest module manager inside the guest (Compose + Material 3 Expressive). */
+class GuestModulesActivity : ComponentActivity() {
+    private var state by mutableStateOf(GuestRuntime.State())
+    private var busy by mutableStateOf(false)
+    private var showImportConfirm by mutableStateOf(false)
+    private var showRestartConfirm by mutableStateOf(false)
+    private var uninstallModule by mutableStateOf<GuestRuntime.Module?>(null)
+    private var infoDialog by mutableStateOf<Pair<String, String>?>(null)
+
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && !busy) importModule { com.fahadali.oneos.shared.ModuleUpdates.copyDocument(this,uri) }
+        if (uri != null && !busy) importModule { ModuleUpdates.copyDocument(this, uri) }
     }
+
     private fun importModule(source: () -> File) {
-            busy = true; render()
-            GuestRuntime.work({
-                val zip = source()
-                val bundle = File.createTempFile("guest-module-", ".bundle", cacheDir)
-                try {
-                    val info = GuestModuleBundle.write(zip, bundle)
-                    GuestRuntime.control("import", info.id, bundle.absolutePath)
-                    GuestRuntime.read(applicationContext)
-                } finally { zip.delete(); bundle.delete() }
-            }) { next -> finishChange(next, "Module staged for the next guest boot") }
+        busy = true
+        GuestRuntime.work({
+            val zip = source()
+            val bundle = File.createTempFile("guest-module-", ".bundle", cacheDir)
+            try {
+                val info = GuestModuleBundle.write(zip, bundle)
+                GuestRuntime.control("import", info.id, bundle.absolutePath)
+                GuestRuntime.read(applicationContext)
+            } finally {
+                zip.delete()
+                bundle.delete()
+            }
+        }) { next -> finishChange(next, "Module staged for the next guest boot") }
     }
+
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState); applyEdgeToEdge(); setContentView(R.layout.activity_guest_modules)
-        val toolbar = findViewById<ToolbarLayout>(R.id.guest_modules_toolbar)
-        toolbar.setTitle("Manage guest modules"); toolbar.showNavigationButtonAsBack = true
-        toolbar.setNavigationButtonOnClickListener { onBackPressedDispatcher.onBackPressed() }
-        toolbar.setAdaptiveMarginProvider(dev.oneuiproject.oneui.widget.AdaptiveCoordinatorLayout.MARGIN_PROVIDER_ZERO)
-        toolbar.setEdgeInsetHorizontal(0f)
-        val footer = findViewById<View>(R.id.guest_modules_footer)
-        toolbar.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            v.setPadding(bars.left, bars.top, bars.right, 0)
-            (footer.layoutParams as ViewGroup.MarginLayoutParams).apply { bottomMargin = bars.bottom; footer.layoutParams = this }
-            insets
-        }
-        toolbar.findViewById<dev.oneuiproject.oneui.widget.RoundedFrameLayout>(dev.oneuiproject.oneui.design.R.id.tbl_main_content).apply { roundedCorners = 0; fillHorizontalPadding = false }
-        toolbar.findViewById<View>(dev.oneuiproject.oneui.design.R.id.tbl_bottom_corners).visibility = View.GONE
-        val scroll = findViewById<NestedScrollView>(R.id.guest_modules_scroll)
-        if (GuestName.read()?.contains("Infinity", true) != true) {
-            scroll.seslSetFadingEdgeEnabled(true); scroll.seslSetFadingEdgeColor(getColor(R.color.preboot_page))
-        }
-        footer.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
-            val n = (footer.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin
-            scroll.setPadding(0,0,0,footer.height+n+dp(24))
-        }
-        findViewById<Button>(R.id.guest_modules_import).setOnClickListener {
-            AlertDialog.Builder(this).setTitle("Import guest module")
-                .setMessage("The module will be staged for the next guest boot. It will not run during this session.")
-                .setNegativeButton(android.R.string.cancel,null).setPositiveButton("Choose ZIP") { _,_ ->
-                    picker.launch(arrayOf("application/zip","application/octet-stream","application/x-zip-compressed"))
-                }.show()
-        }
-        render()
-    }
-    override fun onResume() { super.onResume(); if (!busy) { busy=true; GuestRuntime.refresh(this) { next -> if (!isDestroyed) { state=next; busy=false; render() } } } }
-    private fun finishChange(next: GuestRuntime.State, message: String) {
-        if (isDestroyed) return
-        busy=false
-        if (next.error == null) { state=next; Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
-        else AlertDialog.Builder(this).setTitle("Guest modules").setMessage(next.error).setPositiveButton(android.R.string.ok,null).show()
-        render()
-    }
-    private fun render() {
-        val list=findViewById<LinearLayout>(R.id.guest_modules_list); list.removeAllViews()
-        if (state.modules.isEmpty()) {
-            NativeCards.row(NativeCards.section(list,null,getColor(R.color.preboot_card)),
-                if (busy) "Reading guest modules…" else if (state.error != null) "Guest runtime unavailable" else "No guest modules yet",
-                state.error ?: "Import a module ZIP to stage it for the next guest boot.")
-        } else for (module in state.modules) {
-            ModuleCards.add(list,module.name,module.description,
-                module.enabled,!busy && state.root,getColor(R.color.preboot_card),
-                version = module.version.ifBlank { module.versionCode.takeIf { it > 0 }?.toString().orEmpty() }, author = module.author,
-                status = if(module.removing) "Uninstall pending · Next guest restart" else if(module.pending) "Staged for next guest restart" else null,
-                toggleEnabled = !module.removing && (!module.framework || module.id == state.selected),
-                options = moduleOptions(module)) { enabled ->
-                busy=true; render()
-                GuestRuntime.work({ GuestRuntime.control("toggle",module.id,if(enabled) "on" else "off"); GuestRuntime.read(applicationContext) }) {
-                    finishChange(it,"Change saved for the next guest boot")
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+            DualOsTheme {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    topBar = {
+                        TopAppBar(
+                            title = { Text("Manage guest modules", fontWeight = FontWeight.SemiBold) },
+                            navigationIcon = {
+                                IconButton(onClick = { onBackPressedDispatcher.onBackPressed() }) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                        )
+                    },
+                    bottomBar = {
+                        Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp) {
+                            Button(
+                                onClick = { showImportConfirm = true },
+                                enabled = state.root && !busy,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
+                                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                                    .height(54.dp),
+                                shape = RoundedCornerShape(27.dp),
+                            ) {
+                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Import module ZIP", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    },
+                ) { padding ->
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (state.modules.isEmpty()) {
+                            item {
+                                if (busy) {
+                                    ExpressiveLoadingBox(label = "Reading guest modules…")
+                                } else {
+                                    ExpressiveGroupedCard {
+                                        ExpressiveListItem(
+                                            title = if (state.error != null) "Guest runtime unavailable" else "No guest modules yet",
+                                            subtitle = state.error ?: "Import a module ZIP to stage it for the next guest boot.",
+                                            icon = DualOsIcons.Extension,
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            items(state.modules, key = { it.id }) { module ->
+                                ExpressiveModuleCard(
+                                    name = module.name,
+                                    description = module.description,
+                                    checked = module.enabled,
+                                    enabled = !busy && state.root,
+                                    version = module.version.ifBlank { module.versionCode.takeIf { it > 0 }?.toString().orEmpty() },
+                                    author = module.author,
+                                    status = when {
+                                        module.removing -> "Uninstall pending · Next guest restart"
+                                        module.pending -> "Staged for next guest restart"
+                                        else -> null
+                                    },
+                                    toggleEnabled = !module.removing && (!module.framework || module.id == state.selected),
+                                    options = moduleOptions(module),
+                                    onToggle = { enabled ->
+                                        busy = true
+                                        GuestRuntime.work({
+                                            GuestRuntime.control("toggle", module.id, if (enabled) "on" else "off")
+                                            GuestRuntime.read(applicationContext)
+                                        }) { finishChange(it, "Change saved for the next guest boot") }
+                                    },
+                                )
+                            }
+                        }
+                        if (state.root) {
+                            item {
+                                ExpressiveGroupedCard {
+                                    ExpressiveListItem(
+                                        title = "Restart guest",
+                                        subtitle = "Apply pending module changes without returning to One UI",
+                                        icon = DualOsIcons.RestartAlt,
+                                        iconTone = StatusTone.WARN,
+                                        enabled = !busy,
+                                        showChevron = true,
+                                        onClick = { showRestartConfirm = true },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (showImportConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showImportConfirm = false },
+                        title = { Text("Import guest module") },
+                        text = { Text("The module will be staged for the next guest boot. It will not run during this session.") },
+                        confirmButton = {
+                            Button(onClick = {
+                                showImportConfirm = false
+                                picker.launch(arrayOf("application/zip", "application/octet-stream", "application/x-zip-compressed"))
+                            }) { Text("Choose ZIP") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showImportConfirm = false }) { Text(stringResource(android.R.string.cancel)) }
+                        },
+                    )
+                }
+
+                if (showRestartConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showRestartConfirm = false },
+                        title = { Text("Restart this guest?") },
+                        text = { Text("Guest apps will close and pending module changes will apply. One UI stays stopped while the guest restarts. If recovery fails, DualOS will return to One UI.") },
+                        confirmButton = {
+                            Button(onClick = {
+                                showRestartConfirm = false
+                                GuestRestart.launch(this)
+                            }) { Text("Restart guest") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showRestartConfirm = false }) { Text(stringResource(android.R.string.cancel)) }
+                        },
+                    )
+                }
+
+                uninstallModule?.let { module ->
+                    AlertDialog(
+                        onDismissRequest = { uninstallModule = null },
+                        title = { Text(if (module.removing) "Cancel uninstall?" else "Uninstall ${module.name}?") },
+                        text = { Text("This change applies at the next guest restart. The active session keeps its current module files.") },
+                        confirmButton = {
+                            Button(onClick = {
+                                uninstallModule = null
+                                busy = true
+                                GuestRuntime.work({
+                                    GuestRuntime.control(if (module.removing) "restore" else "remove", module.id)
+                                    GuestRuntime.read(applicationContext)
+                                }) { finishChange(it, "Change saved for the next guest restart") }
+                            }) { Text(stringResource(android.R.string.ok)) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { uninstallModule = null }) { Text(stringResource(android.R.string.cancel)) }
+                        },
+                    )
+                }
+
+                infoDialog?.let { (title, msg) ->
+                    AlertDialog(
+                        onDismissRequest = { infoDialog = null },
+                        title = { Text(title) },
+                        text = { Text(msg) },
+                        confirmButton = {
+                            Button(onClick = { infoDialog = null }) { Text(stringResource(android.R.string.ok)) }
+                        },
+                    )
                 }
             }
         }
-        if(state.root) NativeCards.row(NativeCards.section(list,null,getColor(R.color.preboot_card)),"Restart guest","Apply pending module changes without returning to One UI") { GuestRestart.confirm(this) }.isEnabled=!busy
-        findViewById<Button>(R.id.guest_modules_import).isEnabled=state.root && !busy
     }
-    private fun moduleOptions(module: GuestRuntime.Module): List<Pair<String, () -> Unit>> = buildList {
-        if ("webui" in module.capabilities && !module.pending && !module.removing) add("Open WebUI" to {
-            startActivity(android.content.Intent(this@GuestModulesActivity,ModuleWebActivity::class.java).putExtra("module",module.id))
-        })
-        if ("action" in module.capabilities && !module.pending && !module.removing) add("Run action" to {
-            busy=true; render()
-            GuestRuntime.work({
-                val result=GuestRuntime.control("action",module.id)
-                runOnUiThread { if(!isDestroyed) AlertDialog.Builder(this@GuestModulesActivity).setTitle(module.name)
-                    .setMessage(result.takeLast(32768).ifBlank { "Action completed" }).setPositiveButton(android.R.string.ok,null).show() }
-                GuestRuntime.read(applicationContext)
-            }) { finishChange(it,"Action finished") }
-        })
-        if (module.updateUrl.isNotBlank() && !module.pending && !module.removing) add("Check for updates" to {
-            busy=true; render()
-            com.fahadali.oneos.shared.ModuleUpdates.check(this@GuestModulesActivity,module.name,module.id,module.versionCode,module.updateUrl) { zip ->
-                busy=false; render(); if(zip != null) importModule { zip }
+
+    override fun onResume() {
+        super.onResume()
+        if (!busy) {
+            busy = true
+            GuestRuntime.refresh(this) { next ->
+                if (!isDestroyed) {
+                    state = next
+                    busy = false
+                }
             }
-        })
-        add((if(module.removing) "Cancel uninstall" else "Uninstall ${module.name}") to {
-            AlertDialog.Builder(this@GuestModulesActivity).setTitle(if(module.removing) "Cancel uninstall?" else "Uninstall ${module.name}?")
-                .setMessage("This change applies at the next guest restart. The active session keeps its current module files.")
-                .setNegativeButton(android.R.string.cancel,null).setPositiveButton(android.R.string.ok) { _,_ ->
-                    busy=true; render()
-                    GuestRuntime.work({ GuestRuntime.control(if(module.removing) "restore" else "remove",module.id); GuestRuntime.read(applicationContext) }) {
-                        finishChange(it,"Change saved for the next guest restart")
+        }
+    }
+
+    private fun finishChange(next: GuestRuntime.State, message: String) {
+        if (isDestroyed) return
+        busy = false
+        if (next.error == null) {
+            state = next
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        } else {
+            infoDialog = "Guest modules" to next.error
+        }
+    }
+
+    private fun moduleOptions(module: GuestRuntime.Module): List<Pair<String, () -> Unit>> = buildList {
+        if ("webui" in module.capabilities && !module.pending && !module.removing) {
+            add("Open WebUI" to {
+                startActivity(Intent(this@GuestModulesActivity, ModuleWebActivity::class.java).putExtra("module", module.id))
+            })
+        }
+        if ("action" in module.capabilities && !module.pending && !module.removing) {
+            add("Run action" to {
+                busy = true
+                GuestRuntime.work({
+                    val result = GuestRuntime.control("action", module.id)
+                    runOnUiThread {
+                        if (!isDestroyed) infoDialog = module.name to result.takeLast(32768).ifBlank { "Action completed" }
                     }
-                }.show()
+                    GuestRuntime.read(applicationContext)
+                }) { finishChange(it, "Action finished") }
+            })
+        }
+        if (module.updateUrl.isNotBlank() && !module.pending && !module.removing) {
+            add("Check for updates" to {
+                busy = true
+                ModuleUpdates.check(this@GuestModulesActivity, module.name, module.id, module.versionCode, module.updateUrl) { zip ->
+                    busy = false
+                    if (zip != null) importModule { zip }
+                }
+            })
+        }
+        add((if (module.removing) "Cancel uninstall" else "Uninstall ${module.name}") to {
+            uninstallModule = module
         })
     }
-    private fun dp(n:Int)=(n*resources.displayMetrics.density+.5f).toInt()
 }

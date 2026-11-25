@@ -26,5 +26,10 @@ for d in $DIRS; do
     echo "replaced $DEX"
 done
 python3 "$ROOT/scripts/check-dex.py" "$W/out.jar" >&2 || true
+ZIPALIGN=$(command -v zipalign 2>/dev/null || ls "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/zipalign /opt/android-sdk/build-tools/*/zipalign 2>/dev/null | sort -V | tail -n 1)
+if [ -n "$ZIPALIGN" ] && [ -x "$ZIPALIGN" ]; then
+    "$ZIPALIGN" -f 4 "$W/out.jar" "$W/aligned.jar"
+    mv "$W/aligned.jar" "$W/out.jar"
+fi
 mv "$W/out.jar" "$OUT"
 echo "built $OUT"

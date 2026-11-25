@@ -33,8 +33,8 @@ data class AppUpdate(
     fun changes(imageId: String): Boolean = "*" in systems || imageId in systems
 
     companion object {
-        const val URL = "https://github.com/fahadalijaved/OneOS/releases/latest/download/update.json"
-        const val APK_PREFIX = "https://github.com/fahadalijaved/OneOS/releases/download/"
+        const val URL = "https://github.com/Polaricito/DualOS/releases/latest/download/update.json"
+        const val APK_PREFIX = "https://github.com/Polaricito/DualOS/releases/download/"
 
         /**
          * The team's test channel (Debug settings): an update.json in the owner's own Drive, outside
@@ -59,7 +59,7 @@ data class AppUpdate(
 
         private val NAME = Regex("^[0-9]{1,3}(\\.[0-9]{1,3}){1,3}$")
         private val HEX64 = Regex("^[0-9a-f]{64}$")
-        private val APK_PATH = Regex("^v[0-9.]{3,15}/OneOS-[0-9.]{3,15}\\.apk$")
+        private val APK_PATH = Regex("^v[0-9.]{3,15}/DualOS-[0-9.]{3,15}\\.apk$")
 
         /**
          * The update [text] names, or why it is not one (a flat JSON object, these five keys).
@@ -87,7 +87,7 @@ data class AppUpdate(
             if (code !in 1..Int.MAX_VALUE.toLong()) error("versionCode $code")
             if (!NAME.matches(name)) error("versionName '$name'")
             val release = apk.startsWith(APK_PREFIX) && APK_PATH.matches(apk.removePrefix(APK_PREFIX))
-            if (!release && !(test && DRIVE_APK.matches(apk))) error("the APK is not a OneOS release file: $apk")
+            if (!release && !(test && DRIVE_APK.matches(apk))) error("the APK is not a DualOS release file: $apk")
             if (bytes !in 1..MAX_BYTES) error("APK size $bytes")
             if (!HEX64.matches(sha)) error("sha256 '$sha'")
             val notes = optStr("notes")?.trim()?.takeIf { it.isNotEmpty() }

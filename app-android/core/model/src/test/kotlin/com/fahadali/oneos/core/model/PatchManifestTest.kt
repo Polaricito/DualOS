@@ -4,27 +4,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PatchManifestTest {
-    private val trusted = setOf("fahadalijaved/OneOS-files", "thatjoshguy67/OneOS-files")
-    private val set = PackageSets.N6_GLOBAL_F8
-    private val image = Images.FIND_N6
+    private val trusted = setOf("Polaricito/DualOS", "thatjoshguy67/OneOS-files")
+    private val set = PackageSets.LINEAGE23
+    private val image = Images.LINEAGE23
     /** The app's own list: every file "a..." except the ones a test changes. */
     private val base = set.names.associateWith { "a".repeat(64) }
     private val valid = PatchManifest(1, set.id, image.rawSha256, "test-1", set.names.map {
-        PatchManifest.File(it, "a".repeat(64), 1024, "gh:thatjoshguy67/OneOS-files:fold8-experimental")
+        PatchManifest.File(it, "a".repeat(64), 1024, "gh:Polaricito/DualOS:sets-1")
     })
     private fun PatchManifest.ok() = check(set, image, trusted, base = base).isEmpty()
     private fun replaced(name: String) = valid.copy(files = valid.files.map { if (it.name == name) it.copy(sha256 = "c".repeat(64)) else it })
 
-    @Test fun acceptsSupportedImagesAndBothTrustedRepositories() {
+    @Test fun acceptsSupportedImagesAndTrustedRepository() {
         assertTrue(valid.ok())
-        assertTrue(valid.copy(files = valid.files.map { it.copy(source = "gh:fahadalijaved/OneOS-files:sets-1") }).ok())
     }
-    @Test fun replacesOnlyTheSystemUiAndTheAddonArchive() {
-        assertTrue(replaced("Fold8SystemUI.apk").ok())
-        assertTrue(replaced("GlobalVerifiedAddons.tar").ok())
-        // Pull request #37 review: the guards and everything they pin, payload images and system dex stay the app's.
-        for (name in listOf("guards.txt", "services_patched.jar", "oplus-services_patched.jar", "vold_patched",
-                "surfaceflinger_patched", "framework_patched.jar", "art_payload.img", "Fold8AngleRelay.dex", "samcam.tar", "OneOSGuest.apk")) {
+    @Test fun protectsGuardsPayloadsAndGuestApp() {
+        for (name in listOf("guards.txt", "services_patched.jar", "vold_patched", "service.incremental_patched.so",
+                "telephony-common_patched.jar", "framework_patched.jar", "art_payload.img", "samcam_a.tar", "OneOSGuest.apk")) {
             if (name in set.names) assertTrue(name, !replaced(name).ok())
         }
         // A snapshot made for another app version (older payloads) is refused, not staged.
@@ -33,7 +29,7 @@ class PatchManifestTest {
     }
     @Test fun rejectsOtherImagesSetsAndUnknownSchemas() {
         assertTrue(!valid.copy(imageSha256 = "b".repeat(64)).ok())
-        assertTrue(!valid.copy(setId = "pixel-f8").ok())
+        assertTrue(!valid.copy(setId = "other-set").ok())
         assertTrue(!valid.copy(schema = 2).ok())
     }
     @Test fun rejectsScriptsMissingFilesAndDuplicates() {

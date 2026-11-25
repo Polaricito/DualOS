@@ -49,7 +49,7 @@ object ToolApps : BackgroundJob<ToolApps.State>(State(), "oneos-tool-apps") {
             val msg = when {
                 args[0] == "list" -> null
                 ok && args[0] == "off" -> "${args[1]} is off. Switch again whenever you like."
-                ok -> "${args[1]} is on again. OneOS will ask to turn it off before the next switch."
+                ok -> "${args[1]} is on again. DualOS will ask to turn it off before the next switch."
                 else -> "Nothing was changed: ${why ?: "no answer from root"}"
             }
             update(State(busy = false, message = msg, off = list.sorted()))

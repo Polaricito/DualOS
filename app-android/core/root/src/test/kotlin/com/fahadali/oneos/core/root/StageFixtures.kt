@@ -31,7 +31,7 @@ object StageFixtures {
         set: PackageSet,
         versionCode: Int = 4,
         rawVerified: Boolean = true,
-        guest: String = "packages com.oplus.",
+        guest: String = "packages org.lineageos.",
         extra: Map<String, String> = emptyMap(),
     ): Map<String, String> {
         val names = RootScript.SCRIPTS + set.names

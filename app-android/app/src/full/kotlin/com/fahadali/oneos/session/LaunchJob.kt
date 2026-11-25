@@ -247,6 +247,9 @@ object LaunchJob : BackgroundJob<LaunchJob.State>(State(), "oneos-launch") {
                 if (dryRun) "dry" else "session", BuildConfig.VERSION_CODE.toString(), sid, if (hideGms) "1" else "0",
                 if (SessionPrefs.heatCap(app)) "1" else "0", if (secIms) "1" else "0", if (edmStub) "1" else "0",
                 if (SessionPrefs.verboseBoot(app)) "1" else "0", if (SessionPrefs.fullLogs(app)) "1" else "0",
+                if (SessionPrefs.guestNfc(app)) "1" else "0",
+                SessionPrefs.guestSdCard(app).env,
+                if (SessionPrefs.guestBlur(app)) "1" else "0",
             ),
             silenceMs = 5 * 60_000L,
         )
@@ -264,7 +267,7 @@ object LaunchJob : BackgroundJob<LaunchJob.State>(State(), "oneos-launch") {
                 message = if (dryRun) {
                     "Test run started. One UI stops in a few seconds, $system is set up and checked, then the phone restarts into One UI."
                 } else {
-                    "Switching. The screen shows the OneOS logo, then $system starts. Hold Volume Up+Down for 3 seconds to return to One UI."
+                    "Switching. The screen shows the DualOS logo, then $system starts. Hold Volume Up+Down for 3 seconds to return to One UI."
                 },
             ),
         )

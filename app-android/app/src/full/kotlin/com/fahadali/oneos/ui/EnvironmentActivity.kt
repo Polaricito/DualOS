@@ -1,22 +1,42 @@
 package com.fahadali.oneos.ui
 
 import android.content.Intent
-import android.content.res.ColorStateList
-import android.graphics.Color
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowInsets
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
+import android.widget.Toast
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
-import androidx.core.widget.NestedScrollView
-import com.fahadali.oneos.session.GuestRuntimeStore
-import com.fahadali.oneos.session.PatchChannels
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.device.FactProbe
 import com.fahadali.oneos.core.model.DeviceFacts
@@ -25,209 +45,150 @@ import com.fahadali.oneos.core.model.GatePhase
 import com.fahadali.oneos.core.model.ImageRef
 import com.fahadali.oneos.core.model.Images
 import com.fahadali.oneos.core.model.Level
+import com.fahadali.oneos.core.model.PatchSource
 import com.fahadali.oneos.core.model.Plain
+import com.fahadali.oneos.core.model.PlainMessage
+import com.fahadali.oneos.core.model.Profiles
+import com.fahadali.oneos.core.model.RootKind
+import com.fahadali.oneos.core.model.SwitchGates
 import com.fahadali.oneos.core.model.Units
 import com.fahadali.oneos.core.root.RootProbe
+import com.fahadali.oneos.session.GuestRuntimeStore
 import com.fahadali.oneos.session.LaunchJob
+import com.fahadali.oneos.session.LogJob
+import com.fahadali.oneos.session.OldStagesJob
+import com.fahadali.oneos.session.PatchChannels
 import com.fahadali.oneos.session.PrepareJob
 import com.fahadali.oneos.session.Readiness
+import com.fahadali.oneos.session.RemoveJob
 import com.fahadali.oneos.session.StageCheck
-import dev.oneuiproject.oneui.widget.CardItemView
-import dev.oneuiproject.oneui.widget.RoundedLinearLayout
-import dev.oneuiproject.oneui.R as Icons
+import com.fahadali.oneos.session.ToolApps
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
+import com.fahadali.oneos.shared.ExpressiveSwitchItem
+import java.util.concurrent.Executors
 
-/** Read-only environment checks. Boot still goes through SwitchConfirm and LaunchJob's fresh gates. */
-class EnvironmentActivity : EdgeToEdgeActivity() {
+/** Read-only pre-boot environment checks. Boot always goes through SwitchConfirm and LaunchJob's fresh gates. */
+class EnvironmentActivity : AppCompatActivity() {
     private lateinit var image: ImageRef
     private var lastToolMessage: String? = null
     private var preview = false
-    private lateinit var actionTextColors: ColorStateList
-    private var facts: DeviceFacts? = null
+    private var facts: DeviceFacts? by mutableStateOf(null)
     private val subscriptions = mutableListOf<() -> Unit>()
-    private var patchBusy = false
-    private var rootBusy = false
-    private var rootState: GuestRuntimeStore.State? = null
-    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
-    // A check is good for Readiness.CHECK_AGE_MS: when it runs out on this screen, check again by itself.
-    private val recheck = Runnable { if (!isDestroyed && !preview) { Readiness.tick(this); render() } }
+    private var patchBusy by mutableStateOf(false)
+    private var rootBusy by mutableStateOf(false)
+    private var rootState: GuestRuntimeStore.State? by mutableStateOf(null)
+    private var tick by mutableIntStateOf(0)
+    private val io = Executors.newSingleThreadExecutor()
+    private val recheck = Runnable { if (!isDestroyed && !preview) { Readiness.tick(this); tick++ } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        ArtworkTransitions.prepare(this)
         val selected = intent.getStringExtra("image")?.let(Images::byId) ?: EnvironmentNavigation.image(this)
         if (selected == null) { catalogue(); return }
         image = selected
         preview = DebugPreview.enabled(this) && intent.getBooleanExtra("preview", false)
-        setContentView(R.layout.activity_environment)
-        actionTextColors = findViewById<Button>(R.id.environment_boot).textColors
-        val nativeToolbar = findViewById<dev.oneuiproject.oneui.layout.ToolbarLayout>(R.id.environment_toolbar_layout)
-        if (nativeToolbar != null) {
-            // Same fixed-height ToolbarLayout and native SESL floating bridge as Twidget.
-            applyEdgeToEdgeInsets(nativeToolbar, onNavigationBarInset = {})
-            findViewById<View>(R.id.environment_window).setOnApplyWindowInsetsListener { _, insets ->
-                val bottom = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()).bottom
-                findViewById<View>(R.id.environment_footer).updateBottomMarginForNavigationBar(0, bottom)
-                insets
-            }
-            nativeToolbar.setAdaptiveMarginProvider(dev.oneuiproject.oneui.widget.AdaptiveCoordinatorLayout.MARGIN_PROVIDER_ZERO)
-            nativeToolbar.setEdgeInsetHorizontal(0f)
-            nativeToolbar.findViewById<dev.oneuiproject.oneui.widget.RoundedFrameLayout>(dev.oneuiproject.oneui.design.R.id.tbl_main_content).apply {
-                roundedCorners = 0
-                fillHorizontalPadding = false
-            }
-            nativeToolbar.findViewById<View>(dev.oneuiproject.oneui.design.R.id.tbl_bottom_corners).visibility = View.GONE
-        } else findViewById<View>(R.id.environment_window).setOnApplyWindowInsetsListener { root, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            root.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        environmentToolbar().apply {
-            setNavigationIcon(Icons.drawable.ic_oui_back)
-            setNavigationContentDescription(androidx.appcompat.R.string.abc_action_bar_up_description)
-            setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
-            if (preview) subtitle = getString(R.string.environment_preview)
-        }
-        findViewById<NestedScrollView>(R.id.environment_scroll).apply {
-            isNestedScrollingEnabled = !resources.getBoolean(R.bool.home_two_pane)
-            seslSetFadingEdgeEnabled(true)
-            seslSetFadingEdgeColor(getColor(R.color.preboot_page))
-            seslSetFadingEdgeWindowBottomAlignment(nativeToolbar != null)
-            seslSetAllowTopFadingEdgeWithoutEdgeToEdge(true)
-        }
-        val scroll = findViewById<NestedScrollView>(R.id.environment_scroll)
-        findViewById<View>(R.id.environment_footer).addOnLayoutChangeListener { footer, _, _, _, _, _, _, _, _ ->
-            // The native fade belongs to the scrolling content behind the fixed action.
-            // Bottom padding lets the final row scroll fully clear of the button.
-            val navigation = if (nativeToolbar != null) (footer.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0 else 0
-            val clearance = footer.height + navigation + dp(16)
-            val fadeHeight = footer.height + navigation + dp(24)
-            // Keep the fixed action backed by the native fade even with short or
-            // temporarily incomplete checking content, not just when scrollable.
-            scroll.seslForceBottomFadingEdgeClamped(fadeHeight)
-            scroll.invalidate()
-            if (scroll.paddingBottom != clearance) {
-                scroll.setPadding(scroll.paddingLeft, scroll.paddingTop, scroll.paddingRight, clearance)
-                scroll.seslSetFadingEdgeEnabled(true, dp(24), fadeHeight)
+
+        setContent {
+            DualOsTheme {
+                Screen()
             }
         }
-        render()
-        ArtworkTransitions.bindTarget(this, findViewById(R.id.environment_artwork))
         if (!preview) io.execute {
             val collected = runCatching { FactProbe(applicationContext).collect(RootProbe(applicationContext).signals()) }.getOrNull()
-            runOnUiThread { if (!isDestroyed && !isFinishing) { facts = collected; render() } }
+            runOnUiThread { if (!isDestroyed && !isFinishing) { facts = collected; tick++ } }
         }
     }
 
     override fun onStart() {
         super.onStart()
         if (!::image.isInitialized || preview) return
-        subscriptions += StageCheck.observe { if (!it.busy) Readiness.tick(this); render() }
-        subscriptions += PrepareJob.observe { render() }
-        subscriptions += LaunchJob.observe { render() }
-        // Only what this page shows of the log save (11-10): it rebuilt every row for each of the 135
-        // "Collecting N of M" lines, and "Skip saving logs" rebuilt under the finger lost its tap.
-        subscriptions += com.fahadali.oneos.session.LogJob.observeBy({ Triple(it.busy, it.recovering, it.stopping) }) { render() }
-        subscriptions += com.fahadali.oneos.session.OldStagesJob.observe { if (!it.busy) Readiness.tick(this); render() }
-        // Start fresh / Remove (0.5.09): say how it ended; a removed system has no screen left, so go back to the systems.
-        subscriptions += com.fahadali.oneos.session.RemoveJob.observe { removed(); render() }
-        // Root's record is the truth (the phone may have restarted before the app saw the answer).
-        if (!preview) com.fahadali.oneos.session.ToolApps.refresh(this)
-        // Turned-off kernel tool apps (0.5.10): say how it went once, then show the list again.
-        subscriptions += com.fahadali.oneos.session.ToolApps.observe { st ->
+        subscriptions += StageCheck.observe { if (!it.busy) Readiness.tick(this); tick++ }
+        subscriptions += PrepareJob.observe { tick++ }
+        subscriptions += LaunchJob.observe { tick++ }
+        subscriptions += LogJob.observeBy({ Triple(it.busy, it.recovering, it.stopping) }) { tick++ }
+        subscriptions += OldStagesJob.observe { if (!it.busy) Readiness.tick(this); tick++ }
+        subscriptions += RemoveJob.observe { removed(); tick++ }
+        ToolApps.refresh(this)
+        subscriptions += ToolApps.observe { st ->
             if (!st.busy && st.message != null && st.message != lastToolMessage) {
                 lastToolMessage = st.message
-                android.widget.Toast.makeText(applicationContext, st.message, android.widget.Toast.LENGTH_LONG).show()
+                Toast.makeText(applicationContext, st.message, Toast.LENGTH_LONG).show()
             }
-            render()
+            tick++
         }
     }
+
     override fun onResume() {
         super.onResume()
         if (::image.isInitialized && !preview) {
-            Readiness.onResume(this); render()
+            Readiness.onResume(this)
+            tick++
             if (!rootBusy) {
                 rootBusy = true
                 GuestRuntimeStore.refresh(this, image.id) { next ->
-                    if (!isDestroyed) { rootBusy = false; rootState = next; render() }
+                    if (!isDestroyed) { rootBusy = false; rootState = next; tick++ }
                 }
             }
         }
     }
+
     override fun onStop() {
         window.decorView.removeCallbacks(recheck)
-        subscriptions.forEach { it() }; subscriptions.clear(); super.onStop()
+        subscriptions.forEach { it() }
+        subscriptions.clear()
+        super.onStop()
     }
-    override fun onDestroy() { io.shutdownNow(); super.onDestroy() }
+
+    override fun onDestroy() {
+        io.shutdownNow()
+        super.onDestroy()
+    }
 
     private fun removed() {
         val r = SystemManage.takeResult() ?: return
         when {
             r.systemRemoved -> {
-                if (r.message.isNotEmpty()) android.widget.Toast.makeText(applicationContext, r.message, android.widget.Toast.LENGTH_LONG).show()
+                if (r.message.isNotEmpty()) Toast.makeText(applicationContext, r.message, Toast.LENGTH_LONG).show()
                 catalogue()
             }
             r.failed -> AlertDialog.Builder(this).setTitle(R.string.environment_manage_failed).setMessage(r.message)
                 .setPositiveButton(android.R.string.ok, null).show()
-            else -> if (r.message.isNotEmpty()) android.widget.Toast.makeText(applicationContext, r.message, android.widget.Toast.LENGTH_LONG).show()
+            else -> if (r.message.isNotEmpty()) Toast.makeText(applicationContext, r.message, Toast.LENGTH_LONG).show()
         }
     }
 
     private fun catalogue() {
-        startActivity(Intent(this, LauncherActivity::class.java).putExtra("browse_systems", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        )
         finish()
     }
 
-    private fun render() {
-        if (!::image.isInitialized || isDestroyed) return
+    @Composable
+    private fun Screen() {
+        @Suppress("UNUSED_VARIABLE") val t = tick
         val result = StageCheck.state.result
         val currentFacts = if (!preview) result?.facts?.let { FactProbe(this).refresh(it) } ?: facts else null
-        val report = if (!preview && result?.installd != null && currentFacts != null)
-            StageCheck.gates(this, result, GatePhase.SWITCH, screenLock = currentFacts.screenLockSet, facts = currentFacts) else null
-        if (!preview && result?.status?.ours == true) result.status.marker?.imageId?.let(Images::byId)?.let {
-            if (it.id == image.id) EnvironmentNavigation.remember(this, it, false)
+        val report = if (!preview && result?.installd != null && currentFacts != null) {
+            StageCheck.gates(this, result, GatePhase.SWITCH, screenLock = currentFacts.screenLockSet, facts = currentFacts)
+        } else null
+        if (!preview && result?.status?.ours == true) {
+            result.status.marker?.imageId?.let(Images::byId)?.let {
+                if (it.id == image.id) EnvironmentNavigation.remember(this, it, false)
+            }
         }
         val maintenance = if (!preview) ImageMaintenance.message(this, image, result, report) else null
-        findViewById<OsArtworkView>(R.id.environment_artwork).bind(image)
-        findViewById<TextView>(R.id.environment_title).text = image.name
-        val wide = resources.getBoolean(R.bool.home_two_pane)
-        if (!wide) findViewById<dev.oneuiproject.oneui.layout.ToolbarLayout>(R.id.environment_toolbar_layout).setTitle(image.name)
-        val column = findViewById<LinearLayout>(R.id.environment_cards)
-        column.removeAllViews()
-        // 0.4.38: say what is running, so a waiting button is never a silent one (top: the fixed action covers the bottom).
-        if (!preview && !StageCheck.state.busy && (Readiness.anyBusy() || com.fahadali.oneos.session.RemoveJob.state.busy)) {
-            val logs = com.fahadali.oneos.session.LogJob.state
-            val why = when {
-                logs.busy && logs.stopping -> R.string.environment_busy_logs_stopping
-                logs.busy -> R.string.environment_busy_logs
-                else -> R.string.environment_busy_other
-            }
-            val busyCard = PrebootCards.section(column)
-            // A card of rows has no padding of its own: without the row's the round corners clipped the text (11-10).
-            CardRows.text(busyCard, getString(why), R.style.OneOS_Text_Caption, inList = true).apply {
-                setPaddingRelative(paddingStart, dp(12), paddingEnd, dp(12))
-            }
-            // Skip the log save (owner, 11-08): Boot and Update no longer wait minutes for it.
-            // Once tapped the row goes and the text above says "Stopping" (11-10: nothing changed until the save had ended).
-            if (logs.busy && !logs.recovering && !logs.stopping) Cards.row(busyCard, R.drawable.ic_oneos_row_last_time, getString(R.string.logs_skip), getString(R.string.logs_skip_summary)) {
-                com.fahadali.oneos.session.LogJob.skip()
-            }
-        }
-        // The 20dp card gap below the busy card above (it sat glued to this one, 11-14).
-        val checks = PrebootCards.section(column)
-        checks.setPadding(dp(10), dp(10), dp(10), dp(10))
-        val rootValue = if (preview) "KernelSU active" else currentFacts?.rootKind?.takeUnless { it == com.fahadali.oneos.core.model.RootKind.NONE }?.label?.let { getString(R.string.environment_active, it) }
-            ?: getString(R.string.environment_no_root)
-        val storageValue = if (preview) "51.2 GB free" else currentFacts?.storage?.let { getString(R.string.environment_free, Units.bytes(it.freeBytes)) } ?: getString(R.string.environment_unknown)
-        val batteryValue = if (preview) "98% Charging · 28°C" else currentFacts?.battery?.let {
-            "${it.levelPercent}%" + (if (it.charging) " · Charging" else "") + (it.temperatureC?.let { t -> " · ${t.toInt()}°C" } ?: "")
-        } ?: getString(R.string.environment_unknown)
-        val lockValue = if (preview) getString(R.string.environment_lock_off) else getString(when (currentFacts?.screenLockSet) {
-            false -> R.string.environment_lock_off
-            true -> R.string.environment_lock_on
-            null -> R.string.environment_unknown
-        })
-        val tileReport = report ?: if (!preview && result != null && currentFacts != null)
-            StageCheck.gates(this, result, GatePhase.SWITCH, screenLock = currentFacts.screenLockSet, facts = currentFacts) else null
+
+        val tileReport = report ?: if (!preview && result != null && currentFacts != null) {
+            StageCheck.gates(this, result, GatePhase.SWITCH, screenLock = currentFacts.screenLockSet, facts = currentFacts)
+        } else null
         fun tileLevel(id: String): Level = when {
             preview -> Level.OK
             StageCheck.state.busy -> Level.INFO
@@ -235,254 +196,393 @@ class EnvironmentActivity : EdgeToEdgeActivity() {
             StageCheck.state.phase == StageCheck.Phase.DONE -> tileReport?.find(id)?.level ?: Level.INFO
             else -> Level.INFO
         }
-        val tileGates = listOf(
-            com.fahadali.oneos.core.model.SwitchGates.ID_ROOT,
-            com.fahadali.oneos.core.model.SwitchGates.ID_SPACE,
-            com.fahadali.oneos.core.model.SwitchGates.ID_BATTERY,
-            com.fahadali.oneos.core.model.SwitchGates.ID_SCREEN_LOCK,
+
+        val rootValue = if (preview) "KernelSU active" else currentFacts?.rootKind?.takeUnless { it == RootKind.NONE }?.label?.let {
+            stringResource(R.string.environment_active, it)
+        } ?: stringResource(R.string.environment_no_root)
+        val storageValue = if (preview) "51.2 GB free" else currentFacts?.storage?.let {
+            stringResource(R.string.environment_free, Units.bytes(it.freeBytes))
+        } ?: stringResource(R.string.environment_unknown)
+        val batteryValue = if (preview) "98% Charging · 28°C" else currentFacts?.battery?.let {
+            "${it.levelPercent}%" + (if (it.charging) " · Charging" else "") + (it.temperatureC?.let { temp -> " · ${temp.toInt()}°C" } ?: "")
+        } ?: stringResource(R.string.environment_unknown)
+        val lockValue = if (preview) stringResource(R.string.environment_lock_off) else stringResource(
+            when (currentFacts?.screenLockSet) {
+                false -> R.string.environment_lock_off
+                true -> R.string.environment_lock_on
+                null -> R.string.environment_unknown
+            },
         )
-        val tiles = listOf(
-            Triple(Icons.drawable.ic_oui_security, getString(R.string.environment_root), rootValue),
-            Triple(Icons.drawable.ic_oui_manage_storage, getString(R.string.environment_storage), storageValue),
-            Triple(Icons.drawable.ic_oui_battery_filled, getString(R.string.environment_battery), batteryValue),
-            Triple(Icons.drawable.ic_oui_page_lock, getString(R.string.environment_lock), lockValue),
-        )
-        tiles.chunked(2).forEachIndexed { rowIndex, values ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false }
-            checks.addView(row, LinearLayout.LayoutParams(-1, -2).apply { if (rowIndex > 0) topMargin = dp(10) })
-            values.forEachIndexed { index, tile ->
-                val surface = RoundedLinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    val level = tileLevel(tileGates[rowIndex * 2 + index])
-                    val neutral = getColor(R.color.oneos_check_surface)
-                    setBackgroundColor(if (level != Level.WARN && level != Level.BLOCK) neutral else
-                        androidx.core.graphics.ColorUtils.blendARGB(neutral, Cards.levelColor(this@EnvironmentActivity, level), .16f))
-                    roundedCorners = androidx.appcompat.util.SeslRoundedCorner.ROUNDED_CORNER_NONE
-                    fillHorizontalPadding = false
-                    val innerRadius = (resources.getDimension(androidx.appcompat.R.dimen.sesl_rounded_corner_radius) - dp(10)).coerceAtLeast(0f)
-                    // Use SESL's own smooth-corner geometry at the inset radius, under the One UI theme.
-                    outlineProvider = object : android.view.ViewOutlineProvider() {
-                        override fun getOutline(view: View, outline: android.graphics.Outline) {
-                            outline.setPath(androidx.appcompat.util.SeslRoundedCorner.getSmoothCornerRectPath(
-                                innerRadius, 0f, 0f, view.width.toFloat(), view.height.toFloat()))
-                        }
-                    }
-                    clipToOutline = true
-                }
-                row.addView(surface, LinearLayout.LayoutParams(0, -1, 1f).apply { if (index > 0) marginStart = dp(10) })
-                val content = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    minimumHeight = dp(85)
-                    setPadding(dp(8), dp(8), dp(8), dp(8))
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                    contentDescription = "${tile.second}: ${tile.third}"
-                }
-                content.addView(android.widget.ImageView(this).apply {
-                    setImageResource(tile.first)
-                    imageTintList = ColorStateList.valueOf(getColor(R.color.oneos_icon))
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(14) })
-                val labels = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-                }
-                labels.addView(TextView(this).apply {
-                    text = tile.second; textSize = 18f; includeFontPadding = false
-                })
-                labels.addView(TextView(this).apply {
-                    text = tile.third; textSize = 14f; includeFontPadding = false
-                    setTextColor(getColor(R.color.preboot_secondary))
-                }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
-                content.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-                surface.addView(content, LinearLayout.LayoutParams(-1, -2))
-            }
-        }
-        val patchProfile = currentFacts?.let { com.fahadali.oneos.core.model.Profiles.resolve(it).profile }
-        val patchSources = patchProfile?.let { PatchChannels.sources(this, it.id, image.id) }.orEmpty()
-        if (!preview && patchProfile != null && patchSources.isNotEmpty()) {
-            val heading = getString(R.string.patch_channel_title, patchProfile.label.removePrefix("Galaxy "))
-            val patches = PrebootCards.section(column, "Patches")
-            val source = PatchChannels.selected(this, patchProfile.id, image.id)
-            val idle = !patchBusy && !Readiness.anyBusy() && !StageCheck.state.busy
-            fun label(choice: com.fahadali.oneos.core.model.PatchSource) = if (choice.stable) getString(R.string.patch_channel_stable) else choice.label
-            PrebootCards.row(patches, "${label(source)} · ${patchProfile.label.removePrefix("Galaxy ")}",
-                getString(if (patchBusy) R.string.patch_channel_checking else R.string.patch_channel_summary), chevron = true, enabled = idle) {
-                AlertDialog.Builder(this).setTitle(heading)
-                    .setSingleChoiceItems(patchSources.map { label(it) }.toTypedArray(), patchSources.indexOfFirst { it.id == source.id }) { dialog, which ->
-                        dialog.dismiss(); choosePatches(patchSources[which].id)
-                    }.setNegativeButton(android.R.string.cancel, null).show()
-            }
-            PrebootCards.row(patches, getString(R.string.patch_channel_refresh),
-                PatchChannels.setFor(patchProfile.id, image.id)?.let { set ->
-                    if (!source.stable) runCatching { PatchChannels.snapshot(this, set, patchProfile.id)?.revision }.getOrNull()
-                    else getString(R.string.patch_channel_stable_version, PatchChannels.stableVersion(this))
-                }, chevron = true, enabled = idle) { checkPatches() }
-        }
-        if (maintenance != null) {
-            PrebootCards.row(PrebootCards.section(column), maintenance.title, maintenance.line)
-        }
-        val root = PrebootCards.section(column, "Root")
-        val guest = rootState ?: GuestRuntimeStore.State(image.id)
-        val rootIdle = !preview && !rootBusy && !Readiness.anyBusy() && !StageCheck.state.busy
-        CardRows.toggle(root, "Enable guest runtime", when {
-            rootBusy -> "Reading guest root…"
-            guest.error != null -> guest.error
-            !guest.ready -> "Update this system to add guest root support"
-            else -> null
-        }, guest.enabled, enabled = rootIdle && guest.ready) { enabled ->
-            changeRoot { done -> GuestRuntimeStore.setEnabled(this, image.id, enabled, done) }
-        }.apply {
-            minimumHeight = dp(52)
-            (this as dev.oneuiproject.oneui.widget.SwitchItemView).separateSwitch = true
-        }
-        PrebootCards.row(root, getString(R.string.guest_root_shared_kernel_title),
-            getString(R.string.guest_root_shared_kernel_summary))
-        PrebootCards.row(root, "Xposed framework", guest.providerName(), chevron = true, enabled = rootIdle && guest.ready) {
-            val providers = listOf("zygisk_vector") + guest.modules.filter { it.framework != null }.map { it.id }.filter { it != "zygisk_vector" }
-            val names = providers.map { guest.providerName(it) } + "Import LSPosed or Vector ZIP…"
-            AlertDialog.Builder(this).setTitle("Xposed framework")
-                .setSingleChoiceItems(names.toTypedArray(), providers.indexOf(guest.selected)) { dialog, which ->
-                    dialog.dismiss()
-                    if (which == providers.size) startActivity(Intent(this, GuestRuntimeActivity::class.java)
-                        .putExtra("image", image.id).putExtra("import_framework", true))
-                    else changeRoot { done -> GuestRuntimeStore.select(this, image.id, providers[which], done) }
-                }.setNegativeButton(android.R.string.cancel, null).show()
-        }
-        PrebootCards.row(root, "Manage guest modules", chevron = true, enabled = !rootBusy) {
-            startActivity(Intent(this, GuestRuntimeActivity::class.java).putExtra("image", image.id))
-        }
-        // Bring apps lives on each system's page, like Root (owner, 11-10); its screen says so when another system is set up now.
-        PrebootCards.row(PrebootCards.section(column, getString(R.string.environment_apps)), getString(R.string.bring_title),
-            getString(R.string.environment_bring_summary), chevron = true, enabled = !preview) {
-            startActivity(BringAppsActivity.intent(this, image))
-        }
-        PrebootCards.row(PrebootCards.section(column), getString(R.string.environment_report), chevron = true) {
-            if (preview) AlertDialog.Builder(this).setTitle(R.string.environment_report).setMessage(R.string.environment_preview).setPositiveButton(android.R.string.ok, null).show()
-            else FixActions.run(this, FixAction.SEND_REPORT, image)
-        }
-        // Apps OneOS turned off because their kernel tool stopped a switch (0.5.10): turn each back on here.
-        val toolApps = if (preview) emptyList() else com.fahadali.oneos.session.ToolApps.turnedOff(this)
-        if (toolApps.isNotEmpty()) {
-            val tools = PrebootCards.section(column, getString(R.string.tool_app_section))
-            for (pkg in toolApps) {
-                PrebootCards.row(tools, getString(R.string.tool_app_on_title, pkg), getString(R.string.tool_app_on_summary),
-                    chevron = true, enabled = !com.fahadali.oneos.session.ToolApps.state.busy) {
-                    AlertDialog.Builder(this).setMessage(getString(R.string.tool_app_on_confirm, pkg))
-                        .setPositiveButton(R.string.tool_app_on_run) { _, _ -> com.fahadali.oneos.session.ToolApps.turnOn(this, pkg) }
-                        .setNegativeButton(android.R.string.cancel, null).show()
-                }
-            }
-        }
-        // Manage (0.5.09): Start fresh and Remove, for the system set up now.
-        val ours = result?.status?.takeIf { it.ours }?.marker?.imageId == image.id
-        if (!preview && (ours || maintenance != null)) {
-            val manage = PrebootCards.section(column, getString(R.string.manage_section, image.name))
-            val canManage = SystemManage.canRun() && !patchBusy && !rootBusy
-            PrebootCards.row(manage, getString(R.string.manage_start_fresh), getString(R.string.manage_start_fresh_summary), chevron = true, enabled = canManage) {
-                SystemManage.confirmStartFresh(this, image)
-            }
-            PrebootCards.row(manage, getString(R.string.manage_remove, image.name), getString(R.string.manage_remove_summary), chevron = true, enabled = canManage) {
-                SystemManage.confirmRemove(this, image) { if (it.systemRemoved) catalogue() }
-            }
-        }
+
         val blocked = report?.gates?.firstOrNull { it.level == Level.BLOCK }
-        // What stops the switch, in plain words: the button below offers its fix instead of a Boot that only
-        // re-ran the check (0.4.43, UX audit).
-        var blockPlain: com.fahadali.oneos.core.model.PlainMessage? = null
-        if (!preview && blocked != null && currentFacts != null &&
-            (maintenance == null || blocked.finding.reason != report.find(com.fahadali.oneos.core.model.SwitchGates.ID_IMAGE)?.finding?.reason)) {
-            val plain = Plain.of(blocked.finding, report, currentFacts)
-            // An update in progress keeps its own button, except for the restore after a force
-            // restart: that gate blocks the update too, so its button is "Restore now" (11-08).
-            if (maintenance == null || plain.action == FixAction.RESTORE) blockPlain = plain
-            PrebootCards.row(PrebootCards.section(column), plain.title, plain.line, chevron = true) {
-                FixActions.run(this, plain.action, image)
-            }
-        } else if (!preview && !StageCheck.state.busy && StageCheck.state.failure != null) {
-            val message = Plain.of(StageCheck.state.failure!!, image, null).line
-            CardRows.text(PrebootCards.section(column), message, R.style.OneOS_Text_Caption, inList = true).apply {
-                setPaddingRelative(paddingStart, dp(12), paddingEnd, dp(12))
-            }
-        }
-        // Any job (0.4.38: the log collection after a return can run for minutes) shows the spinner,
-        // not a button whose tap readyToBoot() then ignores.
+        val blockPlain: PlainMessage? = if (!preview && blocked != null && currentFacts != null &&
+            (maintenance == null || blocked.finding.reason != report.find(SwitchGates.ID_IMAGE)?.finding?.reason)
+        ) {
+            Plain.of(blocked.finding, report, currentFacts).takeIf { maintenance == null || it.action == FixAction.RESTORE }
+        } else null
+
         val checking = !preview && (patchBusy || StageCheck.state.busy || StageCheck.state.phase == StageCheck.Phase.IDLE ||
             (StageCheck.state.phase != StageCheck.Phase.FAILED && report == null) ||
-            Readiness.anyBusy() || com.fahadali.oneos.session.RemoveJob.state.busy)
-        findViewById<View>(R.id.environment_action_spinner).visibility = if (checking) View.VISIBLE else View.GONE
+            Readiness.anyBusy() || RemoveJob.state.busy)
+
         fun readyToBoot(): Boolean = preview || (!patchBusy && StageCheck.state.phase == StageCheck.Phase.DONE &&
             StageCheck.state.result === result && result != null && result.ageMs <= Readiness.CHECK_AGE_MS &&
             report != null && (report.image?.id == image.id || (maintenance != null && ImageMaintenance.identifiedImage(result)?.id == image.id)) &&
-            (maintenance != null || !report.blocked) && !Readiness.anyBusy() &&
-            !com.fahadali.oneos.session.RemoveJob.state.busy)
+            (maintenance != null || !report.blocked) && !Readiness.anyBusy() && !RemoveJob.state.busy)
+
         window.decorView.removeCallbacks(recheck)
-        if (!preview && !checking && result != null && StageCheck.state.phase == StageCheck.Phase.DONE)
+        if (!preview && !checking && result != null && StageCheck.state.phase == StageCheck.Phase.DONE) {
             window.decorView.postDelayed(recheck, (Readiness.CHECK_AGE_MS - result.ageMs).coerceAtLeast(0L) + 500L)
-        findViewById<Button>(R.id.environment_boot).apply {
-            val fix = blockPlain?.takeIf { !checking }
-            // The restore after a force restart comes before an interrupted update's retry,
-            // which the same restore gate would only block again (11-08 reports).
-            val restoreFirst = fix?.action == FixAction.RESTORE
-            text = if (result?.status?.pendingUpdate != null && maintenance != null && !restoreFirst) getString(R.string.retry_update)
-                else if (fix != null) fix.actionLabel ?: getString(R.string.environment_what_stops)
-                else getString(if (maintenance != null) R.string.environment_update else R.string.environment_boot, image.name)
-            // Tappable whenever no check runs: a tap on a check that ran out starts a fresh one (below).
-            // Disabled, an expired check left the button dead until the screen was left (0.4.38, F8U).
-            isEnabled = !checking
-            // Preserve the native button's text measurement while replacing its label
-            // visually with the centred SESL spinner during the read-only check.
-            setTextColor(if (checking) ColorStateList.valueOf(Color.TRANSPARENT) else actionTextColors)
-            contentDescription = if (checking) getString(R.string.environment_checking) else text
-            setOnClickListener {
-                if (fix != null) {
-                    if (fix.actionLabel == null || fix.action == com.fahadali.oneos.core.model.FixAction.NONE ||
-                        fix.action == com.fahadali.oneos.core.model.FixAction.ACKNOWLEDGE
+        }
+
+        val fix = blockPlain?.takeIf { !checking }
+        val restoreFirst = fix?.action == FixAction.RESTORE
+        val ctaLabel = when {
+            result?.status?.pendingUpdate != null && maintenance != null && !restoreFirst -> stringResource(R.string.retry_update)
+            fix != null -> fix.actionLabel ?: stringResource(R.string.environment_what_stops)
+            else -> stringResource(if (maintenance != null) R.string.environment_update else R.string.environment_boot, image.name)
+        }
+
+        DualOsScaffold(
+            title = image.name,
+            subtitle = if (preview) stringResource(R.string.environment_preview) else null,
+            onBack = { finish() },
+            largeTopBar = false,
+            bottomBar = {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 3.dp,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) {
-                        androidx.appcompat.app.AlertDialog.Builder(this@EnvironmentActivity).setTitle(fix.title).setMessage(fix.line)
-                            .setPositiveButton(android.R.string.ok, null).show()
-                    } else {
-                        FixActions.run(this@EnvironmentActivity, fix.action, image)
+                        Button(
+                            onClick = {
+                                if (fix != null) {
+                                    if (fix.actionLabel == null || fix.action == FixAction.NONE || fix.action == FixAction.ACKNOWLEDGE) {
+                                        AlertDialog.Builder(this@EnvironmentActivity).setTitle(fix.title).setMessage(fix.line)
+                                            .setPositiveButton(android.R.string.ok, null).show()
+                                    } else {
+                                        FixActions.run(this@EnvironmentActivity, fix.action, image)
+                                    }
+                                    return@Button
+                                }
+                                if (!readyToBoot()) {
+                                    Readiness.tick(this@EnvironmentActivity)
+                                    tick++
+                                    return@Button
+                                }
+                                if (maintenance != null) {
+                                    FixActions.run(this@EnvironmentActivity, maintenance.action, image)
+                                    return@Button
+                                }
+                                if (preview) startActivity(BootProgressActivity.intent(this@EnvironmentActivity, image, true))
+                                else SwitchConfirm.show(this@EnvironmentActivity)
+                            },
+                            enabled = !checking,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(20.dp),
+                        ) {
+                            if (checking) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text(ctaLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                     }
-                    return@setOnClickListener
                 }
-                if (!readyToBoot()) {
-                    Readiness.tick(this@EnvironmentActivity)
-                    render()
-                    return@setOnClickListener
+            },
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 28.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    RomArtworkBanner(
+                        image = image,
+                        title = image.nameWithVariant,
+                        subtitle = image.blurb,
+                        height = 170.dp,
+                    )
                 }
+
+                if (!preview && !StageCheck.state.busy && (Readiness.anyBusy() || RemoveJob.state.busy)) {
+                    val logs = LogJob.state
+                    val why = when {
+                        logs.busy && logs.stopping -> R.string.environment_busy_logs_stopping
+                        logs.busy -> R.string.environment_busy_logs
+                        else -> R.string.environment_busy_other
+                    }
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(title = stringResource(why), icon = Icons.Rounded.Refresh)
+                            if (logs.busy && !logs.recovering && !logs.stopping) {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.logs_skip),
+                                    subtitle = stringResource(R.string.logs_skip_summary),
+                                    icon = DualOsIcons.History,
+                                    showChevron = true,
+                                    onClick = { LogJob.skip() },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    CheckTilesGrid(
+                        tiles = listOf(
+                            CheckTileUi(SwitchGates.ID_ROOT, stringResource(R.string.environment_root), rootValue, tileLevel(SwitchGates.ID_ROOT), DualOsIcons.Security),
+                            CheckTileUi(SwitchGates.ID_SPACE, stringResource(R.string.environment_storage), storageValue, tileLevel(SwitchGates.ID_SPACE), DualOsIcons.Storage),
+                            CheckTileUi(SwitchGates.ID_BATTERY, stringResource(R.string.environment_battery), batteryValue, tileLevel(SwitchGates.ID_BATTERY), DualOsIcons.Battery),
+                            CheckTileUi(SwitchGates.ID_SCREEN_LOCK, stringResource(R.string.environment_lock), lockValue, tileLevel(SwitchGates.ID_SCREEN_LOCK), Icons.Rounded.Lock),
+                        ),
+                    )
+                }
+
+                if (blockPlain != null) {
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(
+                                title = blockPlain.title,
+                                subtitle = blockPlain.line,
+                                icon = levelIcon(Level.BLOCK),
+                                iconTint = levelColor(Level.BLOCK),
+                                showChevron = true,
+                                onClick = { FixActions.run(this@EnvironmentActivity, blockPlain.action, image) },
+                            )
+                        }
+                    }
+                } else if (!preview && !StageCheck.state.busy && StageCheck.state.failure != null) {
+                    val message = Plain.of(StageCheck.state.failure!!, image, null).line
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(title = message, icon = Icons.Rounded.Warning, iconTint = levelColor(Level.WARN))
+                        }
+                    }
+                }
+
                 if (maintenance != null) {
-                    FixActions.run(this@EnvironmentActivity, maintenance.action, image)
-                    return@setOnClickListener
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(
+                                title = maintenance.title,
+                                subtitle = maintenance.line,
+                                icon = Icons.Rounded.Warning,
+                                iconTint = levelColor(Level.WARN),
+                            )
+                        }
+                    }
                 }
-                if (preview) ArtworkTransitions.start(this@EnvironmentActivity,
-                    BootProgressActivity.intent(this@EnvironmentActivity, image, true), findViewById(R.id.environment_artwork))
-                else SwitchConfirm.show(this@EnvironmentActivity)
+
+                item { ExpressiveSectionHeader(stringResource(R.string.a53_caps_section)) }
+                item { A53CapabilitiesCard(ctx = this@EnvironmentActivity, showStatusBadges = true) }
+
+                val patchProfile = currentFacts?.let { Profiles.resolve(it).profile }
+                val patchSources = patchProfile?.let { PatchChannels.sources(this@EnvironmentActivity, it.id, image.id) }.orEmpty()
+                if (!preview && patchProfile != null && patchSources.isNotEmpty()) {
+                    val heading = getString(R.string.patch_channel_title, patchProfile.label.removePrefix("Galaxy "))
+                    val source = PatchChannels.selected(this@EnvironmentActivity, patchProfile.id, image.id)
+                    val idle = !patchBusy && !Readiness.anyBusy() && !StageCheck.state.busy
+                    fun label(choice: PatchSource) = if (choice.stable) getString(R.string.patch_channel_stable) else choice.label
+                    item { ExpressiveSectionHeader("Patches") }
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(
+                                title = "${label(source)} · ${patchProfile.label.removePrefix("Galaxy ")}",
+                                subtitle = stringResource(if (patchBusy) R.string.patch_channel_checking else R.string.patch_channel_summary),
+                                icon = DualOsIcons.Sync,
+                                enabled = idle,
+                                showChevron = idle,
+                                onClick = {
+                                    AlertDialog.Builder(this@EnvironmentActivity).setTitle(heading)
+                                        .setSingleChoiceItems(patchSources.map { label(it) }.toTypedArray(), patchSources.indexOfFirst { it.id == source.id }) { dialog, which ->
+                                            dialog.dismiss(); choosePatches(patchSources[which].id)
+                                        }.setNegativeButton(android.R.string.cancel, null).show()
+                                },
+                            )
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.patch_channel_refresh),
+                                subtitle = PatchChannels.setFor(patchProfile.id, image.id)?.let { set ->
+                                    if (!source.stable) runCatching { PatchChannels.snapshot(this@EnvironmentActivity, set, patchProfile.id)?.revision }.getOrNull()
+                                    else getString(R.string.patch_channel_stable_version, PatchChannels.stableVersion(this@EnvironmentActivity))
+                                },
+                                icon = Icons.Rounded.Refresh,
+                                enabled = idle,
+                                showChevron = idle,
+                                onClick = { checkPatches() },
+                            )
+                        }
+                    }
+                }
+
+                val guest = rootState ?: GuestRuntimeStore.State(image.id)
+                val rootIdle = !preview && !rootBusy && !Readiness.anyBusy() && !StageCheck.state.busy
+                item { ExpressiveSectionHeader("Root") }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveSwitchItem(
+                            title = "Enable guest runtime",
+                            subtitle = when {
+                                rootBusy -> "Reading guest root…"
+                                guest.error != null -> guest.error
+                                !guest.ready -> "Update this system to add guest root support"
+                                else -> null
+                            },
+                            icon = DualOsIcons.Security,
+                            checked = guest.enabled,
+                            enabled = rootIdle && guest.ready,
+                            onCheckedChange = { enabled ->
+                                changeRoot { done -> GuestRuntimeStore.setEnabled(this@EnvironmentActivity, image.id, enabled, done) }
+                            },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.guest_root_shared_kernel_title),
+                            subtitle = stringResource(R.string.guest_root_shared_kernel_summary),
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = "Xposed framework",
+                            subtitle = guest.providerName(),
+                            icon = DualOsIcons.Layers,
+                            enabled = rootIdle && guest.ready,
+                            showChevron = rootIdle && guest.ready,
+                            onClick = {
+                                val providers = listOf("zygisk_vector") + guest.modules.filter { it.framework != null }.map { it.id }.filter { it != "zygisk_vector" }
+                                val names = providers.map { guest.providerName(it) } + "Import LSPosed or Vector ZIP…"
+                                AlertDialog.Builder(this@EnvironmentActivity).setTitle("Xposed framework")
+                                    .setSingleChoiceItems(names.toTypedArray(), providers.indexOf(guest.selected)) { dialog, which ->
+                                        dialog.dismiss()
+                                        if (which == providers.size) startActivity(
+                                            Intent(this@EnvironmentActivity, GuestRuntimeActivity::class.java)
+                                                .putExtra("image", image.id).putExtra("import_framework", true),
+                                        )
+                                        else changeRoot { done -> GuestRuntimeStore.select(this@EnvironmentActivity, image.id, providers[which], done) }
+                                    }.setNegativeButton(android.R.string.cancel, null).show()
+                            },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = "Manage guest modules",
+                            icon = DualOsIcons.Extension,
+                            enabled = !rootBusy,
+                            showChevron = !rootBusy,
+                            onClick = { startActivity(Intent(this@EnvironmentActivity, GuestRuntimeActivity::class.java).putExtra("image", image.id)) },
+                        )
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.environment_apps)) }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = stringResource(R.string.bring_title),
+                            subtitle = stringResource(R.string.environment_bring_summary),
+                            icon = DualOsIcons.Apps,
+                            enabled = !preview,
+                            showChevron = !preview,
+                            onClick = { startActivity(BringAppsActivity.intent(this@EnvironmentActivity, image)) },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.environment_report),
+                            icon = DualOsIcons.BugReport,
+                            showChevron = true,
+                            onClick = {
+                                if (preview) AlertDialog.Builder(this@EnvironmentActivity).setTitle(R.string.environment_report)
+                                    .setMessage(R.string.environment_preview).setPositiveButton(android.R.string.ok, null).show()
+                                else FixActions.run(this@EnvironmentActivity, FixAction.SEND_REPORT, image)
+                            },
+                        )
+                    }
+                }
+
+                val toolApps = if (preview) emptyList() else ToolApps.turnedOff(this@EnvironmentActivity)
+                if (toolApps.isNotEmpty()) {
+                    item { ExpressiveSectionHeader(stringResource(R.string.tool_app_section)) }
+                    item {
+                        ExpressiveGroupedCard {
+                            toolApps.forEachIndexed { idx, pkg ->
+                                if (idx > 0) ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.tool_app_on_title, pkg),
+                                    subtitle = stringResource(R.string.tool_app_on_summary),
+                                    enabled = !ToolApps.state.busy,
+                                    showChevron = !ToolApps.state.busy,
+                                    onClick = {
+                                        AlertDialog.Builder(this@EnvironmentActivity).setMessage(getString(R.string.tool_app_on_confirm, pkg))
+                                            .setPositiveButton(R.string.tool_app_on_run) { _, _ -> ToolApps.turnOn(this@EnvironmentActivity, pkg) }
+                                            .setNegativeButton(android.R.string.cancel, null).show()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val ours = result?.status?.takeIf { it.ours }?.marker?.imageId == image.id
+                if (!preview && (ours || maintenance != null)) {
+                    val canManage = SystemManage.canRun() && !patchBusy && !rootBusy
+                    item { ExpressiveSectionHeader(stringResource(R.string.manage_section, image.name)) }
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(
+                                title = stringResource(R.string.manage_start_fresh),
+                                subtitle = stringResource(R.string.manage_start_fresh_summary),
+                                icon = DualOsIcons.RestartAlt,
+                                enabled = canManage,
+                                showChevron = canManage,
+                                onClick = { SystemManage.confirmStartFresh(this@EnvironmentActivity, image) },
+                            )
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.manage_remove, image.name),
+                                subtitle = stringResource(R.string.manage_remove_summary),
+                                icon = Icons.Rounded.Delete,
+                                iconTint = MaterialTheme.colorScheme.error,
+                                enabled = canManage,
+                                showChevron = canManage,
+                                onClick = { SystemManage.confirmRemove(this@EnvironmentActivity, image) { if (it.systemRemoved) catalogue() } },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
+
     private fun changeRoot(action: ((GuestRuntimeStore.State) -> Unit) -> Unit) {
         if (rootBusy) return
-        rootBusy = true; render()
+        rootBusy = true
         action { next ->
             if (!isDestroyed) {
                 rootBusy = false
                 if (next.error == null) rootState = next
                 else AlertDialog.Builder(this).setTitle("Guest root").setMessage(next.error).setPositiveButton(android.R.string.ok, null).show()
-                render()
+                tick++
             }
         }
     }
-    private fun channelProfile() = (StageCheck.state.result?.facts ?: facts)?.let {
-        com.fahadali.oneos.core.model.Profiles.resolve(it).profile
-    }
+
+    private fun channelProfile() = (StageCheck.state.result?.facts ?: facts)?.let { Profiles.resolve(it).profile }
 
     private fun checkPatches() {
         val profile = channelProfile() ?: return
         val source = PatchChannels.selected(this, profile.id, image.id)
         if (!source.stable) { choosePatches(source.id, showResult = true); return }
         if (patchBusy || Readiness.anyBusy()) return
-        patchBusy = true; render()
+        patchBusy = true
         io.execute {
             val result = runCatching { PatchChannels.stableRelease() }
             runOnUiThread {
@@ -490,12 +590,15 @@ class EnvironmentActivity : EdgeToEdgeActivity() {
                 if (!isDestroyed) {
                     val release = result.getOrNull()
                     val message = release?.let {
-                        getString(if (it.versionCode > PatchChannels.stableCode(this)) R.string.patch_channel_stable_newer
-                            else R.string.patch_channel_stable_current, it.versionName)
+                        getString(
+                            if (it.versionCode > PatchChannels.stableCode(this)) R.string.patch_channel_stable_newer
+                            else R.string.patch_channel_stable_current,
+                            it.versionName,
+                        )
                     } ?: result.exceptionOrNull()?.message
                     AlertDialog.Builder(this).setTitle(if (result.isSuccess) R.string.patch_channel_refresh else R.string.patch_channel_failed)
                         .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
-                    render()
+                    tick++
                 }
             }
         }
@@ -503,9 +606,9 @@ class EnvironmentActivity : EdgeToEdgeActivity() {
 
     private fun choosePatches(sourceId: String, showResult: Boolean = false) {
         if (patchBusy || Readiness.anyBusy()) return
-        patchBusy = true; render()
+        patchBusy = true
         val selectedImage = image.id
-        val profile = channelProfile() ?: run { patchBusy = false; render(); return }
+        val profile = channelProfile() ?: run { patchBusy = false; return }
         io.execute {
             val result = runCatching {
                 val set = PatchChannels.setFor(profile.id, selectedImage)!!
@@ -520,17 +623,11 @@ class EnvironmentActivity : EdgeToEdgeActivity() {
                         AlertDialog.Builder(this).setTitle(R.string.patch_channel_failed).setMessage(error.message)
                             .setPositiveButton(android.R.string.ok, null).show()
                     }
-                    if (showResult && result.isSuccess) android.widget.Toast.makeText(this, R.string.patch_channel_checked, android.widget.Toast.LENGTH_LONG).show()
+                    if (showResult && result.isSuccess) Toast.makeText(this, R.string.patch_channel_checked, Toast.LENGTH_LONG).show()
                     StageCheck.start(this, StageCheck.Mode.FULL)
-                    render()
+                    tick++
                 }
             }
         }
     }
-
-    private fun environmentToolbar(): Toolbar =
-        findViewById<dev.oneuiproject.oneui.layout.ToolbarLayout>(R.id.environment_toolbar_layout)?.toolbar
-            ?: findViewById(R.id.environment_toolbar)
-
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }

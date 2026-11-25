@@ -9,42 +9,12 @@ import java.io.File
 
 class SessionEnvTest {
     @Test
-    fun goldenF8u() {
+    fun goldenA53() {
         assertEquals(
             """
             ONEOS_APP=1
-            ONEOS_PROFILE=f8u
-            ONEOS_SPLASH_COMPONENT=com.fahadali.oneos/.ui.GapSplashActivity
-            ONEOS_WALLPAPER_PROBE=0
-            ONEOS_RECORD=0
-            ONEOS_LOGCAT=1
-            ONEOS_GUEST_FORM=fold
-            ONEOS_GUEST_FOLD=layout
-            ONEOS_COVER_TSP=1
-            ONEOS_GUEST_FOLD_CONTINUE=1
-            ONEOS_GUEST_UNFOLD_PORTRAIT=1
-            ONEOS_GUEST_COMPACT_WINDOW=1
-            ONEOS_GUEST_WALLPAPER_GRID=1
-            ONEOS_GUEST_HIDE_GMS=0
-            ONEOS_HEAT_CAP=1
-            ONEOS_GUEST_SEC_IMS=0
-            ONEOS_GUEST_EDM_STUB=0
-            ONEOS_VERBOSE_BOOT=0
-            ONEOS_FULL_LOGS=1
-            ONEOS_RETURN_MODE=inplace
-
-            """.trimIndent(),
-            SessionEnv.generate(Profiles.F8U),
-        )
-    }
-
-    @Test
-    fun goldenS26Ultra() {
-        assertEquals(
-            """
-            ONEOS_APP=1
-            ONEOS_PROFILE=s-ultra-8850
-            ONEOS_SPLASH_COMPONENT=com.fahadali.oneos/.ui.GapSplashActivity
+            ONEOS_PROFILE=a53
+            ONEOS_SPLASH_COMPONENT=com.dualos.a53/com.fahadali.oneos.ui.GapSplashActivity
             ONEOS_WALLPAPER_PROBE=0
             ONEOS_RECORD=0
             ONEOS_LOGCAT=1
@@ -61,27 +31,21 @@ class SessionEnvTest {
             ONEOS_GUEST_EDM_STUB=0
             ONEOS_VERBOSE_BOOT=0
             ONEOS_FULL_LOGS=1
+            ONEOS_GUEST_NFC=1
+            ONEOS_GUEST_SDCARD=ro
+            ONEOS_GUEST_BLUR=1
             ONEOS_RETURN_MODE=inplace
 
             """.trimIndent(),
-            SessionEnv.generate(Profiles.S_ULTRA_8850),
+            SessionEnv.generate(Profiles.A53),
         )
     }
 
     @Test
-    fun s25UltraGetsTheBarSet() {
-        val text = SessionEnv.generate(Profiles.S_ULTRA_8750)
-        val v = SessionEnv.values(Profiles.S_ULTRA_8750)
-        assertEquals("s-ultra-8750", v["ONEOS_PROFILE"])
-        assertEquals(SessionEnv.BAR_FORM, v.filterKeys { it in SessionEnv.BAR_FORM })
-        assertEquals(emptyList<String>(), SessionEnv.validate(text))
-    }
-
-    @Test
-    fun galaxyS25GetsTheBarSet() {
-        val text = SessionEnv.generate(Profiles.S_8750)
-        val v = SessionEnv.values(Profiles.S_8750)
-        assertEquals("s-8750", v["ONEOS_PROFILE"])
+    fun a53GetsTheBarSet() {
+        val text = SessionEnv.generate(Profiles.A53)
+        val v = SessionEnv.values(Profiles.A53)
+        assertEquals("a53", v["ONEOS_PROFILE"])
         assertEquals(SessionEnv.BAR_FORM, v.filterKeys { it in SessionEnv.BAR_FORM })
         assertEquals(emptyList<String>(), SessionEnv.validate(text))
     }
@@ -117,19 +81,16 @@ class SessionEnvTest {
 
     @Test
     fun validateFailsClosed() {
-        val good = SessionEnv.generate(Profiles.S_ULTRA_8850)
+        val good = SessionEnv.generate(Profiles.A53)
         assertEquals(emptyList<String>(), SessionEnv.validate(good))
-        assertEquals(emptyList<String>(), SessionEnv.validate(SessionEnv.generate(Profiles.F8U)))
 
         fun problems(text: String) = SessionEnv.validate(text)
 
         assertTrue(problems(good + "ONEOS_RETURN_MAX=0\n").contains("forbidden key ONEOS_RETURN_MAX"))
-        // 0.4.23: Cool down when hot is the launch's choice, 0 or 1 only.
         assertTrue(good.contains("ONEOS_HEAT_CAP=1\n"))
         assertEquals(emptyList<String>(), problems(good.replace("ONEOS_HEAT_CAP=1", "ONEOS_HEAT_CAP=0")))
         assertTrue(problems(good.replace("ONEOS_HEAT_CAP=1", "ONEOS_HEAT_CAP=2")).isNotEmpty())
         assertTrue(problems(good + "ONEOS_RETURN_KEYS=0\n").contains("forbidden key ONEOS_RETURN_KEYS"))
-        // 0.4.7: the return is always in place (a failed check reboots); nothing else may be asked for.
         assertTrue(good.contains("ONEOS_RETURN_MODE=inplace\n"))
         assertTrue(problems(good.replace("ONEOS_RETURN_MODE=inplace", "ONEOS_RETURN_MODE=reboot")).isNotEmpty())
         assertTrue(problems(good.replace("ONEOS_RETURN_MODE=inplace\n", "")).contains("ONEOS_RETURN_MODE missing"))
@@ -144,32 +105,25 @@ class SessionEnvTest {
         assertTrue(problems(good.removeSuffix("\n")).contains("must end with a newline"))
         assertTrue(problems(good.replace("\n", "\r\n")).isNotEmpty())
         assertTrue(problems("# comment\n$good").contains("line 1 is not KEY=VALUE"))
-        assertTrue(problems("$good\n").contains("line 21 is not KEY=VALUE"))
+        assertTrue(problems("$good\n").contains("line 24 is not KEY=VALUE"))
         assertTrue(problems(good.replace("ONEOS_APP=1", "export ONEOS_APP=1")).isNotEmpty())
         assertTrue(problems(good.replace("ONEOS_GUEST_FOLD=off", "ONEOS_GUEST_FOLD=\$(reboot)")).isNotEmpty())
-        // A fold value in an S Ultra file: the profile decides the form.
-        assertTrue(problems(good.replace("ONEOS_COVER_TSP=0", "ONEOS_COVER_TSP=1")).contains("ONEOS_COVER_TSP=1 does not match profile s-ultra-8850 (0)"))
+        assertTrue(problems(good.replace("ONEOS_COVER_TSP=0", "ONEOS_COVER_TSP=1")).contains("ONEOS_COVER_TSP=1 does not match profile a53 (0)"))
         assertTrue(problems(good.replace("ONEOS_GUEST_FORM=phone", "ONEOS_GUEST_FORM=fold")).isNotEmpty())
-        assertTrue(problems(good.replace("s-ultra-8850", "s-ultra-9999")).contains("unknown profile s-ultra-9999"))
+        assertTrue(problems(good.replace("=a53\n", "=unknown\n")).contains("unknown profile unknown"))
         assertTrue(problems("").isNotEmpty())
         assertTrue(problems("A".repeat(SessionEnv.MAX_BYTES + 1)).isNotEmpty())
     }
 
-    /**
-     * ONEOS_GUEST_HIDE_GMS: 0 from Prepare; 1 (a launch's choice) only with an
-     * image whose Google services may be hidden. 0.3.7 has none: the CN builds
-     * have no Google services, and the Pixel image's sessions present them
-     * (oneos_switch.sh refuses to hide a staged GmsCore). A Google image
-     * whose sessions do not present them (not built in) may.
-     */
     @Test
     fun googleServicesMayBeHiddenOnlyWhereASessionCanHideThem() {
-        val hideable = Images.PIXEL_YOGI.copy(id = "google-hideable", shortName = "Hideable", presentsGms = false)
+        val unhideable = Images.LINEAGE23.copy(id = "gms-present", shortName = "GMSPresent", presentsGms = true)
+        val noGms = Images.LINEAGE23.copy(id = "no-gms", shortName = "NoGMS", googleServices = false, presentsGms = false)
         for (p in Profiles.BUILT_IN.filter { it.enabled }) {
             val text = SessionEnv.generate(p)
             assertTrue(p.id, text.lines().contains("${SessionEnv.HIDE_GMS}=0"))
             val hidden = text.replace("${SessionEnv.HIDE_GMS}=0", "${SessionEnv.HIDE_GMS}=1")
-            for (i in Images.ALL + hideable) {
+            for (i in Images.ALL + unhideable + noGms) {
                 assertEquals("${p.id} ${i.id}", emptyList<String>(), SessionEnv.validate(text, image = i))
                 val v = SessionEnv.validate(hidden, image = i)
                 when {
@@ -181,26 +135,24 @@ class SessionEnvTest {
                     else -> assertEquals(listOf("${SessionEnv.HIDE_GMS}=1, but the ${i.shortName} image has no Google services"), v)
                 }
             }
-            assertTrue(SessionEnv.validate(hidden, image = Images.PIXEL_YOGI).single().contains("cannot be hidden"))
-            assertEquals(emptyList<String>(), SessionEnv.validate(hidden, image = hideable))
-            // No image known: never.
+            assertTrue(SessionEnv.validate(hidden, image = unhideable).single().contains("cannot be hidden"))
+            assertEquals(emptyList<String>(), SessionEnv.validate(hidden, image = Images.LINEAGE23))
             assertEquals(1, SessionEnv.validate(hidden).size)
             for (bad in listOf("2", "", "yes")) {
-                assertTrue(bad, SessionEnv.validate(text.replace("${SessionEnv.HIDE_GMS}=0", "${SessionEnv.HIDE_GMS}=$bad"), image = hideable).isNotEmpty())
+                assertTrue(bad, SessionEnv.validate(text.replace("${SessionEnv.HIDE_GMS}=0", "${SessionEnv.HIDE_GMS}=$bad"), image = Images.LINEAGE23).isNotEmpty())
             }
-            assertTrue(SessionEnv.validate(text.replace("${SessionEnv.HIDE_GMS}=0\n", ""), image = hideable).contains("${SessionEnv.HIDE_GMS} missing"))
+            assertTrue(SessionEnv.validate(text.replace("${SessionEnv.HIDE_GMS}=0\n", ""), image = Images.LINEAGE23).contains("${SessionEnv.HIDE_GMS} missing"))
         }
-        // 0.4.11: the Find X9 Ultra IN build's Google services (in the image, not presented) may be hidden;
-        // 0.4.33: Nothing OS's too, for the same reason -- its set stages no gmssystem_payload.img;
-        // 0.4.38: the Find N6 global build's.
-        // 0.4.67: OxygenOS 16 too (Google in the image, no gmssystem payload in its set).
-        // 0.5.06: LineageOS 24 too (its Google apps are One UI's, added by guest_google.sh; none from a payload).
-        assertEquals(listOf(Images.FIND_N6, Images.FIND_X9U_IN_1105, Images.NOTHING_METROID, Images.OXYGEN16, Images.LINEAGE24, Images.LINEAGE23), Images.ALL.filter { it.gmsHideable })
+        assertEquals(listOf(Images.LINEAGE23, Images.INFINITYX35), Images.ALL.filter { it.gmsHideable })
         assertEquals(
-            listOf("ONEOS_GUEST_HIDE_GMS", "ONEOS_HEAT_CAP", "ONEOS_GUEST_SEC_IMS", "ONEOS_GUEST_EDM_STUB", "ONEOS_VERBOSE_BOOT", "ONEOS_FULL_LOGS", "ONEOS_RETURN_MODE"),
-            SessionEnv.ALLOWED.keys.toList().takeLast(7),
+            listOf(
+                "ONEOS_GUEST_HIDE_GMS", "ONEOS_HEAT_CAP", "ONEOS_GUEST_SEC_IMS", "ONEOS_GUEST_EDM_STUB",
+                "ONEOS_VERBOSE_BOOT", "ONEOS_FULL_LOGS", "ONEOS_GUEST_NFC", "ONEOS_GUEST_SDCARD",
+                "ONEOS_GUEST_BLUR", "ONEOS_RETURN_MODE",
+            ),
+            SessionEnv.ALLOWED.keys.toList().takeLast(10),
         )
-        assertEquals("ONEOS_FULL_LOGS", SessionEnv.ALLOWED.keys.toList().dropLast(1).last())
+        assertEquals("ONEOS_GUEST_BLUR", SessionEnv.ALLOWED.keys.toList().dropLast(1).last())
         for (p in Profiles.BUILT_IN.filter { it.enabled }) {
             val text = SessionEnv.generate(p)
             assertTrue(p.id, text.lines().contains("${SessionEnv.SEC_IMS}=0"))
@@ -208,7 +160,6 @@ class SessionEnvTest {
             assertEquals(emptyList<String>(), SessionEnv.validate(text.replace("${SessionEnv.SEC_IMS}=0", "${SessionEnv.SEC_IMS}=1")))
             for (bad in listOf("2", "", "on")) assertTrue(bad, SessionEnv.validate(text.replace("${SessionEnv.SEC_IMS}=0", "${SessionEnv.SEC_IMS}=$bad")).isNotEmpty())
             assertTrue(SessionEnv.validate(text.replace("${SessionEnv.SEC_IMS}=0\n", "")).contains("${SessionEnv.SEC_IMS} missing"))
-            // 0.4.32: the Knox edm stub, a launch's choice on any phone and image, the same way.
             assertTrue(p.id, text.lines().contains("${SessionEnv.EDM_STUB}=0"))
             assertEquals(emptyList<String>(), SessionEnv.validate(text.replace("${SessionEnv.EDM_STUB}=0", "${SessionEnv.EDM_STUB}=1")))
             for (bad in listOf("2", "", "on")) assertTrue(bad, SessionEnv.validate(text.replace("${SessionEnv.EDM_STUB}=0", "${SessionEnv.EDM_STUB}=$bad")).isNotEmpty())
@@ -238,6 +189,27 @@ class SessionEnvTest {
                 assertTrue(SessionEnv.validate(text.replace("ONEOS_FULL_LOGS=1", "ONEOS_FULL_LOGS=$bad")).isNotEmpty())
             // ONEOS_LOGCAT stays locked to 1.
             assertTrue(SessionEnv.validate(text.replace("ONEOS_LOGCAT=1", "ONEOS_LOGCAT=0")).isNotEmpty())
+        }
+    }
+
+    @Test
+    fun dualOsGuestCapabilitiesAreStrictlyValidated() {
+        for (profile in Profiles.BUILT_IN.filter { it.enabled }) {
+            val text = SessionEnv.generate(profile)
+            assertTrue(text.contains("ONEOS_GUEST_NFC=1\n"))
+            assertTrue(text.contains("ONEOS_GUEST_SDCARD=ro\n"))
+            assertTrue(text.contains("ONEOS_GUEST_BLUR=1\n"))
+            assertEquals(emptyList<String>(), SessionEnv.validate(text.replace("ONEOS_GUEST_NFC=1", "ONEOS_GUEST_NFC=0")))
+            assertEquals(emptyList<String>(), SessionEnv.validate(text.replace("ONEOS_GUEST_SDCARD=ro", "ONEOS_GUEST_SDCARD=rw")))
+            assertEquals(emptyList<String>(), SessionEnv.validate(text.replace("ONEOS_GUEST_SDCARD=ro", "ONEOS_GUEST_SDCARD=off")))
+            assertEquals(emptyList<String>(), SessionEnv.validate(text.replace("ONEOS_GUEST_BLUR=1", "ONEOS_GUEST_BLUR=0")))
+            for (bad in listOf("2", "yes", "", "1;reboot")) {
+                assertTrue(SessionEnv.validate(text.replace("ONEOS_GUEST_NFC=1", "ONEOS_GUEST_NFC=$bad")).isNotEmpty())
+                assertTrue(SessionEnv.validate(text.replace("ONEOS_GUEST_BLUR=1", "ONEOS_GUEST_BLUR=$bad")).isNotEmpty())
+            }
+            for (bad in listOf("0", "1", "full", "", "ro;id")) {
+                assertTrue(SessionEnv.validate(text.replace("ONEOS_GUEST_SDCARD=ro", "ONEOS_GUEST_SDCARD=$bad")).isNotEmpty())
+            }
         }
     }
 

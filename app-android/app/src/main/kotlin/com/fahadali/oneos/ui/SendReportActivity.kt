@@ -1,30 +1,63 @@
 package com.fahadali.oneos.ui
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.InputFilter
-import android.text.InputType
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.fragment.app.Fragment
-import androidx.preference.Preference
-import androidx.preference.PreferenceCategory
-import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.SwitchPreferenceCompat
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.fahadali.oneos.BuildConfig
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.model.CheckItem
 import com.fahadali.oneos.core.model.Checklist
-import com.fahadali.oneos.core.model.FormFactor
 import com.fahadali.oneos.core.model.ImageRef
 import com.fahadali.oneos.core.model.Images
 import com.fahadali.oneos.core.model.PhoneProfile
@@ -38,6 +71,14 @@ import com.fahadali.oneos.core.model.Units
 import com.fahadali.oneos.core.root.LogTrim
 import com.fahadali.oneos.probe.ProbeSession
 import com.fahadali.oneos.report.ReportSender
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
+import com.fahadali.oneos.shared.ExpressiveSwitchItem
+import com.fahadali.oneos.shared.LocalDualOsStatusColors
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -47,20 +88,10 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
 
 /**
- * Send to the OneOS team (0.4.29, both editions): a session's log bundle with
- * the user's checklist (did it start, what worked, what had problems, a note,
- * an optional Telegram name), or OneOS Probe's findings, straight to the report
- * service ([ReportSender]). The logs are the same redacted bundle Share sends;
- * by default a session sends the short log ([LogTrim]: the switch's first
- * minutes and the 2 before the end), the whole one when a problem is ticked or
- * the user asks. Share and Save stay where they were: if sending fails, this
- * screen says so and opens them. The phone, the system and how the session
- * ended come from the bundle's own report.json.
+ * Send to the DualOS team (both editions): a session's log bundle with the
+ * user's checklist, or DualOS Probe's findings, straight to [ReportSender].
  */
-class SendReportActivity : ToolbarActivity() {
-    override val screenTitle: CharSequence get() = getString(R.string.send_title)
-
-    /** A log bundle (files/logs) or findings zip (cache/findings): nothing else is sent from here. */
+class SendReportActivity : AppCompatActivity() {
     val zip: File? by lazy {
         intent.getStringExtra(EXTRA_ZIP)?.let(::File)?.takeIf { f ->
             val dir = f.parentFile?.canonicalPath
@@ -69,36 +100,9 @@ class SendReportActivity : ToolbarActivity() {
         }
     }
 
-    override fun createFragment(): Fragment = SendReportFragment()
-
-    companion object {
-        const val EXTRA_ZIP = "com.fahadali.oneos.extra.REPORT_ZIP"
-
-        fun intent(ctx: Context, zip: File): Intent = Intent(ctx, SendReportActivity::class.java).putExtra(EXTRA_ZIP, zip.path)
-
-        /** The report code a bundle was sent with (Last session shows it). */
-        fun sentCode(ctx: Context, zip: File): String? = prefs(ctx).getString(zip.name.removeSuffix(".zip"), null)
-
-        internal fun prefs(ctx: Context) = ctx.getSharedPreferences("reports_sent", Context.MODE_PRIVATE)
-
-        /** The reporter's last valid Telegram username (in reports_sent; the sent codes there are keyed by zip name). */
-        internal const val CONTACT_KEY = "contact_telegram"
-
-        /** 0.5.16 (owner): the Telegram sign-in's pass and @username (in reports_sent). */
-        internal const val PASS_KEY = "tg_pass"
-        internal const val USERNAME_KEY = "tg_username"
-
-        internal fun remember(ctx: Context, zip: File, code: String) {
-            prefs(ctx).edit().putString(zip.name.removeSuffix(".zip"), code).apply()
-        }
-    }
-}
-
-class SendReportFragment : PreferenceFragmentCompat() {
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    /** What the bundle says about itself. */
     private data class Facts(
         val session: Boolean,
         val sessionId: String?,
@@ -107,81 +111,84 @@ class SendReportFragment : PreferenceFragmentCompat() {
         val imageId: String?,
         val outcomeKind: String?,
         val afterSeconds: Int?,
-        /** The OneOS the session ran on, which can be older than this app (0.4.32). */
         val sessionAppVersion: String? = null,
         val sessionAppCode: Int? = null,
-        /** The day the session's bundle was written, from its generatedAt. */
         val sessionDate: String? = null,
-        /** The session ran with Full session logs off (ONEOS_FULL_LOGS=0 in the bundle's stage/session.env). */
         val fullLogsOff: Boolean = false,
     )
 
-    private lateinit var facts: Facts
-    private var checklist = Checklist()
+    private var facts: Facts? = null
+    private var checklist by mutableStateOf(Checklist())
+    private var fullChoice: Boolean? by mutableStateOf(null)
+    private var attach by mutableStateOf(true)
+    private var sending by mutableStateOf(false)
+    private var sentCodeState: String? by mutableStateOf(null)
+    private var failure: String? by mutableStateOf(null)
+    private var progress: String? by mutableStateOf(null)
+    private var fromGuest by mutableStateOf(false)
 
-    /** Null: whole log only when a problem is ticked; set when the user chose. */
-    private var fullChoice: Boolean? = null
-    private var attach = true
-    private var sending = false
-    private var sentCode: String? = null
-    private var failure: String? = null
-    private var progress: String? = null
-
-    /** The answers came from How's it going? in the other system (0.4.30). */
-    private var fromGuest = false
-
-    // 0.5.16 (owner): reports only from group members. Sign-in state; the pass itself is in prefs.
-    private var signingIn = false
-    private var claimCode: String? = null
-    private var signinUrl: String? = null
+    private var signingIn by mutableStateOf(false)
+    private var claimCode: String? by mutableStateOf(null)
+    private var signinUrl: String? by mutableStateOf(null)
     private var claimTries = 0
     private var claimErrors = 0
     private var claimBusy = false
-    private var signinNote: String? = null
-    private var notMember = false
+    private var signinNote: String? by mutableStateOf(null)
+    private var notMember by mutableStateOf(false)
+    private var passState: String? by mutableStateOf(null)
+    private var usernameState: String? by mutableStateOf(null)
+    private var isResumedNow = false
     private val poll = Runnable { pollClaim() }
 
-    private val pass: String? get() = SendReportActivity.prefs(requireContext()).getString(SendReportActivity.PASS_KEY, null)?.takeIf { it.isNotEmpty() }
-    private val username: String? get() = SendReportActivity.prefs(requireContext()).getString(SendReportActivity.USERNAME_KEY, null)?.takeIf { it.isNotEmpty() }
+    private var showStartDialog by mutableStateOf(false)
+    private var showWorksDialog by mutableStateOf(false)
+    private var showProblemsDialog by mutableStateOf(false)
+    private var showNoteDialog by mutableStateOf(false)
+    private var showContactDialog by mutableStateOf(false)
 
-    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        val host = requireActivity() as SendReportActivity
-        val zip = host.zip
-        preferenceScreen = preferenceManager.createPreferenceScreen(preferenceManager.context)
-        if (zip == null || !ReportSender.available) {
-            category("").row(getString(R.string.send_unavailable), null)
-            return
+    private val full: Boolean get() = facts?.session == true && (fullChoice ?: checklist.wantsFullLogs)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        refreshAuthState()
+        val z = zip
+        if (z != null && ReportSender.available && ReportSender.refusal == null) {
+            val f = readFacts(z)
+            facts = f
+            sentCodeState = sentCode(this, z)
+            var c = Checklist(
+                start = when (f.outcomeKind) {
+                    "BLACK_SCREEN" -> StartAnswer.BLACK
+                    "BOOT_TIMEOUT" -> StartAnswer.LOGO
+                    else -> null
+                },
+            )
+            if (f.session) {
+                guestAnswers(z)?.let { g ->
+                    c = c.copy(start = StartAnswer.HOME, works = g.works - g.problems, problems = g.problems, note = g.note)
+                    fromGuest = true
+                }
+            }
+            savedContact(this)?.let { c = c.copy(contact = it) }
+            checklist = c
         }
-        ReportSender.refusal?.let { why ->
-            category("").row(why, null)
-            return
-        }
-        facts = readFacts(zip)
-        sentCode = SendReportActivity.sentCode(requireContext(), zip)
-        // The plain cases from how it ended; the rest the user says.
-        checklist = checklist.copy(
-            start = when (facts.outcomeKind) {
-                "BLACK_SCREEN" -> StartAnswer.BLACK
-                "BOOT_TIMEOUT" -> StartAnswer.LOGO
-                else -> null
-            },
-        )
-        // How's it going? (0.4.30): what the user ticked in the other system, when it is this session's.
-        if (facts.session) {
-            guestAnswers(zip)?.let { g ->
-                checklist = checklist.copy(start = StartAnswer.HOME, works = g.works - g.problems, problems = g.problems, note = g.note)
-                fromGuest = true
+        setContent {
+            DualOsTheme {
+                Screen()
             }
         }
-        redraw()
     }
 
     override fun onResume() {
         super.onResume()
+        isResumedNow = true
+        refreshAuthState()
         if (claimCode != null) schedulePoll()
     }
 
     override fun onPause() {
+        isResumedNow = false
         main.removeCallbacks(poll)
         super.onPause()
     }
@@ -190,6 +197,486 @@ class SendReportFragment : PreferenceFragmentCompat() {
         main.removeCallbacks(poll)
         io.shutdown()
         super.onDestroy()
+    }
+
+    private fun refreshAuthState() {
+        passState = prefs(this).getString(PASS_KEY, null)?.takeIf { it.isNotEmpty() }
+        usernameState = prefs(this).getString(USERNAME_KEY, null)?.takeIf { it.isNotEmpty() }
+    }
+
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable
+    private fun Screen() {
+        val z = zip
+        val f = facts
+        val statusColors = LocalDualOsStatusColors.current
+
+        DualOsScaffold(
+            title = stringResource(R.string.send_title),
+            onBack = { finish() },
+        ) { padding ->
+            if (z == null || !ReportSender.available) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp, padding.calculateTopPadding() + 8.dp, 16.dp, 24.dp),
+                ) {
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(title = stringResource(R.string.send_unavailable), icon = Icons.Rounded.Info)
+                        }
+                    }
+                }
+                return@DualOsScaffold
+            }
+            val refusal = ReportSender.refusal
+            if (refusal != null || f == null) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp, padding.calculateTopPadding() + 8.dp, 16.dp, 24.dp),
+                ) {
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveListItem(title = refusal ?: stringResource(R.string.send_unavailable), icon = Icons.Rounded.Warning)
+                        }
+                    }
+                }
+                return@DualOsScaffold
+            }
+
+            val items = CheckItem.forForm(f.profile?.form)
+            val ran = f.sessionAppVersion
+            val stale = f.session && ran != null &&
+                ran.substringBefore('-') != BuildConfig.VERSION_NAME.substringBefore('-')
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 32.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { ExpressiveSectionHeader(stringResource(if (f.session) R.string.send_cat_session else R.string.send_cat_probe)) }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = listOfNotNull(f.profile?.label ?: Build.MODEL, f.image?.let(::imageLabel)).joinToString(" · "),
+                            subtitle = when {
+                                !f.session -> stringResource(R.string.send_probe_summary)
+                                ran == null -> stringResource(R.string.send_session_summary, f.sessionId ?: "?")
+                                else -> stringResource(R.string.send_session_summary_full, f.sessionDate ?: "?", ran, f.sessionId ?: "?")
+                            },
+                            icon = DualOsIcons.PhoneAndroid,
+                        )
+                        if (ran != null && stale) {
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_session_old_title),
+                                subtitle = stringResource(R.string.send_session_old_summary, ran, BuildConfig.VERSION_NAME),
+                                icon = Icons.Rounded.Warning,
+                                iconTint = statusColors.warn,
+                            )
+                        }
+                        if (f.session && f.fullLogsOff) {
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_full_logs_off_title),
+                                subtitle = stringResource(R.string.send_full_logs_off_summary),
+                                icon = Icons.Rounded.Info,
+                            )
+                        }
+                    }
+                }
+
+                if (f.session) {
+                    item { ExpressiveSectionHeader(stringResource(R.string.send_cat_how)) }
+                    item {
+                        ExpressiveGroupedCard {
+                            if (fromGuest) {
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.send_from_guest),
+                                    subtitle = stringResource(R.string.send_from_guest_summary),
+                                    icon = DualOsIcons.Checklist,
+                                )
+                                ExpressiveListDivider()
+                            }
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_start_title),
+                                subtitle = checklist.start?.label ?: stringResource(R.string.send_choose),
+                                enabled = !sending,
+                                showChevron = !sending,
+                                onClick = { showStartDialog = true },
+                            )
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_works_title),
+                                subtitle = names(checklist.works, items),
+                                enabled = !sending,
+                                showChevron = !sending,
+                                onClick = { showWorksDialog = true },
+                            )
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_problems_title),
+                                subtitle = names(checklist.problems, items),
+                                enabled = !sending,
+                                showChevron = !sending,
+                                onClick = { showProblemsDialog = true },
+                            )
+                        }
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.send_cat_more)) }
+                item {
+                    val contactSummary = when {
+                        checklist.contact.isEmpty() -> stringResource(R.string.send_contact_hint)
+                        Reports.telegramUsername(checklist.contact) == null -> stringResource(R.string.send_contact_invalid, checklist.contact)
+                        else -> checklist.contact
+                    }
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = stringResource(R.string.send_note_title),
+                            subtitle = checklist.note.ifEmpty { stringResource(R.string.send_note_hint) },
+                            icon = Icons.Rounded.Edit,
+                            enabled = !sending,
+                            showChevron = !sending,
+                            onClick = { showNoteDialog = true },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.send_contact_title) + " *",
+                            subtitle = contactSummary,
+                            icon = Icons.Rounded.Edit,
+                            enabled = !sending,
+                            showChevron = !sending,
+                            onClick = { showContactDialog = true },
+                        )
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.send_cat_telegram)) }
+                item {
+                    ExpressiveGroupedCard {
+                        if (passState != null) {
+                            val name = usernameState
+                            ExpressiveListItem(
+                                title = if (name != null) stringResource(R.string.send_tg_signed_in_as, name) else stringResource(R.string.send_tg_signed_in),
+                                icon = Icons.Rounded.CheckCircle,
+                                iconTint = statusColors.ok,
+                            )
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_tg_sign_out),
+                                enabled = !sending,
+                                showChevron = !sending,
+                                onClick = {
+                                    prefs(this@SendReportActivity).edit().remove(PASS_KEY).remove(USERNAME_KEY).apply()
+                                    refreshAuthState()
+                                    notMember = false
+                                    signinNote = null
+                                },
+                            )
+                            if (notMember) {
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.send_tg_join_title),
+                                    subtitle = stringResource(R.string.send_tg_join_summary),
+                                    icon = DualOsIcons.OpenInNew,
+                                    showChevron = true,
+                                    onClick = { openLink(ReportSender.GROUP_URL) },
+                                )
+                            }
+                        } else {
+                            signinNote?.let { note ->
+                                ExpressiveListItem(title = note, icon = Icons.Rounded.Warning, iconTint = statusColors.warn)
+                                ExpressiveListDivider()
+                            }
+                            if (claimCode != null) {
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.send_tg_waiting_title),
+                                    subtitle = stringResource(R.string.send_tg_waiting_summary),
+                                    icon = DualOsIcons.OpenInNew,
+                                    showChevron = true,
+                                    onClick = { signinUrl?.let(::openLink) },
+                                )
+                            } else {
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.send_tg_sign_in),
+                                    subtitle = stringResource(R.string.send_tg_sign_in_summary),
+                                    icon = DualOsIcons.OpenInNew,
+                                    enabled = !signingIn && !sending,
+                                    showChevron = !signingIn && !sending,
+                                    onClick = { startSignIn() },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.send_cat_what)) }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveSwitchItem(
+                            title = stringResource(if (f.session) R.string.send_attach_logs else R.string.send_attach_findings),
+                            subtitle = when {
+                                !f.session -> stringResource(R.string.send_attach_findings_summary, Units.bytes(z.length()))
+                                full -> stringResource(R.string.send_full_summary, Units.bytes(z.length()))
+                                else -> stringResource(R.string.send_short_summary)
+                            },
+                            checked = attach,
+                            enabled = !sending,
+                            onCheckedChange = { attach = it },
+                        )
+                        if (f.session && attach) {
+                            ExpressiveListDivider()
+                            ExpressiveSwitchItem(
+                                title = stringResource(R.string.send_full_title),
+                                subtitle = stringResource(if (checklist.wantsFullLogs && fullChoice == null) R.string.send_full_auto else R.string.send_full_hint),
+                                checked = full,
+                                enabled = !sending,
+                                onCheckedChange = { fullChoice = it },
+                            )
+                        }
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.send_privacy_title),
+                            subtitle = stringResource(R.string.send_privacy_summary),
+                            icon = DualOsIcons.Shield,
+                        )
+                    }
+                }
+
+                item {
+                    ExpressiveGroupedCard {
+                        when {
+                            sending -> {
+                                Column(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Text(stringResource(R.string.send_sending), style = MaterialTheme.typography.titleMedium)
+                                    progress?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                    LinearWavyProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+                            }
+                            sentCodeState != null && failure == null -> {
+                                val code = sentCodeState!!
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.send_done_title),
+                                    subtitle = stringResource(R.string.send_done_summary, code),
+                                    icon = Icons.Rounded.CheckCircle,
+                                    iconTint = statusColors.ok,
+                                    onClick = {
+                                        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("DualOS report", code))
+                                        Toast.makeText(this@SendReportActivity, R.string.send_copied, Toast.LENGTH_SHORT).show()
+                                    },
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.send_again),
+                                    showChevron = true,
+                                    onClick = { sentCodeState = null },
+                                )
+                            }
+                            else -> {
+                                failure?.let { err ->
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.send_failed_title),
+                                        subtitle = err,
+                                        icon = Icons.Rounded.Warning,
+                                        iconTint = statusColors.block,
+                                    )
+                                    ExpressiveListDivider()
+                                }
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Button(
+                                        onClick = { send(z) },
+                                        enabled = passState != null && !sending,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(16.dp),
+                                    ) {
+                                        Text(stringResource(R.string.send_button))
+                                    }
+                                    if (failure != null) {
+                                        FilledTonalButton(
+                                            onClick = { shareInstead(z) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(16.dp),
+                                        ) {
+                                            Text(stringResource(R.string.send_share_instead))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showStartDialog) {
+                AlertDialog(
+                    onDismissRequest = { showStartDialog = false },
+                    title = { Text(stringResource(R.string.send_start_title)) },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            StartAnswer.entries.forEach { ans ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            checklist = checklist.copy(start = ans)
+                                            showStartDialog = false
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(selected = checklist.start == ans, onClick = {
+                                        checklist = checklist.copy(start = ans)
+                                        showStartDialog = false
+                                    })
+                                    Text(ans.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showStartDialog = false }) { Text(stringResource(android.R.string.cancel)) }
+                    },
+                )
+            }
+
+            if (showWorksDialog) {
+                MultiPickDialog(
+                    title = stringResource(R.string.send_works_title),
+                    items = items,
+                    initial = checklist.works,
+                    onConfirm = { picked ->
+                        checklist = checklist.copy(works = picked, problems = checklist.problems - picked)
+                        showWorksDialog = false
+                    },
+                    onDismiss = { showWorksDialog = false },
+                )
+            }
+
+            if (showProblemsDialog) {
+                MultiPickDialog(
+                    title = stringResource(R.string.send_problems_title),
+                    items = items,
+                    initial = checklist.problems,
+                    onConfirm = { picked ->
+                        checklist = checklist.copy(problems = picked, works = checklist.works - picked)
+                        showProblemsDialog = false
+                    },
+                    onDismiss = { showProblemsDialog = false },
+                )
+            }
+
+            if (showNoteDialog) {
+                TextInputDialog(
+                    title = stringResource(R.string.send_note_title),
+                    initial = checklist.note,
+                    maxLen = Reports.NOTE_MAX,
+                    singleLine = false,
+                    onConfirm = { v ->
+                        checklist = checklist.copy(note = Reports.cleanText(v, Reports.NOTE_MAX))
+                        showNoteDialog = false
+                    },
+                    onDismiss = { showNoteDialog = false },
+                )
+            }
+
+            if (showContactDialog) {
+                TextInputDialog(
+                    title = stringResource(R.string.send_contact_title),
+                    initial = checklist.contact,
+                    maxLen = Reports.CONTACT_MAX,
+                    singleLine = true,
+                    onConfirm = { raw ->
+                        val cleaned = Reports.cleanText(raw, Reports.CONTACT_MAX)
+                        val user = Reports.telegramUsername(cleaned)
+                        checklist = checklist.copy(contact = user ?: cleaned)
+                        if (user != null) {
+                            prefs(this@SendReportActivity).edit().putString(CONTACT_KEY, user).apply()
+                        } else if (cleaned.isNotBlank()) {
+                            Toast.makeText(this@SendReportActivity, getString(R.string.send_contact_invalid, cleaned), Toast.LENGTH_LONG).show()
+                        }
+                        showContactDialog = false
+                    },
+                    onDismiss = { showContactDialog = false },
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun MultiPickDialog(
+        title: String,
+        items: List<CheckItem>,
+        initial: Set<CheckItem>,
+        onConfirm: (Set<CheckItem>) -> Unit,
+        onDismiss: () -> Unit,
+    ) {
+        var selected by remember(initial) { mutableStateOf(initial) }
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    items.forEach { item ->
+                        val checked = item in selected
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selected = if (checked) selected - item else selected + item }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = checked, onCheckedChange = { on -> selected = if (on) selected + item else selected - item })
+                            Text(item.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text(stringResource(android.R.string.ok)) } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
+
+    @Composable
+    private fun TextInputDialog(
+        title: String,
+        initial: String,
+        maxLen: Int,
+        singleLine: Boolean,
+        onConfirm: (String) -> Unit,
+        onDismiss: () -> Unit,
+    ) {
+        var text by remember(initial) { mutableStateOf(initial) }
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(title) },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= maxLen) text = it },
+                    singleLine = singleLine,
+                    minLines = if (singleLine) 1 else 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text(stringResource(android.R.string.ok)) } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+        )
     }
 
     private fun readFacts(zip: File): Facts {
@@ -210,7 +697,6 @@ class SendReportFragment : PreferenceFragmentCompat() {
                 sessionAppVersion = json.optJSONObject("app")?.optString("version")?.takeIf { it.isNotEmpty() },
                 sessionAppCode = json.optJSONObject("app")?.optInt("versionCode")?.takeIf { it > 0 },
                 sessionDate = json.optString("generatedAt").takeIf { it.length >= 10 }?.take(10),
-                // 0.5.17: Record full logs from now in the guest app leaves stage/full_logs_mid.log: logs from then on.
                 fullLogsOff = runCatching {
                     val stage = File(ProbeSession.folderOf(zip), "stage")
                     File(stage, "session.env").readLines().contains("ONEOS_FULL_LOGS=0") && !File(stage, "full_logs_mid.log").isFile
@@ -227,13 +713,6 @@ class SendReportFragment : PreferenceFragmentCompat() {
         }
     }
 
-    private val full: Boolean get() = facts.session && (fullChoice ?: checklist.wantsFullLogs)
-
-    /**
-     * The guest OneOS app's How's it going? in the bundle (logs.guest copies it as
-     * guest/…oneos_checklist.json), when it was saved in this session: not before the
-     * session's start in stage/current.json (guest_prepare.sh also deletes it at each switch).
-     */
     private fun guestAnswers(zip: File): Checklist? {
         val folder = ProbeSession.folderOf(zip)
         val f = File(folder, "guest").listFiles { x -> x.isFile && x.name.endsWith("oneos_checklist.json") }?.firstOrNull() ?: return null
@@ -255,185 +734,34 @@ class SendReportFragment : PreferenceFragmentCompat() {
         return Checklist(works = works, problems = problems, note = note)
     }
 
-    private fun redraw() {
-        val zip = (requireActivity() as SendReportActivity).zip ?: return
-        preferenceScreen.removeAll()
-        val ctx = requireContext()
-        val form: FormFactor? = facts.profile?.form
-        val items = CheckItem.forForm(form)
-
-        // Which report this is.
-        val about = category(getString(if (facts.session) R.string.send_cat_session else R.string.send_cat_probe))
-        // 0.4.32: say which session this is, not just its id. Send sends the session
-        // the phone has stored, and a tester sent one twelve releases old without
-        // knowing (Z Fold7, 2026-10-30), so the date, the system and the OneOS it
-        // ran on are on the screen, and an older one says so in as many words.
-        val ran = facts.sessionAppVersion
-        val stale = facts.session && ran != null &&
-            ran.substringBefore('-') != com.fahadali.oneos.BuildConfig.VERSION_NAME.substringBefore('-')
-        about.row(
-            listOfNotNull(facts.profile?.label ?: Build.MODEL, facts.image?.let { imageLabel(it) }).joinToString(" · "),
-            when {
-                !facts.session -> getString(R.string.send_probe_summary)
-                ran == null -> getString(R.string.send_session_summary, facts.sessionId ?: "?")
-                else -> getString(
-                    R.string.send_session_summary_full,
-                    facts.sessionDate ?: "?", ran, facts.sessionId ?: "?",
-                )
-            },
-        )
-        if (ran != null && stale) {
-            about.row(getString(R.string.send_session_old_title), getString(R.string.send_session_old_summary, ran, com.fahadali.oneos.BuildConfig.VERSION_NAME))
-        }
-
-        if (facts.session && facts.fullLogsOff) {
-            about.row(getString(R.string.send_full_logs_off_title), getString(R.string.send_full_logs_off_summary))
-        }
-
-        if (facts.session) {
-            val how = category(getString(R.string.send_cat_how))
-            if (fromGuest) how.row(getString(R.string.send_from_guest), getString(R.string.send_from_guest_summary))
-            how.row(getString(R.string.send_start_title), checklist.start?.label ?: getString(R.string.send_choose), enabled = !sending) {
-                val starts = StartAnswer.entries
-                AlertDialog.Builder(ctx)
-                    .setTitle(R.string.send_start_title)
-                    .setSingleChoiceItems(starts.map { it.label }.toTypedArray(), starts.indexOf(checklist.start)) { d, i ->
-                        checklist = checklist.copy(start = starts[i])
-                        d.dismiss()
-                        redraw()
-                    }
-                    .show()
-            }
-            how.row(getString(R.string.send_works_title), names(checklist.works, items), enabled = !sending) {
-                pick(R.string.send_works_title, items, checklist.works) { checklist = checklist.copy(works = it, problems = checklist.problems - it) }
-            }
-            how.row(getString(R.string.send_problems_title), names(checklist.problems, items), enabled = !sending) {
-                pick(R.string.send_problems_title, items, checklist.problems) { checklist = checklist.copy(problems = it, works = checklist.works - it) }
-            }
-        }
-        val more = category(getString(R.string.send_cat_more))
-        more.row(getString(R.string.send_note_title), checklist.note.ifEmpty { getString(R.string.send_note_hint) }, enabled = !sending) {
-            text(R.string.send_note_title, checklist.note, Reports.NOTE_MAX, multiLine = true) { checklist = checklist.copy(note = it) }
-        }
-        // Required since 0.5.10 (owner: "make giving contact in the report compulsory, with proper telegram
-        // username"); the last good one is filled in again for the next report.
-        if (checklist.contact.isEmpty()) savedContact(ctx)?.let { checklist = checklist.copy(contact = it) }
-        val contactSummary = when {
-            checklist.contact.isEmpty() -> getString(R.string.send_contact_hint)
-            Reports.telegramUsername(checklist.contact) == null -> getString(R.string.send_contact_invalid, checklist.contact)
-            else -> checklist.contact
-        }
-        more.row(getString(R.string.send_contact_title) + " *", contactSummary, enabled = !sending) { askContact() }
-
-        // Who sends (0.5.16, owner: reports only from group members).
-        telegramRows(category(getString(R.string.send_cat_telegram)))
-
-        // What is sent.
-        val what = category(getString(R.string.send_cat_what))
-        val attachRow = SwitchPreferenceCompat(ctx).apply {
-            title = getString(if (facts.session) R.string.send_attach_logs else R.string.send_attach_findings)
-            summary = when {
-                !facts.session -> getString(R.string.send_attach_findings_summary, Units.bytes(zip.length()))
-                full -> getString(R.string.send_full_summary, Units.bytes(zip.length()))
-                else -> getString(R.string.send_short_summary)
-            }
-            isChecked = attach
-            isPersistent = false
-            isIconSpaceReserved = false
-            isEnabled = !sending
-            setOnPreferenceChangeListener { _, v -> attach = v as Boolean; main.post { redraw() }; true }
-        }
-        what.addPreference(attachRow)
-        if (facts.session && attach) {
-            what.addPreference(SwitchPreferenceCompat(ctx).apply {
-                title = getString(R.string.send_full_title)
-                summary = getString(if (checklist.wantsFullLogs && fullChoice == null) R.string.send_full_auto else R.string.send_full_hint)
-                isChecked = full
-                isPersistent = false
-                isIconSpaceReserved = false
-                isEnabled = !sending
-                setOnPreferenceChangeListener { _, v -> fullChoice = v as Boolean; main.post { redraw() }; true }
-            })
-        }
-        what.row(getString(R.string.send_privacy_title), getString(R.string.send_privacy_summary))
-
-        // Send, and how it went.
-        val send = category("")
-        when {
-            sending -> send.row(getString(R.string.send_sending), progress)
-            sentCode != null && failure == null -> {
-                send.row(getString(R.string.send_done_title), getString(R.string.send_done_summary, sentCode)) {
-                    ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("OneOS report", sentCode))
-                    Toast.makeText(ctx, R.string.send_copied, Toast.LENGTH_SHORT).show()
-                }
-                send.row(getString(R.string.send_again), null) { sentCode = null; redraw() }
-            }
-            else -> {
-                failure?.let { send.row(getString(R.string.send_failed_title), it) }
-                send.row(getString(R.string.send_button), getString(R.string.send_button_summary), enabled = pass != null) { send(zip) }
-                if (failure != null) {
-                    send.row(getString(R.string.send_share_instead), getString(R.string.send_share_instead_summary)) { shareInstead(zip) }
-                }
-            }
-        }
-    }
-
-    private fun telegramRows(cat: PreferenceCategory) {
-        if (pass != null) {
-            val name = username
-            cat.row(
-                if (name != null) getString(R.string.send_tg_signed_in_as, name) else getString(R.string.send_tg_signed_in),
-                null,
-                enabled = !sending,
-            )
-            cat.row(getString(R.string.send_tg_sign_out), null, enabled = !sending) {
-                SendReportActivity.prefs(requireContext()).edit().remove(SendReportActivity.PASS_KEY).remove(SendReportActivity.USERNAME_KEY).apply()
-                notMember = false
-                signinNote = null
-                redraw()
-            }
-            if (notMember) cat.row(getString(R.string.send_tg_join_title), getString(R.string.send_tg_join_summary)) { openLink(ReportSender.GROUP_URL) }
-            return
-        }
-        signinNote?.let { cat.row(it, null) }
-        if (claimCode != null) {
-            cat.row(getString(R.string.send_tg_waiting_title), getString(R.string.send_tg_waiting_summary)) { signinUrl?.let(::openLink) }
-        } else {
-            cat.row(getString(R.string.send_tg_sign_in), getString(R.string.send_tg_sign_in_summary), enabled = !signingIn && !sending) { startSignIn() }
-        }
-    }
-
     private fun openLink(url: String) {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (_: ActivityNotFoundException) {
-            Toast.makeText(requireContext(), R.string.send_tg_no_app, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.send_tg_no_app, Toast.LENGTH_LONG).show()
         }
     }
 
     private fun startSignIn() {
         signingIn = true
         signinNote = null
-        redraw()
         io.execute {
             val result = runCatching { ReportSender.signin() }
             main.post {
                 signingIn = false
-                if (!isAdded) return@post
+                if (isDestroyed) return@post
                 result.onSuccess { (code, url) ->
                     claimCode = code
                     signinUrl = url
                     claimTries = 0
                     claimErrors = 0
                     openLink(url)
-                    if (isResumed) schedulePoll()
+                    if (isResumedNow) schedulePoll()
                 }.onFailure { e -> signinNote = e.message ?: e.javaClass.simpleName }
-                redraw()
             }
         }
     }
 
-    /** Every 3 s while the screen is in front, 60 times (3 minutes); a pause does not use them up. */
     private fun schedulePoll() {
         main.removeCallbacks(poll)
         main.postDelayed(poll, 3_000L)
@@ -441,7 +769,7 @@ class SendReportFragment : PreferenceFragmentCompat() {
 
     private fun pollClaim() {
         val code = claimCode ?: return
-        if (claimBusy || !isAdded) return
+        if (claimBusy || isDestroyed) return
         if (claimTries >= 60) return endSignIn(getString(R.string.send_tg_expired))
         claimTries++
         claimBusy = true
@@ -449,25 +777,25 @@ class SendReportFragment : PreferenceFragmentCompat() {
             val result = runCatching { ReportSender.claim(code) }
             main.post {
                 claimBusy = false
-                if (!isAdded || claimCode != code) return@post
+                if (isDestroyed || claimCode != code) return@post
                 result.onSuccess { claim ->
                     claimErrors = 0
                     when (claim) {
-                        ReportReply.Claim.Waiting -> if (isResumed) schedulePoll()
+                        ReportReply.Claim.Waiting -> if (isResumedNow) schedulePoll()
                         ReportReply.Claim.Expired -> endSignIn(getString(R.string.send_tg_expired))
                         is ReportReply.Claim.Done -> {
-                            SendReportActivity.prefs(requireContext()).edit()
-                                .putString(SendReportActivity.PASS_KEY, claim.pass)
-                                .putString(SendReportActivity.USERNAME_KEY, claim.username ?: "")
+                            prefs(this).edit()
+                                .putString(PASS_KEY, claim.pass)
+                                .putString(USERNAME_KEY, claim.username ?: "")
                                 .apply()
+                            refreshAuthState()
                             notMember = !claim.member
                             endSignIn(null)
                         }
                     }
                 }.onFailure { e ->
-                    // A dropped connection is tried again twice; a refusal or a 5xx is shown.
                     if (e !is ReportSender.Failed && ++claimErrors < 3) {
-                        if (isResumed) schedulePoll()
+                        if (isResumedNow) schedulePoll()
                     } else {
                         endSignIn(e.message ?: e.javaClass.simpleName)
                     }
@@ -481,7 +809,6 @@ class SendReportFragment : PreferenceFragmentCompat() {
         claimCode = null
         signinUrl = null
         signinNote = note
-        if (isAdded) redraw()
     }
 
     private fun imageLabel(i: ImageRef): String = if (i.name.contains(i.shortName)) i.name else "${i.name} (${i.shortName})"
@@ -489,78 +816,29 @@ class SendReportFragment : PreferenceFragmentCompat() {
     private fun names(set: Set<CheckItem>, items: List<CheckItem>): String =
         items.filter { it in set }.joinToString(", ") { it.label }.ifEmpty { getString(R.string.send_none_ticked) }
 
-    private fun pick(title: Int, items: List<CheckItem>, current: Set<CheckItem>, done: (Set<CheckItem>) -> Unit) {
-        val checked = items.map { it in current }.toBooleanArray()
-        AlertDialog.Builder(requireContext())
-            .setTitle(title)
-            .setMultiChoiceItems(items.map { it.label }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                done(items.filterIndexed { i, _ -> checked[i] }.toSet())
-                redraw()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun text(title: Int, current: String, max: Int, multiLine: Boolean, done: (String) -> Unit) {
-        val ctx = requireContext()
-        val edit = EditText(ctx).apply {
-            setText(current)
-            filters = arrayOf(InputFilter.LengthFilter(max))
-            inputType = InputType.TYPE_CLASS_TEXT or (if (multiLine) InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES else 0)
-            if (multiLine) minLines = 3
-        }
-        val box = FrameLayout(ctx).apply {
-            val pad = (24 * resources.displayMetrics.density).toInt()
-            setPadding(pad, pad / 2, pad, 0)
-            addView(edit)
-        }
-        AlertDialog.Builder(ctx)
-            .setTitle(title)
-            .setView(box)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                done(Reports.cleanText(edit.text.toString(), max))
-                redraw()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun askContact() =
-        text(R.string.send_contact_title, checklist.contact, Reports.CONTACT_MAX, multiLine = false) { raw ->
-            val user = Reports.telegramUsername(raw)
-            checklist = checklist.copy(contact = user ?: raw)
-            if (user != null) SendReportActivity.prefs(requireContext()).edit().putString(SendReportActivity.CONTACT_KEY, user).apply()
-            else if (raw.isNotBlank()) Toast.makeText(requireContext(), getString(R.string.send_contact_invalid, raw), Toast.LENGTH_LONG).show()
-        }
-
-    private fun savedContact(ctx: Context): String? = SendReportActivity.prefs(ctx).getString(SendReportActivity.CONTACT_KEY, null)?.let(Reports::telegramUsername)
+    private fun savedContact(ctx: Context): String? = prefs(ctx).getString(CONTACT_KEY, null)?.let(Reports::telegramUsername)
 
     private fun send(zip: File) {
-        if (facts.session && checklist.start == null) {
-            Toast.makeText(requireContext(), R.string.send_need_start, Toast.LENGTH_SHORT).show()
+        val f = facts ?: return
+        if (f.session && checklist.start == null) {
+            Toast.makeText(this, R.string.send_need_start, Toast.LENGTH_SHORT).show()
             return
         }
         if (Reports.telegramUsername(checklist.contact) == null) {
-            Toast.makeText(requireContext(), R.string.send_contact_needed, Toast.LENGTH_LONG).show()
-            askContact()
+            Toast.makeText(this, R.string.send_contact_needed, Toast.LENGTH_LONG).show()
+            showContactDialog = true
             return
         }
-        val tgPass = pass
-        if (tgPass == null) return
-        val app = requireContext().applicationContext
+        val tgPass = passState ?: return
+        val app = applicationContext
         sending = true
         failure = null
         progress = getString(R.string.send_preparing)
-        redraw()
-        val f = facts
         val c = checklist.cleaned()
         val wantFull = full
         val withLogs = attach
         io.execute {
             val result = runCatching {
-                // The short log is made in the cache from the bundle itself (not next
-                // to it: Last session shows the newest zip in files/logs), and deleted after.
                 val shortDir = File(app.cacheDir, "report-short").apply { deleteRecursively(); mkdirs() }
                 val file = when {
                     !withLogs -> null
@@ -573,7 +851,7 @@ class SendReportFragment : PreferenceFragmentCompat() {
                     reportId = Reports.reportId(f.sessionId ?: zip.name.removeSuffix(".zip"), rnd),
                     createdAt = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME).take(25),
                     app = ProbeSession.appInfo(app),
-                    series = com.fahadali.oneos.BuildConfig.VERSION_NAME.substringAfterLast('-', "").takeIf { it in setOf("fold", "s26", "s25") }.orEmpty(),
+                    series = BuildConfig.VERSION_NAME.substringAfterLast('-', "").takeIf { it in setOf("a53", "fold", "s26", "s25") }.orEmpty(),
                     model = Build.MODEL.take(40),
                     device = Build.DEVICE.lowercase().take(48),
                     profileId = f.profile?.id,
@@ -592,7 +870,7 @@ class SendReportFragment : PreferenceFragmentCompat() {
                 )
                 try {
                     ReportSender.send(record, file, tgPass) { sent, total ->
-                        if (total > 0) main.post { progress = app.getString(R.string.send_progress, (sent * 100 / total).toInt(), Units.bytes(total)); if (isAdded) redraw() }
+                        if (total > 0) main.post { progress = app.getString(R.string.send_progress, (sent * 100 / total).toInt(), Units.bytes(total)) }
                     }
                 } finally {
                     shortDir.deleteRecursively()
@@ -602,20 +880,19 @@ class SendReportFragment : PreferenceFragmentCompat() {
             main.post {
                 sending = false
                 result.onSuccess { code ->
-                    sentCode = code
-                    SendReportActivity.remember(app, zip, code)
+                    sentCodeState = code
+                    remember(app, zip, code)
                 }.onFailure { e ->
                     failure = e.message ?: e.javaClass.simpleName
                     when (e) {
-                        // 0.5.16: sign in again (the pass is no longer good), or join the group and retry.
                         is ReportSender.NeedsSignIn -> {
-                            SendReportActivity.prefs(app).edit().remove(SendReportActivity.PASS_KEY).remove(SendReportActivity.USERNAME_KEY).apply()
+                            prefs(app).edit().remove(PASS_KEY).remove(USERNAME_KEY).apply()
+                            refreshAuthState()
                             notMember = false
                         }
                         is ReportSender.NotMember -> { notMember = true; failure = null }
                     }
                 }
-                if (isAdded) redraw()
             }
         }
     }
@@ -633,34 +910,27 @@ class SendReportFragment : PreferenceFragmentCompat() {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
-    /** The findings screen of this zip, with Share and Save. */
     private fun shareInstead(zip: File) {
-        val ctx = requireContext()
-        val i = Intent(ctx, FindingsActivity::class.java)
-        if (zip.parentFile?.canonicalPath == FindingsActivity.logsDir(ctx).canonicalPath) i.putExtra(FindingsActivity.EXTRA_ZIP, zip.path)
+        val i = Intent(this, FindingsActivity::class.java)
+        if (zip.parentFile?.canonicalPath == FindingsActivity.logsDir(this).canonicalPath) i.putExtra(FindingsActivity.EXTRA_ZIP, zip.path)
         startActivity(i)
     }
 
-    private fun category(title: String): PreferenceCategory {
-        val c = PreferenceCategory(preferenceManager.context)
-        c.title = title
-        c.isIconSpaceReserved = false
-        preferenceScreen.addPreference(c)
-        return c
-    }
+    companion object {
+        const val EXTRA_ZIP = "com.fahadali.oneos.extra.REPORT_ZIP"
 
-    private fun PreferenceCategory.row(title: CharSequence, summary: CharSequence?, enabled: Boolean = true, onClick: (() -> Unit)? = null): Preference {
-        val p = Preference(context)
-        p.title = title
-        p.summary = summary
-        p.isIconSpaceReserved = false
-        p.isEnabled = enabled
-        if (onClick == null) {
-            p.isSelectable = false
-        } else {
-            p.setOnPreferenceClickListener { onClick(); true }
+        fun intent(ctx: Context, zip: File): Intent = Intent(ctx, SendReportActivity::class.java).putExtra(EXTRA_ZIP, zip.path)
+
+        fun sentCode(ctx: Context, zip: File): String? = prefs(ctx).getString(zip.name.removeSuffix(".zip"), null)
+
+        internal fun prefs(ctx: Context) = ctx.getSharedPreferences("reports_sent", Context.MODE_PRIVATE)
+
+        internal const val CONTACT_KEY = "contact_telegram"
+        internal const val PASS_KEY = "tg_pass"
+        internal const val USERNAME_KEY = "tg_username"
+
+        internal fun remember(ctx: Context, zip: File, code: String) {
+            prefs(ctx).edit().putString(zip.name.removeSuffix(".zip"), code).apply()
         }
-        addPreference(p)
-        return p
     }
 }

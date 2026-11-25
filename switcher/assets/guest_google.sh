@@ -40,7 +40,7 @@ say() { echo "Google apps: $*"; }
 # 2022 CN stub without a launcher entry (F8U run 13: "Play Store missing"):
 # STORE_ONLY, One UI's Play Store over the stub and Play services left alone.
 STORE_ONLY=0
-# LineageOS (0.5.06, sets "lineage" and "lineage23"): the image has no Google
+# LineageOS / VANILLA AOSP GSIs (0.5.06, sets "lineage", "lineage23" and "infinityx35"): the image has no Google
 # apps at all, no GmsCore folder to bind over and no Google permission files.
 # FULL: One UI's
 # Play services, Play Store and Google Services Framework (sign-in), with One
@@ -49,7 +49,7 @@ STORE_ONLY=0
 FULL=0
 selected() {
     [ "${ONEOS_GUEST_GMS:-1}" = 1 ] && [ "${ONEOS_GUEST_HIDE_GMS:-0}" != 1 ] || return 1
-    if grep -q -E '"set": *"lineage(23)?"' "$STAGE/session/current.json" 2>/dev/null; then
+    if grep -q -E '"set": *"(lineage(23)?|infinityx35)"' "$STAGE/session/current.json" 2>/dev/null; then
         FULL=1
         return 0
     fi
@@ -178,6 +178,21 @@ copy_config() {
         done
     done
     [ $n -gt 0 ] || { WHY="One UI has no Google permission files"; return 1; }
+    cat > "$new/permissions/oneos-privapp-permissions-gms.xml" <<'EOF' || { WHY="cannot write GMS privapp XML"; return 1; }
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <privapp-permissions package="com.google.android.gms">
+        <permission name="android.permission.INSTALL_LOCATION_PROVIDER"/>
+        <permission name="android.permission.LOG_COMPAT_CHANGE"/>
+        <permission name="android.permission.READ_COMPAT_CHANGE_CONFIG"/>
+        <permission name="android.permission.PACKET_KEEPALIVE_OFFLOAD"/>
+        <permission name="android.permission.WRITE_DEVICE_CONFIG"/>
+        <permission name="android.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG"/>
+    </privapp-permissions>
+</permissions>
+EOF
+    chmod 644 "$new/permissions/oneos-privapp-permissions-gms.xml" || { WHY="cannot chmod GMS privapp XML"; return 1; }
+    n=$((n + 1))
     (cd "$new" && find . -type f -name '*.xml' -exec sha256sum {} + > config.sha256) || { WHY="cannot write checksums"; return 1; }
     chown -R 0:0 "$new"; find "$new" -type d -exec chmod 755 {} \;; find "$new" -type f -exec chmod 644 {} \;
     rm -rf "$dir"; mv "$new" "$dir" || { WHY="cannot keep the config copy"; return 1; }
@@ -197,7 +212,8 @@ farm_dir() { # <target> <work dir> <entry>... (a name ending in / is a folder)
     fd_t=$1; fd_w=$2; shift 2
     fd_f="$fd_w/farm"; fd_o="$fd_w/orig"
     "$BB" umount -l "$fd_f" 2>/dev/null; "$BB" umount -l "$fd_o" 2>/dev/null
-    mkdir -p "$fd_f" "$fd_o" && "$BB" mount -t tmpfs -o size=256k,mode=755 tmpfs "$fd_f" || return 1
+    mkdir -p "$fd_f" "$fd_o" && "$BB" mount -t tmpfs -o size=256k,mode=755 tmpfs "$fd_f" &&
+        "$BB" mount --make-private "$fd_f" || { "$BB" umount -l "$fd_f" 2>/dev/null; return 1; }
     for fd_e in "$fd_t"/* "$fd_t"/.[!.]*; do
         [ -e "$fd_e" ] || [ -L "$fd_e" ] || continue
         fd_n=${fd_e##*/}
@@ -210,9 +226,11 @@ farm_dir() { # <target> <work dir> <entry>... (a name ending in / is a folder)
     done
     chmod 755 "$fd_f"; chcon -R u:object_r:system_file:s0 "$fd_f" 2>/dev/null
     "$BB" mount --bind "$fd_t" "$fd_o" || { "$BB" umount -l "$fd_f"; return 1; }
-    # Private before the farm goes over the target: a shared bind would show the farm here too.
+    # Private before the farm goes over the target: a shared bind would show the farm here too,
+    # and a private farm prevents bind submounts from leaking into host namespaces.
     "$BB" mount --make-private "$fd_o" || { "$BB" umount -l "$fd_o"; "$BB" umount -l "$fd_f"; return 1; }
-    "$BB" mount --bind "$fd_f" "$fd_t" || { "$BB" umount -l "$fd_o"; "$BB" umount -l "$fd_f"; return 1; }
+    "$BB" mount --bind "$fd_f" "$fd_t" &&
+        "$BB" mount --make-private "$fd_t" || { "$BB" umount -l "$fd_t" 2>/dev/null; "$BB" umount -l "$fd_o"; "$BB" umount -l "$fd_f"; return 1; }
     for fd_e in "$fd_o"/* "$fd_o"/.[!.]*; do
         [ -e "$fd_e" ] && [ ! -L "$fd_e" ] || continue
         "$BB" mount --bind "$fd_e" "$fd_t/${fd_e##*/}" || { unfarm "$fd_t" "$fd_w"; return 1; }

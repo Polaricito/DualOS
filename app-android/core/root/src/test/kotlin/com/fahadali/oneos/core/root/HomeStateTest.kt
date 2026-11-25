@@ -14,6 +14,7 @@ import com.fahadali.oneos.core.model.ScreenLockRule
 import com.fahadali.oneos.core.model.SuProbeResult
 import com.fahadali.oneos.core.model.SuState
 import com.fahadali.oneos.core.model.SwitchGates
+import com.fahadali.oneos.core.model.SystemFamily
 import com.fahadali.oneos.core.root.HomeState.Kind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -23,7 +24,8 @@ import org.junit.Test
 
 /** Home shows one status and one button, worst first (the redesign, section 2.2). */
 class HomeStateTest {
-    private val n6 = Images.FIND_N6
+    private val lineage = Images.LINEAGE23
+    private val other = Images.LINEAGE23.copy(id = "infinityx-a53", name = "Infinity-X 4.1", family = SystemFamily.INFINITYX)
 
     private fun ok(id: String) = Finding(id, Level.OK, "ok")
 
@@ -35,9 +37,9 @@ class HomeStateTest {
         SwitchGates.ID_SCREEN_LOCK, SwitchGates.ID_BATTERY,
     )
 
-    /** The Fold's SWITCH gates with the Find N6 staged, every gate OK but [bad]. */
-    private fun report(vararg bad: Finding, image: com.fahadali.oneos.core.model.ImageRef? = n6) = GateReport(
-        GatePhase.SWITCH, Profiles.F8U, image, PackageSets.N6_F8U,
+    /** A53 SWITCH gates with LineageOS 23 staged, every gate OK but [bad]. */
+    private fun report(vararg bad: Finding, image: com.fahadali.oneos.core.model.ImageRef? = lineage) = GateReport(
+        GatePhase.SWITCH, Profiles.A53, image, PackageSets.LINEAGE23,
         allOk.map { id -> Gate(bad.firstOrNull { it.id == id } ?: ok(id)) } +
             Gate(Finding(SwitchGates.ID_CARRIER, Level.INFO, "Calls use 2G or 3G", "", CarrierRules.R_2G_3G)),
     )
@@ -63,47 +65,41 @@ class HomeStateTest {
     private val oldSwitcher = block(SwitchGates.ID_OLD_SWITCHER, SwitchGates.R_OLD_SWITCHER_INSTALLED)
 
     private fun last(outcome: OutcomeKind? = OutcomeKind.USER_RETURN, seen: Boolean = false, over: Boolean = true) =
-        LastSession("0123456789abcdef", n6.id, dryRun = false, wallMs = 1_792_000_000_000, over = over, outcome = outcome, afterSeconds = 2520, seen = seen)
+        LastSession("0123456789abcdef", lineage.id, dryRun = false, wallMs = 1_792_000_000_000, over = over, outcome = outcome, afterSeconds = 2520, seen = seen)
 
     @Test
-    fun aNewerOneOsIsTheHeroBelowRestoreJobsAndRoot() {
-        val offer = com.fahadali.oneos.core.model.PlainMessage("Update for ColorOS 17", "OneOS 0.4.43: Theme Store", FixAction.APP_UPDATE, "Update", Level.INFO)
+    fun aNewerAppUpdateIsTheHeroBelowRestoreJobsAndRoot() {
+        val offer = com.fahadali.oneos.core.model.PlainMessage("Update for LineageOS 23", "DualOS 1.0.1", FixAction.APP_UPDATE, "Update", Level.INFO)
         fun withUpdate(r: GateReport?, job: HomeJob? = null, busy: Boolean = false) =
             HomeState.decide(HomeInput(r, null, false, null, job, null, appVersionCode = 4, appUpdate = offer, appUpdateBusy = busy))
-        // Above ready, a fix, an update of the stage, nothing set up, an unsupported phone.
         for (r in listOf(report(), report(lock), report(lock, oldVersion), report(lock, nothing), report(installd))) {
             val s = withUpdate(r)
             assertEquals(Kind.APP_UPDATE, s.kind)
             assertEquals(FixAction.APP_UPDATE, s.primary)
             assertEquals("Update", s.primaryLabel)
-            assertEquals("Update for ColorOS 17", s.problem?.title)
+            assertEquals("Update for LineageOS 23", s.problem?.title)
             assertTrue(s.primaryEnabled)
         }
-        // Never above a session to restore, a running job or root.
         assertEquals(Kind.RESTORE, withUpdate(report(unfinished)).kind)
-        assertEquals(Kind.SETTING_UP, withUpdate(report(), job = HomeJob(HomeJob.Kind.SETUP, n6, 10)).kind)
+        assertEquals(Kind.SETTING_UP, withUpdate(report(), job = HomeJob(HomeJob.Kind.SETUP, lineage, 10)).kind)
         assertEquals(Kind.NO_ROOT, withUpdate(report(root)).kind)
-        // Downloading or installing: the button is off.
         assertFalse(withUpdate(report(), busy = true).primaryEnabled)
-        // No offer: Home as before.
         assertEquals(Kind.READY, decide(report()).kind)
     }
 
-    /** 0.4.85: One UI older than every system of the phone: one plain message, nothing to tap. */
     @Test
     fun anOlderOneUiSaysToUpdateIt() {
         val older = block(SwitchGates.ID_ANDROID, SwitchGates.R_ANDROID_OLDER)
         val s = decide(report(older, nothing, lock, image = null))
         assertEquals(Kind.UNSUPPORTED, s.kind)
         assertEquals("Update One UI first", s.problem!!.title)
-        assertTrue(s.problem!!.line, s.problem!!.line.startsWith("The systems for your Z Fold"))
+        assertTrue(s.problem!!.line, s.problem!!.line.startsWith("The systems for your Galaxy A53 5G"))
         assertNull(s.primary)
         assertNull(s.primaryLabel)
     }
 
     @Test
     fun theWorstComesFirst() {
-        // Each row adds the next worse problem; Home shows that one.
         val ladder = listOf(
             Kind.READY to arrayOf(),
             Kind.FIX to arrayOf(lock),
@@ -119,12 +115,10 @@ class HomeStateTest {
             val s = decide(report(*bad))
             assertEquals(bad.joinToString { "${it.id}/${it.reason}" }, kind, s.kind)
         }
-        // A running setup or switch comes before root, an unfinished session before the job.
-        assertEquals(Kind.SETTING_UP, decide(report(root, lock), job = HomeJob(HomeJob.Kind.SETUP, n6, 62)).kind)
-        assertEquals(Kind.SWITCHING, decide(report(), job = HomeJob(HomeJob.Kind.SWITCH, n6)).kind)
-        assertEquals(Kind.RESTORE, decide(report(unfinished), job = HomeJob(HomeJob.Kind.SETUP, n6, 1)).kind)
+        assertEquals(Kind.SETTING_UP, decide(report(root, lock), job = HomeJob(HomeJob.Kind.SETUP, lineage, 62)).kind)
+        assertEquals(Kind.SWITCHING, decide(report(), job = HomeJob(HomeJob.Kind.SWITCH, lineage)).kind)
+        assertEquals(Kind.RESTORE, decide(report(unfinished), job = HomeJob(HomeJob.Kind.SETUP, lineage, 1)).kind)
         assertEquals(Kind.RESTORING, decide(report(unfinished), job = HomeJob(HomeJob.Kind.RESTORE)).kind)
-        // Back from a session: after the problems, before Ready.
         assertEquals(Kind.FIX, decide(report(lock), last = last()).kind)
         assertEquals(Kind.WELCOME_BACK, decide(report(), last = last()).kind)
     }
@@ -133,16 +127,15 @@ class HomeStateTest {
     fun eachStateHasItsButton() {
         val ready = decide(report())
         assertEquals(FixAction.SWITCH, ready.primary)
-        assertEquals("Switch to ColorOS 17", ready.primaryLabel)
-        assertEquals(n6, ready.image)
+        assertEquals("Switch to LineageOS 23", ready.primaryLabel)
+        assertEquals(lineage, ready.image)
         assertTrue(ready.primaryEnabled)
 
         val fix = decide(report(lock, battery))
         assertEquals(FixAction.OPEN_LOCK_SETTINGS, fix.primary)
         assertEquals("Turn off your screen lock", fix.problem!!.title)
         assertEquals(lock, fix.finding)
-        // Still names the system that is set up (its row on Home).
-        assertEquals(n6, fix.image)
+        assertEquals(lineage, fix.image)
 
         val restore = decide(report(unfinished))
         assertEquals(FixAction.RESTORE, restore.primary)
@@ -150,27 +143,25 @@ class HomeStateTest {
 
         val update = decide(report(oldVersion))
         assertEquals(FixAction.UPDATE, update.primary)
-        assertEquals("Finish updating ColorOS 17", update.problem!!.title)
+        assertEquals("Finish updating LineageOS 23", update.problem!!.title)
 
         val nothingYet = decide(report(nothing, image = null))
         assertEquals(FixAction.CHOOSE_SYSTEM, nothingYet.primary)
         assertNull(nothingYet.problem)
-        // A downloaded file was chosen already: set that system up.
-        val picked = HomeState.decide(HomeInput(report(nothing, image = null), picked = Images.PIXEL_YOGI))
+        val picked = HomeState.decide(HomeInput(report(nothing, image = null), picked = other))
         assertEquals(Kind.NOTHING_SET_UP, picked.kind)
         assertEquals(FixAction.SET_UP, picked.primary)
-        assertEquals("Set up Pixel 11 Fold", picked.primaryLabel)
-        assertEquals(Images.PIXEL_YOGI, picked.image)
+        assertEquals("Set up Infinity-X 4.1", picked.primaryLabel)
+        assertEquals(other, picked.image)
 
-        // A restart or a battery to charge has nothing to tap.
         assertNull(decide(report(mounted)).primary)
         assertNull(decide(report(battery)).primary)
 
-        val setup = decide(report(), job = HomeJob(HomeJob.Kind.SETUP, Images.PIXEL_YOGI, 62))
+        val setup = decide(report(), job = HomeJob(HomeJob.Kind.SETUP, other, 62))
         assertEquals(FixAction.SHOW_PROGRESS, setup.primary)
         assertEquals(62, setup.percent)
-        assertEquals(Images.PIXEL_YOGI, setup.image)
-        assertNull(decide(report(), job = HomeJob(HomeJob.Kind.SWITCH, n6)).primary)
+        assertEquals(other, setup.image)
+        assertNull(decide(report(), job = HomeJob(HomeJob.Kind.SWITCH, lineage)).primary)
     }
 
     @Test
@@ -216,7 +207,7 @@ class HomeStateTest {
     fun theStageAloneCanAskForRestore() {
         // The check's stage read says the last session never returned, before any gate report.
         val st = StageFixtures.status(
-            StageFixtures.prepared(Profiles.F8U, n6, PackageSets.N6_F8U, extra = mapOf("stage.session" to "boot=new\nactive\nboot_id=old\n")),
+            StageFixtures.prepared(Profiles.A53, lineage, PackageSets.LINEAGE23, extra = mapOf("stage.session" to "boot=new\nactive\nboot_id=old\n")),
         )
         assertTrue(st.unfinishedSession)
         val s = decide(null, status = st)
@@ -242,7 +233,7 @@ class HomeStateTest {
         val s = decide(null, checking = true, cached = ready)
         assertEquals(Kind.READY, s.kind)
         assertEquals(ready, s.cached)
-        assertEquals(n6, s.image)
+        assertEquals(lineage, s.image)
         assertEquals(FixAction.SWITCH, s.primary)
         assertEquals(decide(report()).primaryLabel, s.primaryLabel)
         assertFalse(s.primaryEnabled)
@@ -267,9 +258,9 @@ class HomeStateTest {
         val denied = decide(null, failure = SwitchGates.rootFinding(SuProbeResult(SuState.DENIED, null, null, "")), cached = ready)
         assertEquals(Kind.NO_ROOT, denied.kind)
         assertNull(denied.cached)
-        assertEquals(Kind.SETTING_UP, decide(null, checking = true, job = HomeJob(HomeJob.Kind.SETUP, n6, 3), cached = ready).kind)
+        assertEquals(Kind.SETTING_UP, decide(null, checking = true, job = HomeJob(HomeJob.Kind.SETUP, lineage, 3), cached = ready).kind)
         val st = StageFixtures.status(
-            StageFixtures.prepared(Profiles.F8U, n6, PackageSets.N6_F8U, extra = mapOf("stage.session" to "boot=new\nactive\nboot_id=old\n")),
+            StageFixtures.prepared(Profiles.A53, lineage, PackageSets.LINEAGE23, extra = mapOf("stage.session" to "boot=new\nactive\nboot_id=old\n")),
         )
         assertEquals(Kind.RESTORE, decide(null, checking = true, status = st, cached = ready).kind)
         // Back from a session is read again from the last session, not from what was kept.
@@ -285,7 +276,7 @@ class HomeStateTest {
         // From a finished check with no job: kept, with its tiles.
         val ready = decide(report()).snapshot(tiles, 7)!!
         assertEquals(Kind.READY, ready.kind)
-        assertEquals(n6.id, ready.imageId)
+        assertEquals(lineage.id, ready.imageId)
         assertEquals(tiles, ready.checks)
         assertEquals(7L, ready.wallMs)
         assertEquals(Kind.NOTHING_SET_UP, decide(report(nothing, image = null)).snapshot(tiles, 0)!!.kind)
@@ -297,8 +288,8 @@ class HomeStateTest {
         assertNull(decide(null, failure = block(SwitchGates.ID_STAGE, SwitchGates.R_STAGE_NOT_READ)).snapshot(tiles, 0))
         assertNull(decide(report(block(SwitchGates.ID_STAGE, SwitchGates.R_STAGE_NOT_READ))).snapshot(tiles, 0))
         assertNull(decide(report(root)).snapshot(tiles, 0))
-        assertNull(decide(report(), job = HomeJob(HomeJob.Kind.SETUP, n6, 50)).snapshot(tiles, 0))
-        assertNull(decide(report(), job = HomeJob(HomeJob.Kind.SWITCH, n6)).snapshot(tiles, 0))
+        assertNull(decide(report(), job = HomeJob(HomeJob.Kind.SETUP, lineage, 50)).snapshot(tiles, 0))
+        assertNull(decide(report(), job = HomeJob(HomeJob.Kind.SWITCH, lineage)).snapshot(tiles, 0))
         assertNull(decide(null, checking = true, cached = ready).snapshot(tiles, 0))
         // A kept kind that is not one to show (say, an edited preference) is not shown.
         assertEquals(Kind.CHECKING, decide(null, checking = true, cached = ready.copy(kind = Kind.SWITCHING)).kind)

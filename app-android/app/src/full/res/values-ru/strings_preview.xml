@@ -9,7 +9,7 @@
     <string name="setup_preview_boot_message">Это лишь предпросмотр подтверждения. One UI продолжает работать, команды root не выполняются.</string>
     <string name="setup_preview_finish">Завершить предпросмотр</string>
     <string name="setup_preview_complete">Предпросмотр завершён</string>
-    <string name="setup_preview_busy">Дождитесь завершения текущей операции OneOS, прежде чем запускать предпросмотр настройки.</string>
+    <string name="setup_preview_busy">Дождитесь завершения текущей операции DualOS, прежде чем запускать предпросмотр настройки.</string>
     <string name="setup_preview_cancelled">Предпросмотр отменён. Файлы ОС не менялись.</string>
     <string name="setup_preview_finished">Предпросмотр настройки завершён. Файлы ОС не менялись.</string>
 </resources>

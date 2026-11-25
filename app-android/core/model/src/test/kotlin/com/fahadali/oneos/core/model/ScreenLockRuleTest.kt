@@ -23,8 +23,8 @@ class ScreenLockRuleTest {
     }
 
     @Test
-    fun screenLockSetMakesAnOtherwiseCompatibleF8uWarning() {
-        val r = CompatEvaluator.evaluate(Fixtures.facts(screenLock = true))
+    fun screenLockSetMakesAnOtherwiseCompatibleA53Warning() {
+        val r = CompatEvaluator.evaluate(Fixtures.a53(screenLock = true))
         assertEquals(Verdict.WARNING, r.verdict)
         assertEquals(Level.WARN, r.find(ScreenLockRule.ID_SET)?.level)
         assertEquals(1, r.count(Level.WARN))
@@ -34,8 +34,8 @@ class ScreenLockRuleTest {
     }
 
     @Test
-    fun noScreenLockKeepsF8uCompatible() {
-        val r = CompatEvaluator.evaluate(Fixtures.facts(screenLock = false))
+    fun noScreenLockKeepsA53Compatible() {
+        val r = CompatEvaluator.evaluate(Fixtures.a53(screenLock = false))
         assertEquals(Verdict.COMPATIBLE, r.verdict)
         assertEquals(Level.OK, r.find(ScreenLockRule.ID_OFF)?.level)
         assertNull(r.find(ScreenLockRule.ID_SET))
@@ -43,14 +43,14 @@ class ScreenLockRuleTest {
 
     @Test
     fun unreadableScreenLockWarns() {
-        val r = CompatEvaluator.evaluate(Fixtures.facts(screenLock = null))
+        val r = CompatEvaluator.evaluate(Fixtures.a53(screenLock = null))
         assertEquals(Verdict.WARNING, r.verdict)
         assertEquals(Level.WARN, r.find(ScreenLockRule.ID_UNKNOWN)?.level)
     }
 
     @Test
     fun blockStillWinsOverTheScreenLockWarning() {
-        val r = CompatEvaluator.evaluate(Fixtures.facts(screenLock = true, abis64 = emptyList()))
+        val r = CompatEvaluator.evaluate(Fixtures.a53(screenLock = true, abis64 = emptyList()))
         assertEquals(Verdict.NOT_SUPPORTED, r.verdict)
         assertEquals(Level.BLOCK, r.sorted.first().level)
         assertEquals(Level.WARN, r.find(ScreenLockRule.ID_SET)?.level)

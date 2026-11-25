@@ -66,7 +66,7 @@ object RemoveJob : BackgroundJob<RemoveJob.State>(State(), "oneos-remove") {
                     Kind.ALL -> {
                         LogJob.logsDir(app).deleteRecursively()
                         SessionPrefs.forgetLaunch(app)
-                        "OneOS data removed: $freed freed."
+                        "DualOS data removed: $freed freed."
                     }
                     Kind.SYSTEM -> {
                         SessionPrefs.forgetLaunch(app)

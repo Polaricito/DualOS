@@ -389,11 +389,11 @@ object SwitchGates {
         val needed = ApkSeries.of(profile.id)
         return block(
             ID_IMAGE,
-            "This OneOS is for the ${series.label}",
+            "This DualOS is for the ${series.label}",
             if (needed != null) {
-                "Your ${profile.label} needs OneOS for the ${needed.label} (the file ending in -${needed.id}.apk) from the OneOS download folder."
+                "Your ${profile.label} needs DualOS for the ${needed.label} (the file ending in -${needed.id}.apk)."
             } else {
-                "No OneOS download has the systems for your ${profile.label} yet."
+                "No DualOS build has the systems for your ${profile.label}."
             },
             R_IMAGE_OTHER_SERIES,
         )
@@ -407,9 +407,9 @@ object SwitchGates {
             Finding(ID_ROOT, Level.OK, "Root works", "su -c id answered uid 0${probe.context?.let { " ($it)" } ?: ""}.")
         } else {
             block(
-                ID_ROOT, "Root does not work for OneOS",
+                ID_ROOT, "Root does not work for DualOS",
                 (probe?.let { "su -c id: ${it.state.name.lowercase().replace('_', ' ')}. " } ?: "Root not checked yet. ") +
-                    "Allow OneOS in your root manager (KernelSU, Magisk or APatch), then check root again.",
+                    "Allow DualOS in your root manager (KernelSU, Magisk or APatch), then check root again.",
                 when (probe?.state) {
                     null -> R_ROOT_UNCHECKED
                     SuState.NOT_FOUND -> R_ROOT_NO_SU
@@ -435,9 +435,9 @@ object SwitchGates {
             val near = r.nearest?.let { n -> " Closest is the ${n.label} profile: ${r.mismatches.joinToString(", ")}." }.orEmpty()
             return Gate(
                 block(
-                    ID_PROFILE, "No OneOS profile for this phone",
+                    ID_PROFILE, "No DualOS profile for this phone",
                     "${f.model} (codename ${f.device.ifEmpty { "unknown" }}, chip ${f.soc.model.ifEmpty { "unknown" }}). " +
-                        "This build switches only on: $known.$near",
+                        "DualOS switches only on: $known.$near",
                     R_PROFILE_NONE,
                 ),
             )
@@ -465,7 +465,7 @@ object SwitchGates {
             } else {
                 Finding(
                     ID_PROFILE, Level.WARN, "First sessions on the ${p.label}",
-                    "${p.label} (${p.ids}): OneOS has a package for it, but no session has run on one yet.",
+                    "${p.label} (${p.ids}): DualOS has a package for it, but no session has run on one yet.",
                     R_PROFILE_UNTESTED,
                 )
             }
@@ -529,14 +529,14 @@ object SwitchGates {
                 R_IMAGE_OTHER_PHONE,
             )
             input.appVersionCode != null && m.versionCode != input.appVersionCode -> block(
-                ID_IMAGE, "Prepared by another OneOS version",
+                ID_IMAGE, "Prepared by another DualOS version",
                 "The stage was prepared by app build ${m.versionCode}, this is build ${input.appVersionCode}. Prepare again.",
                 R_IMAGE_OTHER_VERSION,
             )
             // The staged image decides the set: another set with it is never switched to.
             choice == null || image == null -> block(
                 ID_IMAGE, "Prepared with another file set",
-                "The stage holds ${m.imageId} with the files ${m.setId ?: "of an older OneOS"}; on the ${p.label} it needs " +
+                "The stage holds ${m.imageId} with the files ${m.setId ?: "of an older build"}; on the ${p.label} it needs " +
                     "${p.choice(m.imageId)?.packageSetId}. Prepare again.",
                 R_IMAGE_OTHER_SET,
             )
@@ -557,14 +557,14 @@ object SwitchGates {
         val p = InstalldExpected.problems(input.installd, if (sdk == 36) input.expectedInstalldA16 else input.expectedInstalld, sdk)
         return if (p.isEmpty()) {
             Finding(
-                ID_INSTALLD, Level.OK, "installd interface matches the OneOS files",
+                ID_INSTALLD, Level.OK, "installd interface matches the DualOS files",
                 "${input.installd?.methods?.size} methods, the same table the guard jars carry.",
             )
         } else {
             block(
-                ID_INSTALLD, "installd interface differs from the OneOS files",
+                ID_INSTALLD, "installd interface differs from the DualOS files",
                 p.take(6).joinToString("; ") + ". The guard jars carry One UI's installd codes; a One UI " +
-                    "update can change them, and switching waits for a OneOS build made for it.",
+                    "update can change them, and switching waits for a DualOS build made for it.",
                 R_INSTALLD_DIFFERS,
             )
         }
@@ -573,7 +573,7 @@ object SwitchGates {
     private fun oldSwitcher(installed: Boolean?): Finding = when (installed) {
         false -> Finding(ID_OLD_SWITCHER, Level.OK, "Old switcher not installed")
         true -> block(
-            ID_OLD_SWITCHER, "Uninstall the old OneOS switcher",
+            ID_OLD_SWITCHER, "Uninstall the old switcher app",
             "The old switcher app is installed. It copies its own session scripts into the stage every time " +
                 "it opens, over the ones this app checked. Uninstall it, then come back.",
             R_OLD_SWITCHER_INSTALLED,

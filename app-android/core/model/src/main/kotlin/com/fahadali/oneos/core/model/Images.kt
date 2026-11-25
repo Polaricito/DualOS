@@ -3,13 +3,10 @@ package com.fahadali.oneos.core.model
 import java.util.Locale
 
 /**
- * The system an image is a build of. Guest data stays with its own system:
- * a stage's ColorOS data is never kept for the Pixel image, nor Pixel data
- * for a ColorOS image (StageStatus.beginModes, root's `begin keep`, 0.3.7).
- * Infinity-X (0.4.27) is its own: its data has OPPO's and LineageOS's
- * packages too, and its updater, com.infinity.updater, tells it apart.
+ * The system an image is a build of. Guest data stays with its own system family
+ * (StageStatus.beginModes, root's `begin keep`).
  */
-enum class SystemFamily { COLOROS, PIXEL, INFINITYX, HYPEROS, NOTHING, OXYGENOS, ORIGINOS, LINEAGE }
+enum class SystemFamily { LINEAGE, INFINITYX, EVOX }
 
 /**
  * One OneOS OS image as friends download it (a gzip of the ext4 system
@@ -115,27 +112,16 @@ object Images {
     const val MIRROR_FILES_URL = "https://sourceforge.net/projects/oneos-mirror/files/images/"
 
     /** The gofile folder every image up to 0.4.40 was uploaded to; a manual mirror now, not linked from the app. */
-    const val GOFILE_FOLDER_URL = "https://github.com/fahadalijaved/OneOS#where-the-images-come-from"
+    const val GOFILE_FOLDER_URL = "https://github.com/Polaricito/DualOS#supported-systems"
 
     /** What fixed texts say when no image is known: they never name a system. */
     const val OTHER_SYSTEM = "the other system"
 
-    const val ID_FIND_N6 = "coloros17-findn6"
-    const val ID_FIND_X9U_IN = "coloros17-findx9u-in"
-    const val ID_FIND_X9U_IN_1105 = "coloros17-findx9u-in-1105"
-    const val ID_PIXEL_YOGI = "pixel11fold-yogi"
-    const val ID_PIXEL_KODIAK = "pixel11pro-kodiak"
-    const val ID_HYPEROS_LHASA = "hyperos-lhasa"
-    const val ID_PIXEL_KOMODO = "pixel9proxl-komodo"
-    const val ID_INFINITYX = "infinityx41-findx9u"
-    const val ID_NOTHING_METROID = "nothingos5-metroid"
-    const val ID_NOTHING_ASTEROIDS = "nothingos5-asteroids"
-    const val ID_OXYGEN16 = "oxygenos16-cph2745"
-    const val ID_ORIGINOS7 = "originos7-pd2609ma"
     /** Starts with "lineage": switcher/assets/boot_status.sh names the boot splash from it. */
-    const val ID_LINEAGE = "lineage24-infiniti"
-    /** Also starts with "lineage" (the A53's Android 16 QPR0 GSI). */
     const val ID_LINEAGE23 = "lineage23-gsi"
+
+    /** Starts with "infinityx35": switcher/assets/boot_status.sh names the boot splash from it. */
+    const val ID_INFINITYX35 = "infinityx35-gsi"
 
     /** Where root stages the unpacked image. */
     const val STAGE_NAME = "system.raw"
@@ -143,429 +129,6 @@ object Images {
     /** The ext4 superblock magic 0xEF53, little endian at byte 1080 of the unpacked image. */
     const val EXT4_MAGIC_OFFSET = 1080L
     const val EXT4_MAGIC = 0xEF53
-
-    val FIND_N6 = ImageRef(
-        id = ID_FIND_N6,
-        label = "ColorOS 17, Find N6 global build",
-        shortName = "Find N6",
-        name = "ColorOS 17",
-        variant = "Find N6 global build",
-        blurb = "OPPO's global system from the Find N6, with Google Play, Live Alerts and the Dynamic Island.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        // 0.4.38: CPH2765_17.0.0.101(EX01) built without MysticGSI's debloat (UMS, Aod,
-        // Metis, LockAssistant kept), replacing the CN build. Same base as the Find
-        // X9 Ultra IN build (one vold, service.incremental and surfaceflinger).
-        gzName = "OneOS_ColorOS17_FindN6_Global.img.gz",
-        gzBytes = 7_213_271_568L,
-        gzSha256 = "b3061160ab3fdb37cd491e94c05e41238898320c1a5efb016debabc20991f3ee",
-        rawBytes = 14_829_686_784L,
-        rawSha256 = "eec6c10581657b17f3164d6f964c749b351c4a7ec07233840da5f6a0ce28a47c",
-        testedOn = "Galaxy Z Fold8 Ultra",
-        cpuRequired = emptyList(),
-        cpuUsedByApps = listOf("sve2", "sme"),
-        googleServices = true,
-        family = SystemFamily.COLOROS,
-    )
-
-    /**
-     * The global (India) build of the same phone, back in 0.4.11 (0.3.3-0.3.6
-     * took it; 0.3.7 dropped it when its server build was deleted for space):
-     * Google's mainline modules, Play services and the Play Store in
-     * my_product (owner: "IN build is just better"; friends run it). The
-     * upload of 2026-10-25 is the 0.3.3 file, byte for byte. 0.4.38: rebuilt
-     * from the same OTA (CPH2841IN) without MysticGSI's debloat, like the
-     * Find N6 build (UMS, Aod, Metis kept: the Dynamic Island, Live Alerts).
-     */
-    val FIND_X9U_IN = ImageRef(
-        id = ID_FIND_X9U_IN,
-        label = "ColorOS 17, Find X9 Ultra IN build",
-        shortName = "Find X9 Ultra IN",
-        name = "ColorOS 17",
-        variant = "global build",
-        blurb = "OPPO's global system from the Find X9 Ultra, with Google Play, Live Alerts and the Dynamic Island.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        gzName = "OneOS_ColorOS17_FindX9Ultra_IN_Full.img.gz",
-        gzBytes = 7_071_596_999L,
-        gzSha256 = "c2eadd7e4ca2a136a91aa28f806fd99498b829d45929ff3d6fb6865d66f89bab",
-        rawBytes = 14_669_168_640L,
-        rawSha256 = "92c7cd8485dd6ef80d1f5c734ea13a8744510c15b77a18471eb11078df84ddb6",
-        testedOn = null,
-        cpuRequired = emptyList(),
-        cpuUsedByApps = listOf("sve2", "sme"),
-        googleServices = true,
-        family = SystemFamily.COLOROS,
-    )
-
-    /**
-     * 0.5.02: the newer Find X9 Ultra IN OTA (CPH2841IN, OPPO's bug fixes, security patch 2026-11-01),
-     * offered next to [FIND_X9U_IN] on the same phones, untested (the owner's Fold cannot take the
-     * IN build). Since 0.5.10 the only Find X9 Ultra IN build; a stage of the first one keeps its ColorOS
-     * data when its phone moves to it ([DATA_UPGRADES]). Built
-     * without debloat (`--type=coloros --no-debloat`); its set has its own surfaceflinger and vold pins.
-     */
-    val FIND_X9U_IN_1105 = ImageRef(
-        id = ID_FIND_X9U_IN_1105,
-        label = "ColorOS 17, Find X9 Ultra IN build (November update)",
-        shortName = "Find X9 Ultra IN (Nov)",
-        name = "ColorOS 17",
-        variant = "global build, November update",
-        blurb = "OPPO's newer global build from the Find X9 Ultra, with OPPO's latest fixes. Untested: try it and send a report.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        gzName = "OneOS_ColorOS17_FindX9Ultra_IN_1105.img.gz",
-        gzBytes = 7_102_560_387L,
-        gzSha256 = "43eeb00bcb7105c406d5fe299259fb8e84568c6631e6c8d763bb3ff23b1d0d20",
-        rawBytes = 14_782_214_144L,
-        rawSha256 = "6c089f2d043d60f34b40dd58ad44f88621163163c1664121753311a115da8d7c",
-        testedOn = null,
-        cpuRequired = emptyList(),
-        cpuUsedByApps = listOf("sve2", "sme"),
-        googleServices = true,
-        family = SystemFamily.COLOROS,
-    )
-
-    /**
-     * Google's Pixel 11 Fold system (yogi, `google/yogi/yogi:17/CD1A.261005.003.B1`),
-     * built with MysticGSI (`scripts/build-gsi.sh --type pixel`,
-     * `out/oneos-pixel-yogi.img`; docs/pixel-guest.md). Runs 41-44 booted it on
-     * the Z Fold (F8U) from scripts/deploy-phone.sh; its set stages GmsCore.
-     */
-    val PIXEL_YOGI = ImageRef(
-        id = ID_PIXEL_YOGI,
-        label = "Pixel 11 Fold, yogi build",
-        shortName = "Pixel 11 Fold",
-        name = "Pixel 11 Fold",
-        variant = null,
-        blurb = "Google's system from the Pixel 11 Fold, with Google Play and Google's apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CD1A.261005.003.B1",
-        gzName = "OneOS_Pixel11Fold_Full_ZFold8.img.gz",
-        gzBytes = 3_288_346_862L,
-        gzSha256 = "8fbe950c47629c439af0807fc6bbb2afa29308c65c215849bcfa7a01f6b9290d",
-        rawBytes = 6_559_223_808L,
-        rawSha256 = "8b303c37916288545b3b4a317c368d89680b5c3ce09873dc764381ddd0e32830",
-        testedOn = "Z Fold (F8U)",
-        // Disassembly of the image's /system/bin/bootstrap/linker64 (2026-10-24,
-        // llvm-objdump; MysticGSI's build warning names MOPS and SME there, SVE/SVE2
-        // in /system/bin/init): unguarded SVE in the loader itself (__linker_init,
-        // ElfReader::Load, load_library, linker_memcpy) and SVE2 (MATCH in
-        // android::base::Split, EOR3, XAR), so the image is built for an SVE2 CPU.
-        // SME only in compiler-rt's SME state routines, each behind the CPU feature
-        // bit, and MOPS only in the memmove/memset ifunc variants: it booted on the
-        // F8U's SM8850, which has SVE, SVE2 and SME but no MOPS or SME2. No app or
-        // library scan beyond the loader.
-        cpuRequired = listOf("sve", "sve2"),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        presentsGms = true,
-        family = SystemFamily.PIXEL,
-    )
-
-    /**
-     * Google's Pixel 11 Pro system (kodiak, `CD1A.261005.003.B1`, the same build
-     * as the Pixel 11 Fold's), from 0.4.10 for the Galaxy S26 Ultra: the factory
-     * image, MysticGSI `--type pixel --no-debloat`, then Pixel Camera,
-     * PixelCameraServices, PixelDisplayService and grilservice removed, as for the
-     * Fold's full image. Its system code uses SVE in every process (RefBase's
-     * constructor), so only SM8850 phones take it. Untested.
-     */
-    val PIXEL_KODIAK = ImageRef(
-        id = ID_PIXEL_KODIAK,
-        label = "Pixel 11 Pro, kodiak build",
-        shortName = "Pixel 11 Pro",
-        name = "Pixel 11 Pro",
-        variant = null,
-        blurb = "Google's system from the Pixel 11 Pro, with Google Play and Google's apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CD1A.261005.003.B1",
-        gzName = "OneOS_Pixel11Pro_Full_S26U.img.gz",
-        gzBytes = 3_266_985_222L,
-        gzSha256 = "ee9b6005a086627220841618ea2edaa278c4e153460f7f947fc7fc9dea8d727c",
-        rawBytes = 6_529_871_872L,
-        rawSha256 = "ac661a520263fa73a2b9996f19763350457b1558863d1dc15326a365ce1784c6",
-        testedOn = null,
-        cpuRequired = listOf("sve", "sve2"),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        presentsGms = true,
-        family = SystemFamily.PIXEL,
-    )
-
-    /**
-     * Google's Pixel 9 Pro XL system (komodo, `google/komodo/komodo:17/CP3A.261005.005`),
-     * from 0.4.22 for the phones without SVE (Galaxy S25 Ultra, S25, S25+, S24
-     * Ultra): the factory image (owner's link), MysticGSI `--type pixel
-     * --no-debloat`, then Pixel Camera, PixelCameraServices, PixelDisplayService
-     * and grilservice removed, as for the Pixel 11 images. Disassembly
-     * (llvm-objdump, 2026-10-26) finds no SVE in libutils, libbinder, libhwui,
-     * libgui, libandroid_runtime, init, surfaceflinger, servicemanager,
-     * app_process64 or the boot image; the loader's only SVE (two cntd, which
-     * MysticGSI's build warning names) is in compiler-rt's SME state routines,
-     * behind the CPU feature bit. No app or library scan beyond those. Untested.
-     */
-    val PIXEL_KOMODO = ImageRef(
-        id = ID_PIXEL_KOMODO,
-        label = "Pixel 9 Pro XL, komodo build",
-        shortName = "Pixel 9 Pro XL",
-        name = "Pixel 9 Pro XL",
-        variant = null,
-        blurb = "Google's system from the Pixel 9 Pro XL, with Google Play and Google's apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP3A.261005.005",
-        gzName = "OneOS_Pixel9ProXL_Full_S25U.img.gz",
-        gzBytes = 2_925_465_896L,
-        gzSha256 = "b49a3f8e8825241083d564c6e49118e59049f5bc887443e19411909e6d770266",
-        rawBytes = 5_837_496_320L,
-        rawSha256 = "2ef2dfe164dc6cac44c574696da474e71a01d9a769eda9c1a265d018c1d45a5c",
-        testedOn = null,
-        cpuRequired = emptyList(),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        presentsGms = true,
-        family = SystemFamily.PIXEL,
-    )
-
-    /**
-     * Project Infinity-X 4.1 for the Find X9 Ultra (lighthouse,
-     * `infinity_lighthouse-user`, CP2A.260605.016), from 0.4.27 on every phone:
-     * a custom Android 17 built from source on LineageOS, with Google's apps
-     * (Play services in a product gmssystem APEX, as Pixel 17 keeps it, so its
-     * set stages the payload and sessions present it) and OPPO's framework jars of
-     * ColorOS 16 (oplus-fwk.jar, oplus-services.jar) for its camera port. The
-     * unofficial 2026-10-18 GAPPS build, made with MysticGSI (which takes it
-     * for ColorOS) and not changed. Its own vold and service.incremental.so
-     * (make-overlays.sh pins them for the guest vold as gvld); its duress-PIN
-     * wipe and OPPO's extended wipe never run in the guest
-     * (guest_no_wipe_secrets.py). Disassembly (llvm-objdump, 2026-10-29) finds
-     * no SVE or SME in libutils, libbinder, libhwui, libgui,
-     * libandroid_runtime, libc++, surfaceflinger, servicemanager,
-     * app_process64 or init; only the loader's compiler-rt routines (cntd,
-     * rdsvl), behind the CPU feature bit. OPPO's camera and gallery libraries
-     * were not scanned. Untested.
-     */
-    val INFINITYX = ImageRef(
-        id = ID_INFINITYX,
-        label = "Infinity-X 4.1, Find X9 Ultra build",
-        shortName = "Infinity-X",
-        name = "Infinity-X 4.1",
-        variant = null,
-        blurb = "A custom Android 17 system made for the Find X9 Ultra, with Google Play and Google's apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        gzName = "OneOS_InfinityX_FindX9Ultra.img.gz",
-        gzBytes = 3_321_412_981L,
-        gzSha256 = "608bb8602dcc0c85fc80127a2f9713a695508438b8c2d31eef3df25d23109bb5",
-        rawBytes = 6_677_426_176L,
-        rawSha256 = "899ce57a069959b6463263074f35e5aadadeb7bb46f0c0a756d2ba64168545e2",
-        testedOn = "Galaxy Z Fold8 Ultra", // 0.5.15: the owner's own runs
-        cpuRequired = emptyList(),
-        cpuUsedByApps = listOf("sve2", "sme"),
-        googleServices = true,
-        presentsGms = true,
-        family = SystemFamily.INFINITYX,
-    )
-
-    /**
-     * Xiaomi's HyperOS from the Xiaomi 18 Fold (lhasa, CN OTA OS4.0.26.0.XPNCNXM,
-     * `CP2A.260605.016`), MysticGSI's HyperOS patch set
-     * (`mysticgsi/out/oneos-hyperos-lhasa`). Local builds only up to 0.4.30;
-     * from 0.4.31 on every phone (owner, 2026-10-29: "Allow all users to try",
-     * made for the Z Fold8 Ultra and Z Fold8). Guarded like the other images,
-     * plus Xiaomi's own framework (docs/hyperos.md); no gvld pins yet, so Back
-     * to One UI restarts the phone. The CPU scan found MOPS only in the linker
-     * and libc ifunc variants, as in the Find N6 image. Untested.
-     */
-    val HYPEROS_LHASA = ImageRef(
-        id = ID_HYPEROS_LHASA,
-        label = "HyperOS, Xiaomi 18 Fold build",
-        shortName = "Xiaomi 18 Fold",
-        name = "HyperOS",
-        variant = null,
-        blurb = "Xiaomi's system from the Xiaomi 18 Fold. No Google apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        gzName = "OneOS_HyperOS_Xiaomi18Fold_ZFold8.img.gz",
-        gzBytes = 4_666_011_150L,
-        gzSha256 = "745e43c2d116c4277af06b65c5d8fbaefec11731dcc23f0c067631fce04554a3",
-        rawBytes = 7_749_939_200L,
-        rawSha256 = "269309b8869d4de41c5c852d230b4b7075b8ff733d9244f4fb868ec7109baeac",
-        testedOn = null,
-        cpuRequired = emptyList(),
-        cpuUsedByApps = emptyList(),
-        googleServices = false,
-        family = SystemFamily.HYPEROS,
-    )
-
-    /**
-     * Nothing OS 5.0 (0.4.33), from the Nothing Archive dump of the A024
-     * "Metroid" (nothing_archive, Metroid_C5.0-260924-2115). Android 17 on a
-     * Qualcomm qssi_64 system image, like the ColorOS and Infinity-X builds.
-     *
-     * It keeps Google services (GmsCore and the Play Store are ordinary
-     * priv-apps in its product partition, not the APEX the Pixel images
-     * present), so a launch may hide them. No CPU requirement (0.4.36): the
-     * linker's and libc's SVE/SME instructions are the SME support routines,
-     * run only when the CPU reports SME (the Pixel 9 Pro XL, which runs on the
-     * S25 Ultra, has the same two), and of its ~1000 native files only
-     * libraries that choose their code at run time (libjxl, BoringSSL) hold
-     * SVE; the core libraries have none, unlike the Pixel 11 images'.
-     */
-    val NOTHING_METROID = ImageRef(
-        id = ID_NOTHING_METROID,
-        label = "Nothing OS 5.0, Metroid build",
-        shortName = "Nothing OS",
-        name = "Nothing OS 5.0",
-        variant = null,
-        blurb = "Nothing's system from the A024 (Metroid). With Google apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "AQ3A.250924.001",
-        gzName = "OneOS_NothingOS5_Metroid.img.gz",
-        gzBytes = 3_276_156_748L,
-        gzSha256 = "3026923ea476e998fd1ae828f441937106ffbe8fbaf613a316bce444998997bd",
-        rawBytes = 6_067_867_648L,
-        rawSha256 = "484f0e3a3dd2929f37b3201a57ceaf56aeca98b049a6a1f58558a2139f8a0b7b",
-        testedOn = "Galaxy Z Fold8 Ultra", // 0.5.15: the owner's own runs
-        cpuRequired = emptyList(),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        family = SystemFamily.NOTHING,
-    )
-
-    /**
-     * Nothing OS 5.0 for the Galaxy A series (0.5.15, untested), from the Nothing Archive dump of the
-     * Phone (3a) "Asteroids" (Asteroids_C5.0-261106-1007, CQ2A.260522.002-CP2A.260605.016, security
-     * patch 2026-11-01): Nothing's mid-range build for mid-range Galaxies, the same Nothing banner. Its
-     * core binaries hold no instruction past ARMv8.2 (the bionic linker's and libc's SVE/SME/MTE/MOPS
-     * routines run only when the CPU reports them) and its boot image is compiled for plain ARMv8
-     * (features a53 + crc), so it runs on the A-series chips (Cortex-A78/A55), unlike the Pixel images.
-     */
-    val NOTHING_ASTEROIDS = ImageRef(
-        id = ID_NOTHING_ASTEROIDS,
-        label = "Nothing OS 5.0, A series build",
-        shortName = "Nothing OS",
-        name = "Nothing OS 5.0",
-        variant = "A series",
-        blurb = "Nothing's system from the Phone (3a), for the Galaxy A series. With Google apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CQ2A.260522.002-CP2A.260605.016",
-        gzName = "OneOS_NothingOS5_ASeries.img.gz",
-        gzBytes = 3_065_595_491L,
-        gzSha256 = "c64cddcff3c56c21a26c6fdb7350fddaa32b1a9c8b4edebdb713b20f52dce9fe",
-        rawBytes = 5_972_463_616L,
-        rawSha256 = "d21ded7b8b36b9cd8896e8159e7c274ae160f08de0f270eb17c14c63e66f6de6",
-        testedOn = null,
-        cpuRequired = emptyList(),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        // GmsCore in its product gmssystem APEX, Pixel's layout (the Metroid build's is a priv-app).
-        presentsGms = true,
-        family = SystemFamily.NOTHING,
-    )
-
-    /**
-     * OxygenOS 16 (0.4.67, experimental): OnePlus's Android 16 system from the CPH2745 (OP611FL1,
-     * 16.0.10.601(EX01), security patch 2026-09-01), for the Galaxies still on One UI 8.0/8.5 (SDK 36).
-     * Its own family: its data must never reach an Android 17 ColorOS session, nor ColorOS 17's this
-     * one. The core binaries hold no instruction past ARMv8.2 (only bti hints).
-     */
-    val OXYGEN16 = ImageRef(
-        id = ID_OXYGEN16,
-        label = "OxygenOS 16, OnePlus CPH2745 build",
-        shortName = "OxygenOS 16",
-        name = "OxygenOS 16",
-        variant = null,
-        blurb = "OnePlus's Android 16 system, for phones on One UI 8. Experimental. With Google apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 36,
-        buildId = "BP2A.250605.015",
-        gzName = "OneOS_OxygenOS16_CPH2745.img.gz",
-        gzBytes = 6_169_117_525L,
-        gzSha256 = "21e9b1fe37adb0ce4820610f017cdcce6373457c435aa242262b2e4ed214c5f0",
-        rawBytes = 12_273_344_512L,
-        rawSha256 = "dafbb026f97692b7d59b8f4ae2f46773e88e0d5bf0e1fee46b3636ff56b06e90",
-        testedOn = null,
-        cpuRequired = emptyList(),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        family = SystemFamily.OXYGENOS,
-    )
-
-    /**
-     * OriginOS 7 (0.4.73, experimental): vivo's Android 17 system from the CN PD2609MA build
-     * (CP2A.260605.016, 260919185055, security patch 2026-09-01; ro.vivo.os.build.display.id
-     * "OriginOS 7"), for the Snapdragon S25/S26 series and the Z Fold7, Fold8 and Fold8 Ultra;
-     * 0.4.82 also the Snapdragon S24 and S23 phones, 0.4.83 the Exynos S24 and S24+ (untested there, Profiles.kt). Play
-     * services from the image's own gmssystem payload, the Play Store from One UI's copy (a CN
-     * build has only the 2022 updater stub). Its own family: vivo's data is not ColorOS's. The
-     * core binaries hold no SVE; libjxl, MediaTek's TFLite and some app libraries may use it
-     * (docs/originos.md, the host check). Tested on the Z Fold8 Ultra (runs 13-24).
-     */
-    val ORIGINOS7 = ImageRef(
-        id = ID_ORIGINOS7,
-        label = "OriginOS 7, vivo PD2609MA build",
-        shortName = "OriginOS 7",
-        name = "OriginOS 7",
-        variant = null,
-        blurb = "vivo's Android 17 system, for the S23 to S26 series and the Z Fold7 and Fold8 phones. Experimental. With Google apps.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        gzName = "OneOS_OriginOS7_PD2609MA.img.gz",
-        gzBytes = 8_548_707_904L,
-        gzSha256 = "f55cf849b1c0510d633595bc7d74946c650da628d110a370684e390c8fdb61ad",
-        rawBytes = 15_998_222_336L,
-        rawSha256 = "9eab3c6de0938a8f31a96be0bfdc9d2c511198aa40704e0206bd633becfdd8ee",
-        testedOn = "Galaxy Z Fold8 Ultra",
-        cpuRequired = emptyList(),
-        cpuUsedByApps = listOf("sve", "sve2"),
-        googleServices = true,
-        presentsGms = true,
-        family = SystemFamily.ORIGINOS,
-    )
-
-    /**
-     * LineageOS 24 (0.5.06, experimental): LineageOS's Android 17 (SDK 37) nightly of 2026-11-11 for the OnePlus 15
-     * (infiniti; security patch 2026-11-01), built from source and prepared with MysticGSI. The image has no Google
-     * apps: a session with Google services takes One UI's Play services, Play Store and Services Framework as
-     * overlays on the guest's product partition (guest_google.sh, set id "lineage"). Its data has LineageOS's
-     * packages (org.lineageos.), which other families' data has too. Untested. googleServices is true, as for the
-     * ColorOS images whose Google apps also come from One UI: a launch may hide them (root IMAGES_GMS; guest_google.sh
-     * then adds nothing). presentsGms stays false: no gmssystem payload in the set.
-     */
-    val LINEAGE24 = ImageRef(
-        id = ID_LINEAGE,
-        label = "LineageOS 24, OnePlus 15 build",
-        shortName = "OnePlus 15",
-        name = "LineageOS 24",
-        variant = null,
-        blurb = "LineageOS 24 (Android 17) from the OnePlus 15. Experimental. Google apps come from One UI.",
-        downloadUrl = SHARED_FOLDER_URL,
-        sdk = 37,
-        buildId = "CP2A.260605.016",
-        gzName = "OneOS_LineageOS24_OnePlus15.img.gz",
-        gzBytes = 1_076_352_597L,
-        gzSha256 = "20fdf29d8dae4579b28608b7d94b6355cc720964994a4c130d34bb6568354c33",
-        rawBytes = 2_327_068_672L,
-        rawSha256 = "f1ce7c1add2dae73c681b29ccb86068864d5f42886bc1c22d249891f3bdf6261",
-        testedOn = "Galaxy Z Fold8 Ultra", // 0.5.15: the owner's own runs
-        cpuRequired = emptyList(),
-        cpuUsedByApps = emptyList(),
-        googleServices = true,
-        presentsGms = false,
-        family = SystemFamily.LINEAGE,
-    )
 
     /**
      * LineageOS 23 (0.5.18, experimental): LineageOS's Android 16 QPR0 GSI of 2026-01-09 for the Galaxy A53 5G
@@ -590,7 +153,7 @@ object Images {
         gzSha256 = "b6159d3055c66ae2ab5578010a094f2aab96fec35917d837b698a6ec5edaf6e7",
         rawBytes = 2_685_145_088L,
         rawSha256 = "c92d7d5f9962ebc2a93ff4ef4cd155aca254399687f6907593fbf6931c9991fe",
-        testedOn = null,
+        testedOn = "Galaxy A53 5G",
         cpuRequired = emptyList(),
         cpuUsedByApps = emptyList(),
         googleServices = true,
@@ -599,29 +162,45 @@ object Images {
     )
 
     /**
+     * Project Infinity-X 3.5 (Android 16 QPR0 / BP2A.250805.005, SDK 36.0, security patch 2026-04-01;
+     * Doze-off VANILLA EXT4 GSI of 2026-04-04): ships no Google apps, so One UI's Play services, Play Store
+     * and Services Framework are staged over the guest's product partition (guest_google.sh, set id "infinityx35").
+     */
+    val INFINITYX35 = ImageRef(
+        id = ID_INFINITYX35,
+        label = "Project Infinity-X 3.5, Galaxy A53 5G GSI",
+        shortName = "Infinity-X 3.5",
+        name = "Infinity-X 3.5",
+        variant = null,
+        blurb = "Project Infinity-X 3.5 for the Galaxy A53 5G (Android 16 QPR0). Experimental. Google apps come from One UI.",
+        downloadUrl = SHARED_FOLDER_URL,
+        sdk = 36,
+        buildId = "BP2A.250805.005",
+        gzName = "DualOS_InfinityX35_GalaxyA53.img.gz",
+        gzBytes = 1_520_656_210L,
+        gzSha256 = "09b1b93e24ad5d76ecbb269bdfd03031c735603a368a84aa87a2399bccdf29e3",
+        rawBytes = 3_027_066_880L,
+        rawSha256 = "98e3b7afada0145326ad9ba8eaf412fefd8e081ad715d621196feafa2adad23f",
+        testedOn = null,
+        cpuRequired = emptyList(),
+        cpuUsedByApps = emptyList(),
+        googleServices = true,
+        presentsGms = false,
+        family = SystemFamily.INFINITYX,
+    )
+
+    /**
      * 0.5.10: a stage whose guest data an image (key) made may keep it when its phone is set up with the
      * newer build of the same system (value), as an over-the-air update would: the first Find X9 Ultra IN
      * build is retired for the 1105 build (owner), and nothing else moves. Never the other way.
      */
-    val DATA_UPGRADES: Map<String, String> = mapOf(ID_FIND_X9U_IN to ID_FIND_X9U_IN_1105)
+    val DATA_UPGRADES: Map<String, String> = emptyMap()
 
-    val ALL: List<ImageRef> = listOf(FIND_N6, FIND_X9U_IN_1105, PIXEL_YOGI, PIXEL_KODIAK, PIXEL_KOMODO, INFINITYX, HYPEROS_LHASA, NOTHING_METROID, NOTHING_ASTEROIDS, OXYGEN16, ORIGINOS7, LINEAGE24, LINEAGE23)
+    val ALL: List<ImageRef> = listOf(LINEAGE23, INFINITYX35)
 
     fun byId(id: String, images: List<ImageRef> = ALL): ImageRef? = images.firstOrNull { it.id == id }
 
-    /**
-     * Images earlier builds took and this one no longer sets up, for their
-     * names only (an old stage's marker, a copy set aside, the last session, a
-     * remembered download). None since 0.4.11: the Find X9 Ultra IN build,
-     * dropped in 0.3.7, is back in [ALL].
-     */
-    val RETIRED: List<RetiredImage> = listOf(
-        // 0.4.51: the debloated Find X9 Ultra build (0.4.11 to 0.4.50); the full IN build takes its phones.
-        RetiredImage("coloros17-findx9u", "Find X9 Ultra", "OneOS_ColorOS17_FindX9Ultra_S26U.img.gz", 5_290_346_735L, 10_385_141_760L),
-        // 0.5.10: the first Find X9 Ultra IN build (0.4.11 to 0.5.09); its 1105 build takes its phones, and a stage
-        // of it keeps its data there (DATA_UPGRADES).
-        RetiredImage(ID_FIND_X9U_IN, FIND_X9U_IN.shortName, FIND_X9U_IN.gzName, FIND_X9U_IN.gzBytes, FIND_X9U_IN.rawBytes),
-    )
+    val RETIRED: List<RetiredImage> = emptyList()
 
     /** "Find N6", a retired image's name, or the id itself when no build knew it. */
     fun shortName(id: String, images: List<ImageRef> = ALL, retired: List<RetiredImage> = RETIRED): String =
@@ -723,7 +302,7 @@ object ImageIdentifier {
         return if (profile != null && want.isNotEmpty()) {
             "${profile.label} takes " + want.joinToString(" or ") { "the ${it.shortName} image (${it.gzName})" }
         } else {
-            "the OneOS images are ${images.joinToString(" and ") { it.gzName }}"
+            "the DualOS images are ${images.joinToString(" and ") { it.gzName }}"
         }
     }
 
@@ -752,7 +331,7 @@ object ImageIdentifier {
                     ImageState.UNKNOWN, null,
                     block(
                         "Image no longer supported",
-                        "$name has the size of the ${retired.shortName} image (${retired.gzName}), which this version of OneOS no longer sets up: $wantText.",
+                        "$name has the size of the ${retired.shortName} image (${retired.gzName}), which this version of DualOS no longer sets up: $wantText.",
                         R_RETIRED,
                     ),
                 )
@@ -760,12 +339,12 @@ object ImageIdentifier {
                 val pick = if (profile == null || profile.choice(raw.id) != null) "pick ${raw.gzName}" else wantText
                 ImageIdentity(
                     ImageState.UNCOMPRESSED, raw,
-                    block("Pick the .img.gz file", "$name is the unpacked ${raw.shortName} image. OneOS unpacks the image itself: $pick.", R_UNCOMPRESSED),
+                    block("Pick the .img.gz file", "$name is the unpacked ${raw.shortName} image. DualOS unpacks the image itself: $pick.", R_UNCOMPRESSED),
                 )
             } else {
                 ImageIdentity(
                     ImageState.UNKNOWN, null,
-                    block("Not a OneOS image", "$name (${Units.bytes(size)}) is not a OneOS image: $wantText.", R_NOT_OURS),
+                    block("Not a DualOS image", "$name (${Units.bytes(size)}) is not a DualOS image: $wantText.", R_NOT_OURS),
                 )
             }
         }
@@ -833,14 +412,14 @@ object ImageIdentifier {
                 if (retired != null) {
                     block(
                         "Image no longer supported",
-                        "system.raw in the stage has the size of the ${retired.shortName} image, which this version of OneOS no longer sets up. " +
+                        "system.raw in the stage has the size of the ${retired.shortName} image, which this version of DualOS no longer sets up. " +
                             "Pick the downloaded file instead: $wantText.",
                         R_RAW_NOT_OURS,
                     )
                 } else {
                     block(
-                        "Not a OneOS image on this phone",
-                        "system.raw in the stage (${Units.bytes(size)}) is not a OneOS image. Pick the downloaded file instead: $wantText.",
+                        "Not a DualOS image on this phone",
+                        "system.raw in the stage (${Units.bytes(size)}) is not a DualOS image. Pick the downloaded file instead: $wantText.",
                         R_RAW_NOT_OURS,
                     )
                 },

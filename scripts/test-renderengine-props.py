@@ -127,6 +127,51 @@ class RenderEngineProps(unittest.TestCase):
         self.assertEqual([f'guest_props: {RR}=0 for the session (no Adreno: SkiaGL would wait for kgsl forever)'], lines)
 
 
+class BlurAlgorithmProps(unittest.TestCase):
+    START_BA = '    if [ "${ONEOS_GUEST_BLUR:-1}" = 1 ]; then\n        BA=debug.renderengine.blur_algorithm\n'
+    END_BA = '    # The boot animation on the panel that is on.'
+    CODE_BA = START_BA + SOURCE.split(START_BA, 1)[1].split(END_BA, 1)[0]
+
+    def run_blur_case(self, host=None, env=None):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); store = root / 'props'; store.mkdir(); bin_ = root / 'bin'; bin_.mkdir()
+            names = []
+            if host is not None:
+                (store / 'debug.renderengine.blur_algorithm').write_text(host)
+                names.append('debug.renderengine.blur_algorithm')
+            (root / 'host').write_text(''.join(n + '\n' for n in names))
+            (root / 'new').write_text('ro.guest.other=1\n')
+            (bin_ / 'grep').write_text(PHONE_GREP); (bin_ / 'grep').chmod(0o755)
+            rp = root / 'rp'
+            rp.write_text('#!/bin/sh\n[ "$1" = -n ] || exit 2\nprintf "%s" "$3" > "$PROPS/$2"\n')
+            rp.chmod(0o755)
+            prefix = 'getprop() { [ -f "$PROPS/$1" ] && cat "$PROPS/$1"; }\n'
+            e = {**os.environ, 'PATH': f'{bin_}:{os.environ["PATH"]}', 'PROPS': str(store), 'RP': str(rp),
+                 'OVR': str(root / 'ovr'), 'HOST': str(root / 'host'), 'NEW': str(root / 'new'), **(env or {})}
+            out = subprocess.run(['sh', '-c', prefix + self.CODE_BA], env=e, check=True, capture_output=True, text=True).stdout.splitlines()
+            new = [l for l in (root / 'new').read_text().splitlines() if l.startswith('debug.renderengine.blur_algorithm')]
+            ovr = (root / 'ovr').read_text() if (root / 'ovr').exists() else ''
+            held = (store / 'debug.renderengine.blur_algorithm').read_text() if (store / 'debug.renderengine.blur_algorithm').exists() else None
+            return out, new, ovr, held
+
+    def test_default_sets_kawase2_in_new(self):
+        out, new, ovr, held = self.run_blur_case()
+        self.assertEqual(['debug.renderengine.blur_algorithm=kawase2'], new)
+        self.assertEqual(('', None), (ovr, held))
+
+    def test_overrides_host_kawase_to_kawase2_and_records_ovr(self):
+        out, new, ovr, held = self.run_blur_case(host='kawase')
+        self.assertEqual(([], 'debug.renderengine.blur_algorithm=kawase\n', 'kawase2'), (new, ovr, held))
+
+    def test_blur_off_leaves_algorithm_unset(self):
+        out, new, ovr, held = self.run_blur_case(env={'ONEOS_GUEST_BLUR': '0'})
+        self.assertEqual(([], [], '', None), (out, new, ovr, held))
+
+    def test_invalid_blur_algorithm_override_rejected(self):
+        out, new, ovr, held = self.run_blur_case(env={'ONEOS_GUEST_BLUR_ALGORITHM': 'bogus;bad'})
+        self.assertEqual(([], [], '', None), (out, new, ovr, held))
+
+
 class PhoneGrep(unittest.TestCase):
     """No "\\|" in a grep without -E in any script that runs on the phone."""
     # The composer-rejection count of the session watcher: it has never counted, and turning it on arms the

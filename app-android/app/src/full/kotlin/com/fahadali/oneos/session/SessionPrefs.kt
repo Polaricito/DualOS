@@ -245,6 +245,30 @@ object SessionPrefs {
         p(ctx).edit().putBoolean("heat_cap", on).apply()
     }
 
+    /** DualOS 2.0 A53 capabilities: safe NFC HAL handover, microSD mount policy, Kawase2 blurs, Java SELinux report. */
+    enum class SdCardMode(val env: String) {
+        RO("ro"),
+        RW("rw"),
+        OFF("off"),
+    }
+
+    fun guestNfc(ctx: Context): Boolean = p(ctx).getBoolean("guest_nfc", true)
+    fun setGuestNfc(ctx: Context, on: Boolean) {
+        p(ctx).edit().putBoolean("guest_nfc", on).apply()
+    }
+
+    fun guestSdCard(ctx: Context): SdCardMode =
+        SdCardMode.entries.firstOrNull { it.env == p(ctx).getString("guest_sdcard", "ro") } ?: SdCardMode.RO
+
+    fun setGuestSdCard(ctx: Context, mode: SdCardMode) {
+        p(ctx).edit().putString("guest_sdcard", mode.env).apply()
+    }
+
+    fun guestBlur(ctx: Context): Boolean = p(ctx).getBoolean("guest_blur", true)
+    fun setGuestBlur(ctx: Context, on: Boolean) {
+        p(ctx).edit().putBoolean("guest_blur", on).apply()
+    }
+
     /**
      * The Home of the last finished check (HomeState.snapshot), shown
      * read-only on the next cold start while that start's check runs

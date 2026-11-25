@@ -69,11 +69,17 @@ no_symlink() { # <relative path under $STAGE/data>: refuse if any component is a
     IFS=$_oifs
 }
 for pair in $BRIDGES; do no_symlink "${pair#*:}"; done
-for s in data misc misc/adb misc/profiles misc/user misc/bluedroid misc/bluetooth \
+for s in data misc misc/adb misc/profiles misc/apexdata misc/apexdata/com.android.art misc/apexdata/com.android.art/oneos_prof \
+         misc/user misc/bluedroid misc/bluetooth misc/bluetooth/logs misc/nfc misc/nfc/logs \
          misc_ce/0 misc_de/0 system system/devicestate system/package_cache \
          system/watchdog_timestamps system_de system_ce user/0 user_de/0 \
+         user/0/com.android.nfc user/0/com.android.nfc/shared_prefs \
+         user_de/0/com.android.nfc user_de/0/com.android.nfc/shared_prefs \
+         nfc vendor vendor/nfc tombstones \
          oneos_bin oneos_bin/busybox zygote_exec oplus oplus/multimedia \
-         preapps-lib media/0 anr app local/tmp resource-cache oneos_fold8 oneos_pixel_hinge oneos_hinge; do
+         preapps-lib media/0 media/0/ExternalSD oneos_sdcard_mode \
+         anr app local/tmp resource-cache .oneos_orig_jars \
+         oneos_fold8 oneos_pixel_hinge oneos_hinge; do
     no_symlink "$s"
 done
 # The framework jars must be the ones built with the storage, installd and
@@ -197,14 +203,20 @@ holders() {
 }
 # Every watchdog the kernel lists: name, identity, state, timeout, time left.
 wdogs() {
+    wdogs_out=''
     for w in /sys/class/watchdog/watchdog*; do
         [ -d "$w" ] || continue
-        printf ' [%s "%s" %s timeout %s left %s]' "${w##*/}" "$(cat "$w/identity" 2>/dev/null)" "$(cat "$w/state" 2>/dev/null)" \
-            "$(cat "$w/timeout" 2>/dev/null)" "$(cat "$w/timeleft" 2>/dev/null)"
+        _wi='' _ws='' _wt='' _wl=''
+        read -r _wi < "$w/identity" 2>/dev/null || true
+        read -r _ws < "$w/state" 2>/dev/null || true
+        read -r _wt < "$w/timeout" 2>/dev/null || true
+        read -r _wl < "$w/timeleft" 2>/dev/null || true
+        wdogs_out="$wdogs_out [${w##*/} \"$_wi\" $_ws timeout $_wt left $_wl]"
     done
 }
+wdogs
 { echo "$(date +%T) nodes: $(ls -ln /dev/watchdog* /dev/softdog* 2>/dev/null | awk '{printf "%s %s:%s %s; ", $NF, $3, $4, $1}')"
-  echo "$(date +%T) persist.vendor.softdog=$(getprop persist.vendor.softdog) init.svc.watchdogd=$(getprop init.svc.watchdogd); kernel:$(wdogs)"; } >> "$L"
+  echo "$(date +%T) persist.vendor.softdog=$(getprop persist.vendor.softdog) init.svc.watchdogd=$(getprop init.svc.watchdogd); kernel:$wdogs_out"; } >> "$L"
 was=''; n=0; seen=''
 while true; do
     if e=$(printf V 2>&1 > /dev/watchdog); then now=written; else now="refused ($e)"; fi
@@ -217,16 +229,23 @@ while true; do
     # Its own variable: with n (the loop counter below) the shell left n=<node>
     # and the feeder exited on n=$((n + 1)) after its first kick (0.4.67 S25+
     # e92bad4f: three log lines, then softdog_fire).
-    for wd in $(cat /data/local/tmp/oneos/host_softdog_nodes 2>/dev/null); do
-        case "$wd" in /dev/watchdog|/dev/softdog) continue ;; esac
-        [ -c "$wd" ] || continue
-        if e=$(printf V 2>&1 > "$wd"); then now="$now; $wd kicked"; else now="$now; $wd refused ($e)"; fi
-    done
+    if [ -r /data/local/tmp/oneos/host_softdog_nodes ]; then
+        while read -r _wdline || [ -n "$_wdline" ]; do
+            for wd in $_wdline; do
+                case "$wd" in /dev/watchdog|/dev/softdog) continue ;; esac
+                [ -c "$wd" ] || continue
+                if e=$(printf V 2>&1 > "$wd"); then now="$now; $wd kicked"; else now="$now; $wd refused ($e)"; fi
+            done
+        done < /data/local/tmp/oneos/host_softdog_nodes
+    fi
     # An active software watchdog other than /dev/watchdog: kicked ("V", the
     # magic close where the driver allows it), never started.
     for w in /sys/class/watchdog/watchdog*; do
-        [ "$(cat "$w/state" 2>/dev/null)" = active ] || continue
-        case "$(cat "$w/identity" 2>/dev/null)" in *[Ss]oft*) ;; *) continue ;; esac
+        _st='' _id=''
+        read -r _st < "$w/state" 2>/dev/null || continue
+        [ "$_st" = active ] || continue
+        read -r _id < "$w/identity" 2>/dev/null || continue
+        case "$_id" in *[Ss]oft*) ;; *) continue ;; esac
         d=/dev/${w##*/}
         [ -c "$d" ] || continue
         if e=$(printf V 2>&1 > "$d"); then now="$now; $d kicked"; else now="$now; $d refused ($e)"; fi
@@ -237,10 +256,12 @@ while true; do
     fi
     n=$((n + 1))
     if [ $((n % 5)) = 0 ]; then
-        k=$(wdogs)
-        [ "$(echo "$k" | sed 's/ left [0-9]*\]/]/g')" != "$seen" ] || [ $((n % 30)) = 0 ] &&
+        wdogs
+        k=$wdogs_out
+        knorm=$(printf '%s\n' "$k" | sed 's/ left [0-9]*\]/]/g')
+        [ "$knorm" != "$seen" ] || [ $((n % 30)) = 0 ] &&
             echo "$(date +%T) persist.vendor.softdog=$(getprop persist.vendor.softdog); kernel:$k" >> "$L"
-        seen=$(echo "$k" | sed 's/ left [0-9]*\]/]/g')
+        seen=$knorm
     fi
     sleep 2
 done
@@ -433,6 +454,55 @@ if [ "${ONEOS_GUEST_ODM_AI:-1}" = 1 ] && [ -f "$ODM_AI_TAR" ] && [ ! -L "$ODM_AI
         echo "!!! OPPO AI engine: oplus_odm_ai.tar is not plain lib64 files; left out"
     fi
 fi
+# microSD safety (DualOS 2.0.0): ALWAYS strip voldmanaged=sdcard:* entries from
+# the guest's view of /vendor/etc/fstab.* and /odm/etc/fstab.* regardless of
+# ONEOS_GUEST_SDCARD (ro|rw|off). On One UI, the removable microSD (often
+# encrypted with Samsung ecryptfs + .MetaEcfsFile) remains live-mounted by host
+# vold on /mnt/media_rw/<UUID>; letting guest gvld see voldmanaged=sdcard causes
+# it to run fsck.exfat against the live block device (/dev/block/vold/public:*)
+# or offer to format/adopt it. Safe read-only (or opt-in rw) exposure of One UI's
+# already-decrypted kernel mount is handled privately inside guest_start.sh.
+SDCARD_MODE="${ONEOS_GUEST_SDCARD:-ro}"
+case "$SDCARD_MODE" in ro|rw|off) ;; *) SDCARD_MODE=ro ;; esac
+if [ ! -L "$STAGE/data/oneos_sdcard_mode" ]; then
+    printf '%s\n' "$SDCARD_MODE" > "$STAGE/data/oneos_sdcard_mode" 2>/dev/null || true
+    chmod 644 "$STAGE/data/oneos_sdcard_mode" 2>/dev/null || true
+fi
+_sd_fstab_n=0
+for _sd_part in vendor odm; do
+    for _sd_f in "$ROOTFS/$_sd_part"/etc/fstab.*; do
+        [ -f "$_sd_f" ] && [ ! -L "$_sd_f" ] || continue
+        _sd_out="$STAGE/oneos_fstab_${_sd_part}_${_sd_f##*/}"
+        if [ -f "$_sd_out" ] && [ "$(stat -c %d:%i "$_sd_f" 2>/dev/null)" = "$(stat -c %d:%i "$_sd_out" 2>/dev/null)" ]; then
+            $BB umount -l "$_sd_f" 2>/dev/null || true
+        fi
+        $BB grep -qiE 'voldmanaged=sdcard([:,[:space:]]|$)' "$_sd_f" 2>/dev/null || continue
+        if $BB awk '
+            /^[ \t]*#/ { print; next }
+            tolower($0) ~ /voldmanaged=sdcard([:, \t]|$)/ {
+                print "# OneOS: sdcard hidden from guest vold: " $0
+                next
+            }
+            { print }
+        ' "$_sd_f" > "$_sd_out" && [ -s "$_sd_out" ]; then
+            chmod 644 "$_sd_out"
+            $BB chcon u:object_r:vendor_configs_file:s0 "$_sd_out" 2>/dev/null ||
+                $BB chcon u:object_r:vendor_file:s0 "$_sd_out" 2>/dev/null || true
+            if $BB mount --bind "$_sd_out" "$_sd_f"; then
+                $BB mount --make-private "$_sd_f" 2>/dev/null || true
+                $BB mount -o remount,bind,ro "$_sd_out" "$_sd_f" 2>/dev/null || true
+                _sd_cnt=$($BB grep -c '^# OneOS: sdcard hidden from guest vold:' "$_sd_out" 2>/dev/null || echo 0)
+                echo "microSD safety: stripped $_sd_cnt voldmanaged=sdcard line(s) from ${_sd_f#"$ROOTFS"} (mode=$SDCARD_MODE)"
+                _sd_fstab_n=$((_sd_fstab_n + 1))
+            else
+                echo "!!! WARNING: microSD safety: could not bind sanitized ${_sd_f#"$ROOTFS"}"
+            fi
+        else
+            echo "!!! WARNING: microSD safety: could not sanitize ${_sd_f#"$ROOTFS"}"
+        fi
+    done
+done
+[ "$_sd_fstab_n" -gt 0 ] || echo "microSD safety: no voldmanaged=sdcard entries in vendor/odm fstab (mode=$SDCARD_MODE)"
 # apexd is a HOST daemon: it reports the Samsung apex set (/system/apex,
 # /system_ext/apex, /vendor/apex) to the container system_server, which then
 # tries to parse those exact paths inside this namespace. Keep the apex
@@ -1032,6 +1102,185 @@ samcam_bind() {
     echo "Samsung Camera in the guest: $n files and folders bound onto $2 $(date +%T)"
     return 0
 }
+# farm_dir <target> <work dir> <entry>...: <target>'s top level as a tmpfs copy
+# with the image's entries bound back and empty mount points <entry> added (a
+# name ending in / is a folder, others empty files). Echoes nothing; status 0
+# when every entry is in place, else everything it made is taken back.
+farm_dir() {
+    fd_t=$1; fd_w=$2; shift 2
+    fd_f="$fd_w/farm"; fd_o="$fd_w/orig"
+    $BB umount -l "$fd_f" 2>/dev/null; $BB umount -l "$fd_o" 2>/dev/null
+    mkdir -p "$fd_f" "$fd_o" && $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$fd_f" &&
+        $BB mount --make-private "$fd_f" || { $BB umount -l "$fd_f" 2>/dev/null; return 1; }
+    for fd_e in "$fd_t"/* "$fd_t"/.[!.]*; do
+        [ -e "$fd_e" ] || [ -L "$fd_e" ] || continue
+        fd_n=${fd_e##*/}
+        if [ -L "$fd_e" ]; then cp -P "$fd_e" "$fd_f/$fd_n"
+        elif [ -d "$fd_e" ]; then mkdir -m 755 "$fd_f/$fd_n"
+        else : > "$fd_f/$fd_n"; fi || { $BB umount -l "$fd_f"; return 1; }
+    done
+    for fd_e in "$@"; do
+        case "$fd_e" in */) mkdir -p "$fd_f/${fd_e%/}" ;; *) : > "$fd_f/$fd_e" ;; esac || { $BB umount -l "$fd_f"; return 1; }
+    done
+    chmod 755 "$fd_f"; $BB chcon -R u:object_r:system_file:s0 "$fd_f" 2>/dev/null
+    $BB mount --bind "$fd_t" "$fd_o" || { $BB umount -l "$fd_f"; return 1; }
+    # Private before the farm goes over the target: a shared bind would show the farm here too,
+    # and a private target keeps bind submounts from propagating out of the stage.
+    $BB mount --make-private "$fd_o" || { $BB umount -l "$fd_o"; $BB umount -l "$fd_f"; return 1; }
+    $BB mount --bind "$fd_f" "$fd_t" &&
+        $BB mount --make-private "$fd_t" || { $BB umount -l "$fd_t" 2>/dev/null; $BB umount -l "$fd_o"; $BB umount -l "$fd_f"; return 1; }
+    for fd_e in "$fd_o"/* "$fd_o"/.[!.]*; do
+        [ -e "$fd_e" ] && [ ! -L "$fd_e" ] || continue
+        $BB mount --bind "$fd_e" "$fd_t/${fd_e##*/}" || {
+            awk -v r="$fd_t/" 'index($2, r) == 1 {print $2}' /proc/mounts | sort -r | while read -r m; do $BB umount -l "$m"; done
+            $BB umount -l "$fd_t"; $BB umount -l "$fd_o"; $BB umount -l "$fd_f"; return 1
+        }
+    done
+    $BB mount -o remount,ro "$fd_f" 2>/dev/null || true
+    $BB mount -o remount,bind,ro "$fd_f" "$fd_t" 2>/dev/null || true
+    return 0
+}
+unfarm_tree() { # <log file>
+    local uf_log uf_line uf_t uf_w uf_m
+    uf_log="$1"
+    [ -s "$uf_log" ] || return 0
+    "$BB" awk '{a[NR]=$0} END {for(i=NR;i>=1;i--) print a[i]}' "$uf_log" | while IFS= read -r uf_line; do
+        uf_t=${uf_line%%|*}
+        uf_w=${uf_line#*|}
+        awk -v r="$uf_t/" 'index($2, r) == 1 {print $2}' /proc/mounts | sort -r | while read -r uf_m; do
+            "$BB" umount -l "$uf_m" 2>/dev/null || true
+        done
+        grep -q " $uf_t tmpfs " /proc/mounts && "$BB" umount -l "$uf_t" 2>/dev/null || true
+        "$BB" umount -l "$uf_w/orig" 2>/dev/null || true
+        "$BB" umount -l "$uf_w/farm" 2>/dev/null || true
+    done
+    rm -f "$uf_log"
+}
+_farm_tree_walk() { # <target> <work dir> <upper dir> <log file>
+    local ft_t ft_w ft_u ft_log ft_e ft_n ft_need ft_idx ft_f ft_o ft_ctx ft_cnt ft_p ft_list
+    ft_t="$1"; ft_w="$2"; ft_u="$3"; ft_log="$4"
+    ft_need=0
+    for ft_e in "$ft_u"/* "$ft_u"/.[!.]* "$ft_u"/...?*; do
+        [ -e "$ft_e" ] || [ -L "$ft_e" ] || continue
+        ft_n=${ft_e##*/}
+        if [ -d "$ft_e" ] && [ ! -L "$ft_e" ] && [ -d "$ft_t/$ft_n" ] && [ ! -L "$ft_t/$ft_n" ]; then
+            continue
+        fi
+        ft_need=1
+        break
+    done
+    if [ "$ft_need" = 1 ]; then
+        ft_f="$ft_w/farm"; ft_o="$ft_w/orig"; ft_list="$ft_w/bind.list"
+        "$BB" umount -l "$ft_f" 2>/dev/null || true
+        "$BB" umount -l "$ft_o" 2>/dev/null || true
+        rm -rf "$ft_f" && mkdir -p "$ft_f" "$ft_o" || return 1
+        "$BB" mount -t tmpfs -o size=4m,mode=755 tmpfs "$ft_f" &&
+            "$BB" mount --make-private "$ft_f" || { "$BB" umount -l "$ft_f" 2>/dev/null; return 1; }
+        for ft_e in "$ft_t"/* "$ft_t"/.[!.]* "$ft_t"/...?*; do
+            [ -e "$ft_e" ] || [ -L "$ft_e" ] || continue
+            ft_n=${ft_e##*/}
+            if { [ -e "$ft_u/$ft_n" ] || [ -L "$ft_u/$ft_n" ]; } &&
+               ! { [ -d "$ft_u/$ft_n" ] && [ ! -L "$ft_u/$ft_n" ] && [ -d "$ft_e" ] && [ ! -L "$ft_e" ]; }; then
+                continue
+            fi
+            if [ -L "$ft_e" ]; then cp -P "$ft_e" "$ft_f/$ft_n"
+            elif [ -d "$ft_e" ]; then mkdir -m 755 "$ft_f/$ft_n"
+            else : > "$ft_f/$ft_n"; fi || { "$BB" umount -l "$ft_f" 2>/dev/null; return 1; }
+        done
+        for ft_e in "$ft_u"/* "$ft_u"/.[!.]* "$ft_u"/...?*; do
+            [ -e "$ft_e" ] || [ -L "$ft_e" ] || continue
+            ft_n=${ft_e##*/}
+            if [ -d "$ft_e" ] && [ ! -L "$ft_e" ] && [ -d "$ft_t/$ft_n" ] && [ ! -L "$ft_t/$ft_n" ]; then
+                continue
+            fi
+            "$BB" cp -pR "$ft_e" "$ft_f/$ft_n" || { "$BB" umount -l "$ft_f" 2>/dev/null; return 1; }
+        done
+        chmod 755 "$ft_f"
+        "$BB" chcon -R u:object_r:system_file:s0 "$ft_f" 2>/dev/null || true
+        case "$ft_t" in
+            */lib64|*/lib) "$BB" chcon -R u:object_r:system_lib_file:s0 "$ft_f" 2>/dev/null || true ;;
+        esac
+        for ft_e in "$ft_u"/* "$ft_u"/.[!.]* "$ft_u"/...?*; do
+            [ -e "$ft_e" ] || [ -L "$ft_e" ] || continue
+            ft_n=${ft_e##*/}
+            if [ -d "$ft_e" ] && [ ! -L "$ft_e" ] && [ -d "$ft_t/$ft_n" ] && [ ! -L "$ft_t/$ft_n" ]; then
+                continue
+            fi
+            ft_ctx=$(ls -dZ "$ft_e" 2>/dev/null | "$BB" awk '{print $1}')
+            case "$ft_ctx" in
+                *:*:*)
+                    "$BB" chcon -h "$ft_ctx" "$ft_f/$ft_n" 2>/dev/null || true
+                    [ -d "$ft_f/$ft_n" ] && [ ! -L "$ft_f/$ft_n" ] && "$BB" chcon -h -R "$ft_ctx" "$ft_f/$ft_n" 2>/dev/null || true
+                    ;;
+            esac
+        done
+        "$BB" mount --bind "$ft_t" "$ft_o" || { "$BB" umount -l "$ft_f" 2>/dev/null; return 1; }
+        "$BB" mount --make-private "$ft_o" || { "$BB" umount -l "$ft_o" 2>/dev/null; "$BB" umount -l "$ft_f" 2>/dev/null; return 1; }
+        "$BB" mount --bind "$ft_f" "$ft_t" &&
+            "$BB" mount --make-private "$ft_t" || {
+                "$BB" umount -l "$ft_t" 2>/dev/null; "$BB" umount -l "$ft_o" 2>/dev/null; "$BB" umount -l "$ft_f" 2>/dev/null; return 1
+            }
+        printf '%s|%s\n' "$ft_t" "$ft_w" >> "$ft_log"
+        : > "$ft_list"
+        ft_cnt=0
+        for ft_e in "$ft_o"/* "$ft_o"/.[!.]* "$ft_o"/...?*; do
+            [ -e "$ft_e" ] && [ ! -L "$ft_e" ] || continue
+            ft_n=${ft_e##*/}
+            if { [ -e "$ft_u/$ft_n" ] || [ -L "$ft_u/$ft_n" ]; } &&
+               ! { [ -d "$ft_u/$ft_n" ] && [ ! -L "$ft_u/$ft_n" ] && [ -d "$ft_e" ] && [ ! -L "$ft_e" ]; }; then
+                continue
+            fi
+            case "$ft_n" in
+                *' '*|*'	'*|*'
+'*|*"'"*|*'"'*|*'\'*)
+                    "$BB" mount --bind "$ft_e" "$ft_t/$ft_n" || return 1
+                    ;;
+                *)
+                    printf '%s\n' "$ft_n" >> "$ft_list"
+                    ft_cnt=$((ft_cnt + 1))
+                    ;;
+            esac
+        done
+        if [ "$ft_cnt" -gt 32 ] && echo x | "$BB" xargs -P 2 -n 1 "$SAMCAM_SH" -c 'exit 0' sh 2>/dev/null; then
+            ft_p=$("$BB" nproc 2>/dev/null || nproc 2>/dev/null || echo 2)
+            case "$ft_p" in ''|*[!0-9]*) ft_p=2 ;; esac
+            [ "$ft_p" -gt 8 ] && ft_p=8
+            [ "$ft_p" -lt 2 ] && ft_p=2
+            FO="$ft_o" FT="$ft_t" BB="$BB" "$BB" xargs -P "$ft_p" -n 16 "$SAMCAM_SH" -c '
+                for n in "$@"; do
+                    "$BB" mount --bind "$FO/$n" "$FT/$n" || exit 1
+                done
+            ' sh < "$ft_list" || return 1
+        elif [ "$ft_cnt" -gt 0 ]; then
+            while IFS= read -r ft_n; do
+                [ -n "$ft_n" ] || continue
+                "$BB" mount --bind "$ft_o/$ft_n" "$ft_t/$ft_n" || return 1
+            done < "$ft_list"
+        fi
+        rm -f "$ft_list"
+        "$BB" mount -o remount,ro "$ft_f" 2>/dev/null || true
+        "$BB" mount -o remount,bind,ro "$ft_f" "$ft_t" 2>/dev/null || true
+    fi
+    ft_idx=0
+    for ft_e in "$ft_u"/* "$ft_u"/.[!.]* "$ft_u"/...?*; do
+        [ -e "$ft_e" ] || [ -L "$ft_e" ] || continue
+        ft_n=${ft_e##*/}
+        if [ -d "$ft_e" ] && [ ! -L "$ft_e" ] && [ -d "$ft_t/$ft_n" ] && [ ! -L "$ft_t/$ft_n" ]; then
+            ft_idx=$((ft_idx + 1))
+            _farm_tree_walk "$ft_t/$ft_n" "$ft_w/d_$ft_idx" "$ft_e" "$ft_log" || return 1
+        fi
+    done
+    return 0
+}
+farm_tree() { # <target> <work dir> <upper dir>: fallback for overlayfs when kernel refuses overlay
+    mkdir -p "$2" || return 1
+    : > "$2/.farmed" || return 1
+    if _farm_tree_walk "$1" "$2" "$3" "$2/.farmed"; then
+        return 0
+    fi
+    unfarm_tree "$2/.farmed"
+    return 1
+}
 # Add the missing guest su mount point to an overlay before its read-only
 # system view is mounted. Modern guest images need not ship /system/xbin.
 guest_root_mountpoint() {
@@ -1055,22 +1304,46 @@ bio_features_into() { # <overlay top layer>
     chmod 644 "$1/etc/permissions/android.hardware.fingerprint.xml" "$1/etc/permissions/android.hardware.biometrics.face.xml" &&
     $BB chcon -R u:object_r:system_file:s0 "$1/etc" 2>/dev/null || true
 }
+# Guest NFC on hosts without com.android.nfcservices APEX (e.g. Galaxy A53 One UI 8,
+# which ships /system/priv-app/SecNfc instead): host apexd's /apex/apex-info-list.xml
+# omits com.android.nfcservices, so guest PackageManagerService never scans
+# NfcNciApex.apk inside nfcservices_payload.img and ld.config.txt lacks a
+# com_android_nfcservices namespace. Prepare empty mount points in /system here
+# (filled read-only from nfcservices_payload.img in section 8).
+NFC_PRIVAPP_NEED=0
+if [ "${ONEOS_GUEST_NFC:-1}" = 1 ] && [ -f "$STAGE/nfcservices_payload.img" ] && [ ! -L "$STAGE/nfcservices_payload.img" ] &&
+   [ ! -d "$ROOTFS/system/priv-app/NfcNci" ] && [ ! -d "$ROOTFS/system/priv-app/NfcNciApex" ] &&
+   [ ! -d "$GUEST_SYSTEM_EXT/priv-app/NfcNci" ] && [ ! -d "$GUEST_PRODUCT/priv-app/NfcNci" ]; then
+    if [ ! -f /apex/apex-info-list.xml ] ||
+       ! awk '/moduleName="com\.android\.nfcservices"/ && /isActive="true"/ { found = 1 } END { exit !found }' /apex/apex-info-list.xml 2>/dev/null; then
+        NFC_PRIVAPP_NEED=1
+    fi
+fi
+nfc_privapp_into() { # <overlay top layer>
+    [ "$NFC_PRIVAPP_NEED" = 1 ] || return 0
+    mkdir -p "$1/priv-app/NfcNciApex" "$1/etc/permissions" || return 1
+    printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<permissions />' \
+        > "$1/etc/permissions/privapp-permissions-oneos-nfc.xml" &&
+    chmod 755 "$1" "$1/priv-app" "$1/priv-app/NfcNciApex" "$1/etc" "$1/etc/permissions" &&
+    chmod 644 "$1/etc/permissions/privapp-permissions-oneos-nfc.xml" &&
+    $BB chcon -R u:object_r:system_file:s0 "$1/priv-app/NfcNciApex" "$1/etc/permissions/privapp-permissions-oneos-nfc.xml" 2>/dev/null || true
+}
 if [ -d "$SAMCAM_SRC" ] && [ $SAMCAM_IMAGE = 0 ]; then
     echo "Samsung Camera in the guest: off (this system's set has no samcam.tar; samcam_build is another system's)"
 elif [ -d "$SAMCAM_SRC" ] && [ "${ONEOS_GUEST_SAMSUNG_CAMERA:-1}" = 1 ]; then
     if [ ! -d "$GUEST_SYSTEM_EXT" ]; then echo "Samsung Camera in the guest: off (the guest has no system_ext)"
     elif [ -L "$SAMCAM_SRC" ]; then echo "ERROR: $SAMCAM_SRC is a symlink; not starting the guest"; exit 3
-    elif mount | grep -q " $ROOTFS/system type overlay"; then
+    elif mount | grep -q " $ROOTFS/system type overlay" || grep -q " $STAGE/system_ov/ft" /proc/mounts; then
         echo "Samsung Camera in the guest: off (an overlay on $ROOTFS/system is already there)"
     elif samcam_prepare; then
         # The guest's /system: a read-only overlay whose top layer (a small
-        # tmpfs) holds only the mount points. Nothing is mounted under
-        # $ROOTFS/system yet, so the jar and library binds further down land on
-        # top of it as usual.
+        # tmpfs) holds only the mount points (or farm_tree when the kernel refuses
+        # overlayfs). Nothing is mounted under $ROOTFS/system yet, so the jar and
+        # library binds further down land on top of it as usual.
         SOV="$STAGE/system_ov"
         mkdir -p "$SOV"
-        mount | grep -q " $SOV " || $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$SOV"
-        rm -rf "$SOV/up" && mkdir -p "$SOV/up" && bio_features_into "$SOV/up"
+        mount | grep -q " $SOV " || { $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$SOV" && $BB mount --make-private "$SOV" 2>/dev/null; }
+        rm -rf "$SOV/up" && mkdir -p "$SOV/up" && bio_features_into "$SOV/up" && nfc_privapp_into "$SOV/up"
         echo "Samsung Camera: overlay $(date +%T)"
         if samcam_mountpoints "$SOV/up" sys && guest_root_mountpoint "$SOV/up" &&
            $BB mount -t overlay overlay -o "ro,lowerdir=$SOV/up:$ROOTFS/system" "$ROOTFS/system"; then
@@ -1079,6 +1352,12 @@ elif [ -d "$SAMCAM_SRC" ] && [ "${ONEOS_GUEST_SAMSUNG_CAMERA:-1}" = 1 ]; then
                 echo "Samsung Camera in the guest: off (bind-mount onto $ROOTFS/system failed)"
                 awk -v r="$ROOTFS/system/" 'index($2, r) == 1 {print $2}' /proc/mounts | sort -r | while read -r m; do $BB umount -l "$m"; done
                 $BB umount -l "$ROOTFS/system" 2>/dev/null || true
+            fi
+        elif [ -d "$SOV/up" ] && farm_tree "$ROOTFS/system" "$SOV/ft" "$SOV/up"; then
+            echo "Samsung Camera: bound tree on $ROOTFS/system (no overlayfs) $(date +%T)"
+            if samcam_bind sys "$ROOTFS/system"; then SAMCAM=1; else
+                echo "Samsung Camera in the guest: off (bind-mount onto farmed $ROOTFS/system failed)"
+                unfarm_tree "$SOV/ft/.farmed"
             fi
         else
             echo "Samsung Camera in the guest: off (overlay on $ROOTFS/system refused)"
@@ -1099,6 +1378,7 @@ if [ -f "$STAGE/data/oneos_root/enabled" ] && [ ! -d "$ROOTFS/system/xbin" ]; th
     mkdir -p "$GRO/up"
     guest_root_mountpoint "$GRO/up" || exit 3
     bio_features_into "$GRO/up"
+    nfc_privapp_into "$GRO/up"
     $BB chcon -R u:object_r:system_file:s0 "$GRO/up" 2>/dev/null || true
     if $BB mount -t overlay overlay -o "ro,lowerdir=$GRO/up:$ROOTFS/system" "$ROOTFS/system"; then
         echo 'Guest root: missing system/xbin supplied by a private read-only overlay'
@@ -1121,7 +1401,8 @@ if [ -f "$STAGE/data/oneos_root/enabled" ] && [ ! -d "$ROOTFS/system/xbin" ]; th
         if [ $fok = 1 ]; then
             chmod 755 "$GF" "$GF/xbin"
             $BB chcon -R u:object_r:system_file:s0 "$GF" 2>/dev/null || true
-            if $BB mount --bind "$ROOTFS/system" "$GOR" && $BB mount --bind "$GF" "$ROOTFS/system"; then
+            if $BB mount --bind "$ROOTFS/system" "$GOR" && $BB mount --make-private "$GOR" &&
+               $BB mount --bind "$GF" "$ROOTFS/system" && $BB mount --make-private "$ROOTFS/system"; then
                 for e in "$GOR"/* "$GOR"/.[!.]*; do
                     [ -e "$e" ] && [ ! -L "$e" ] || continue
                     if $BB mount --bind "$e" "$ROOTFS/system/${e##*/}"; then fn=$((fn + 1)); else fok=0; break; fi
@@ -1144,22 +1425,42 @@ if [ -f "$STAGE/data/oneos_root/enabled" ] && [ ! -d "$ROOTFS/system/xbin" ]; th
 fi
 # Neither layer above ran (no Samsung Camera set, image with its own xbin): the features get a private layer.
 if [ "$BIO_FEATURES" = 1 ] && [ ! -e "$ROOTFS/system/etc/permissions/android.hardware.fingerprint.xml" ]; then
-    if mount | grep -q " $ROOTFS/system type overlay"; then
+    if mount | grep -q " $ROOTFS/system type overlay" || grep -q " $STAGE/system_ov/ft" /proc/mounts; then
         echo "Biometric features: $ROOTFS/system is an overlay this step did not make; left as it is"
     else
         BFO="$STAGE/bio_features_ov"
         if [ -L "$BFO" ]; then echo 'ERROR: biometric features overlay is a symlink'; exit 3; fi
         mkdir -p "$BFO"
-        mount | grep -q " $BFO " || $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$BFO"
-        if rm -rf "$BFO/up" && mkdir -p "$BFO/up" && bio_features_into "$BFO/up" &&
+        mount | grep -q " $BFO " || { $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$BFO" && $BB mount --make-private "$BFO" 2>/dev/null; }
+        if rm -rf "$BFO/up" && mkdir -p "$BFO/up" && bio_features_into "$BFO/up" && nfc_privapp_into "$BFO/up" &&
            $BB mount -t overlay overlay -o "ro,lowerdir=$BFO/up:$ROOTFS/system" "$ROOTFS/system"; then
             echo "Biometric features: fingerprint and face declared in a private /system layer"
+        elif [ -d "$BFO/up" ] && farm_tree "$ROOTFS/system" "$BFO/ft" "$BFO/up"; then
+            echo "Biometric features: fingerprint and face declared in a bound /system tree (no overlayfs)"
         else
             echo "Biometric features: the private /system layer was refused; no fingerprint or face settings"
         fi
     fi
 elif [ "$BIO_FEATURES" = 1 ]; then
     echo "Biometric features: fingerprint and face declared"
+fi
+if [ "$NFC_PRIVAPP_NEED" = 1 ] && [ ! -d "$ROOTFS/system/priv-app/NfcNciApex" ]; then
+    NFO="$STAGE/nfc_privapp_ov"
+    if [ -L "$NFO" ]; then echo 'ERROR: NFC priv-app overlay is a symlink'; exit 3; fi
+    mkdir -p "$NFO"
+    mount | grep -q " $NFO " || { $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$NFO" && $BB mount --make-private "$NFO" 2>/dev/null; }
+    if rm -rf "$NFO/up" && mkdir -p "$NFO/up" && nfc_privapp_into "$NFO/up" &&
+       ! mount | grep -q " $ROOTFS/system type overlay" &&
+       ! grep -q " $ROOTFS/system tmpfs " /proc/mounts &&
+       ! grep -q " $STAGE/system_ov/ft" /proc/mounts &&
+       ! grep -q " $STAGE/bio_features_ov/ft" /proc/mounts &&
+       $BB mount -t overlay overlay -o "ro,lowerdir=$NFO/up:$ROOTFS/system" "$ROOTFS/system"; then
+        echo "Guest NFC: priv-app/NfcNciApex mount point ready in a private /system layer"
+    elif [ -d "$NFO/up" ] && farm_tree "$ROOTFS/system" "$NFO/ft" "$NFO/up"; then
+        echo "Guest NFC: priv-app/NfcNciApex mount point ready in a bound /system tree (no overlayfs)"
+    else
+        echo "Guest NFC: private /system layer for NfcNciApex was refused; NFC will stay unavailable"
+    fi
 fi
 # One UI's product APEXes: host apexd reports Google's Play system module as
 # /product/apex/com.google.android.gmssystem.prodvic.apex, and the guest's package
@@ -1175,40 +1476,6 @@ fi
 # Made after the whole-system overlays above (they need nothing mounted under
 # system) and before anything else is mounted under product. An image with its
 # own product/apex keeps it. ONEOS_GUEST_PRODUCT_APEX=0 leaves it out.
-# farm_dir <target> <work dir> <entry>...: <target>'s top level as a tmpfs copy
-# with the image's entries bound back and empty mount points <entry> added (a
-# name ending in / is a folder, others empty files). Echoes nothing; status 0
-# when every entry is in place, else everything it made is taken back.
-farm_dir() {
-    fd_t=$1; fd_w=$2; shift 2
-    fd_f="$fd_w/farm"; fd_o="$fd_w/orig"
-    $BB umount -l "$fd_f" 2>/dev/null; $BB umount -l "$fd_o" 2>/dev/null
-    mkdir -p "$fd_f" "$fd_o" && $BB mount -t tmpfs -o size=256k,mode=755 tmpfs "$fd_f" || return 1
-    for fd_e in "$fd_t"/* "$fd_t"/.[!.]*; do
-        [ -e "$fd_e" ] || [ -L "$fd_e" ] || continue
-        fd_n=${fd_e##*/}
-        if [ -L "$fd_e" ]; then cp -P "$fd_e" "$fd_f/$fd_n"
-        elif [ -d "$fd_e" ]; then mkdir "$fd_f/$fd_n"
-        else : > "$fd_f/$fd_n"; fi || { $BB umount -l "$fd_f"; return 1; }
-    done
-    for fd_e in "$@"; do
-        case "$fd_e" in */) mkdir -p "$fd_f/${fd_e%/}" ;; *) : > "$fd_f/$fd_e" ;; esac || { $BB umount -l "$fd_f"; return 1; }
-    done
-    chmod 755 "$fd_f"; $BB chcon -R u:object_r:system_file:s0 "$fd_f" 2>/dev/null
-    $BB mount --bind "$fd_t" "$fd_o" || { $BB umount -l "$fd_f"; return 1; }
-    # Private before the farm goes over the target: a shared bind would show the farm here too.
-    $BB mount --make-private "$fd_o" || { $BB umount -l "$fd_o"; $BB umount -l "$fd_f"; return 1; }
-    $BB mount --bind "$fd_f" "$fd_t" || { $BB umount -l "$fd_o"; $BB umount -l "$fd_f"; return 1; }
-    for fd_e in "$fd_o"/* "$fd_o"/.[!.]*; do
-        [ -e "$fd_e" ] && [ ! -L "$fd_e" ] || continue
-        $BB mount --bind "$fd_e" "$fd_t/${fd_e##*/}" || {
-            awk -v r="$fd_t/" 'index($2, r) == 1 {print $2}' /proc/mounts | sort -r | while read -r m; do $BB umount -l "$m"; done
-            $BB umount -l "$fd_t"; $BB umount -l "$fd_o"; $BB umount -l "$fd_f"; return 1
-        }
-    done
-    $BB mount -o remount,ro "$fd_f" 2>/dev/null
-    return 0
-}
 if [ "${ONEOS_GUEST_PRODUCT_APEX:-1}" = 1 ] && [ -d /product/apex ] && [ ! -e "$GUEST_PRODUCT/apex" ] && [ ! -L "$GUEST_PRODUCT/apex" ]; then
     if farm_dir "$GUEST_PRODUCT" "$STAGE/product_farm" apex/ && [ -d "$GUEST_PRODUCT/apex" ] &&
        $BB mount --bind /product/apex "$GUEST_PRODUCT/apex"; then
@@ -1367,16 +1634,17 @@ vndk_fragment() {
 }
 SECIMS_BOUND=0
 VIVO_SE=""
+SEXT_LAYER=0
 if { [ -d /system_ext/apex ] && [ -d "$GUEST_SYSTEM_EXT" ]; } || [ $INJ = 1 ] || [ $HWSM = 1 ] || [ $SEC_IMS = 1 ] || [ $SAMCAM = 1 ]; then
-    if mount | grep -q " $GUEST_SYSTEM_EXT type overlay"; then
+    if mount | grep -q " $GUEST_SYSTEM_EXT type overlay" || grep -q " $STAGE/system_ext_ov/ft" /proc/mounts; then
         echo "Overlay on $GUEST_SYSTEM_EXT already there (an earlier prepare), left as it is"
         [ $SEC_IMS = 1 ] && { SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"; echo "Samsung IMS in the guest: off (that overlay has no secims layer)"; }
         [ $SAMCAM = 1 ] && { SAMCAM=0; echo "Samsung Camera in the guest: off (that overlay has no mount points for it)"; }
     elif [ ! -d "$GUEST_SYSTEM_EXT/apex" ] || [ $INJ = 1 ] || [ $HWSM = 1 ] || [ $SEC_IMS = 1 ] || [ $SAMCAM = 1 ]; then
         OV="$STAGE/system_ext_ov"
         mkdir -p "$OV"
-        mount | grep -q " $OV " || $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$OV"
-        mkdir -p "$OV/up/apex"
+        mount | grep -q " $OV " || { $BB mount -t tmpfs -o size=1m,mode=755 tmpfs "$OV" && $BB mount --make-private "$OV" 2>/dev/null; }
+        rm -rf "$OV/up" && mkdir -p "$OV/up/apex"
         # vivo's package manager never scans /oem (F8U run 13, OriginOS CN: no package
         # cache entry for anything there, so the fold cutout overlay and the OneOS app
         # were missing and the status bar ignored the cover's camera hole). Their
@@ -1419,6 +1687,7 @@ if { [ -d /system_ext/apex ] && [ -d "$GUEST_SYSTEM_EXT" ]; } || [ $INJ = 1 ] ||
                 $BB chcon -R u:object_r:system_file:s0 "$OV/up/etc" 2>/dev/null
             echo "Features from my_product:$MPF"
         fi
+        VNDK_ORIG="$VNDK_NEED"
         vndk_fragment "$OV/up" || echo "VINTF: could not write the vendor-ndk fragment on the overlay"
         if [ $SAMCAM = 1 ] && ! samcam_mountpoints "$OV/up" sysext; then
             SAMCAM=0; echo "Samsung Camera in the guest: off (no room for its mount points on the overlay's tmpfs)"
@@ -1429,69 +1698,54 @@ if { [ -d /system_ext/apex ] && [ -d "$GUEST_SYSTEM_EXT" ]; } || [ $INJ = 1 ] ||
             $BB chcon u:object_r:system_file:s0 "$OV/up/bin" 2>/dev/null || true
             $BB chcon u:object_r:hwservicemanager_exec:s0 "$OV/up/bin/hwservicemanager" 2>/dev/null || true
         fi
+        if [ $SEC_IMS = 1 ] && ! secims_mountpoints "$OV/up"; then
+            SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"
+            echo "Samsung IMS in the guest: off (no room for its mount points on the overlay's tmpfs)"
+        fi
         if [ $INJ = 1 ]; then
             mkdir -p "$OV/up/framework" && cp "$STAGE/oneos-telephony.jar" "$OV/up/framework/" &&
                 chmod 755 "$OV/up" "$OV/up/framework" && chmod 644 "$OV/up/framework/oneos-telephony.jar"
             # A stage copy, labelled like the image's own framework files.
             $BB chcon u:object_r:system_file:s0 "$OV/up/framework" "$OV/up/framework/oneos-telephony.jar" 2>/dev/null || true
-            if [ $SEC_IMS = 1 ] && ! secims_mountpoints "$OV/up"; then
-                SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"
-                echo "Samsung IMS in the guest: off (no room for its mount points on the overlay's tmpfs)"
-            fi
             if $BB mount -t overlay overlay -o "ro,lowerdir=$OV/up:$GUEST_SYSTEM_EXT" "$GUEST_SYSTEM_EXT"; then
+                SEXT_LAYER=1
                 echo "Read-only overlay on $GUEST_SYSTEM_EXT (apex mount point, framework/oneos-telephony.jar)"
-                if [ $SEC_IMS = 1 ]; then
-                    if sec_ims_bind; then SECIMS_BOUND=1; else
-                        SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"
-                        echo "Samsung IMS in the guest: off (bind-mount onto the read-only $GUEST_SYSTEM_EXT failed)"
-                    fi
-                fi
+            elif farm_tree "$GUEST_SYSTEM_EXT" "$OV/ft" "$OV/up"; then
+                SEXT_LAYER=1
+                echo "Bound tree on $GUEST_SYSTEM_EXT (no overlayfs; apex mount point, framework/oneos-telephony.jar)"
             else
-                # The apex mount point matters more: today's rw form then.
+                # The apex mount point matters more: try today's rw/ro forms without oneos-telephony.jar.
                 INJ=0
-                rm -rf "$OV/up/framework"
-                echo "Signal poll: off (read-only overlay on $GUEST_SYSTEM_EXT refused)"
+                rm -f "$OV/up/framework/oneos-telephony.jar"
+                echo "Signal poll: off (read-only layer on $GUEST_SYSTEM_EXT refused)"
             fi
         fi
-        if [ $INJ = 0 ] && { [ ! -d "$GUEST_SYSTEM_EXT/apex" ] || [ $HWSM = 1 ] || [ $SEC_IMS = 1 ] || [ $SAMCAM = 1 ]; }; then
+        if [ $SEXT_LAYER = 0 ] && { [ ! -d "$GUEST_SYSTEM_EXT/apex" ] || [ $HWSM = 1 ] || [ $SEC_IMS = 1 ] || [ $SAMCAM = 1 ]; }; then
             mkdir -p "$OV/work"
             if $BB mount -t overlay overlay \
                 -o "lowerdir=$GUEST_SYSTEM_EXT,upperdir=$OV/up,workdir=$OV/work" \
                 "$GUEST_SYSTEM_EXT"; then
+                SEXT_LAYER=1
                 echo "Overlay on $GUEST_SYSTEM_EXT for the apex mount point$([ $HWSM = 1 ] && echo ' and bin/hwservicemanager')"
-                if [ $SEC_IMS = 1 ]; then
-                    if sec_ims_bind; then SECIMS_BOUND=1; else
-                        SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"
-                        echo "Samsung IMS in the guest: off (bind-mount onto $GUEST_SYSTEM_EXT failed)"
-                    fi
-                fi
             # The S23 FE's kernel refused the read-write form (0.4.67 3513fb67, OxygenOS 16: "Operation not
             # supported on transport endpoint", then no apex mount point for PackageManagerService). The
             # read-only form above (the stage's tmpfs as the top lower layer, no upper) gives the same mount
             # points, as it does wherever the telephony jar is injected.
             elif { echo "Read-write overlay on $GUEST_SYSTEM_EXT refused; kernel: $(dmesg 2>/dev/null | grep -i overlayfs | tail -n 2 | tr '\n' ' ')"
                    $BB mount -t overlay overlay -o "ro,lowerdir=$OV/up:$GUEST_SYSTEM_EXT" "$GUEST_SYSTEM_EXT"; }; then
+                SEXT_LAYER=1
                 echo "Read-only overlay on $GUEST_SYSTEM_EXT for the apex mount point (the read-write form was refused)"
-                if [ $SEC_IMS = 1 ]; then
-                    if sec_ims_bind; then SECIMS_BOUND=1; else
-                        SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"
-                        echo "Samsung IMS in the guest: off (bind-mount onto the read-only $GUEST_SYSTEM_EXT failed)"
-                    fi
-                fi
+            elif farm_tree "$GUEST_SYSTEM_EXT" "$OV/ft" "$OV/up"; then
+                SEXT_LAYER=1
+                echo "Bound tree on $GUEST_SYSTEM_EXT (no overlayfs; apex mount point and layer additions)"
             elif [ $SEC_IMS = 1 ]; then
                 SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"
-                echo "Samsung IMS in the guest: off (overlay on $GUEST_SYSTEM_EXT refused)"
+                echo "Samsung IMS in the guest: off (overlay and bound tree on $GUEST_SYSTEM_EXT refused)"
             fi
         fi
-        # The android12-5.10 kernels (the S22 series, S23 FE, A25, A33, A53 on One UI 8) refuse
-        # both overlay forms here (0.4.68 S908B 0e1c3360, S711B be228999 9d30c86d, S908E 15cf8a3f:
-        # "Operation not supported on transport endpoint" twice), and PackageManagerService then
-        # died on One UI's system_ext APEXes ("Unable to parse: /system_ext/apex/com.android.vndk.
-        # v31.apex"). Without overlayfs: system_ext's top level copied on the stage's tmpfs
-        # (folders, empty files, links), each entry bound from the image, plus the apex mount
-        # point. The overlay's other additions (bin/hwservicemanager, etc/permissions features,
-        # Samsung IMS and camera mount points) are not in it; those are off as on a refusal.
-        if [ ! -d "$GUEST_SYSTEM_EXT/apex" ] && [ -d /system_ext/apex ] && ! mount | grep -q " $GUEST_SYSTEM_EXT type overlay"; then
+        [ $SEXT_LAYER = 1 ] || VNDK_NEED="$VNDK_ORIG"
+        # Last-resort apex-only fallback if both overlays and farm_tree failed.
+        if [ $SEXT_LAYER = 0 ] && [ ! -d "$GUEST_SYSTEM_EXT/apex" ] && [ -d /system_ext/apex ] && ! mount | grep -q " $GUEST_SYSTEM_EXT type overlay"; then
             FARM="$OV/farm"; FORIG="$OV/orig"; fok=1; fn=0
             rm -rf "$FARM" && mkdir -p "$FARM/apex" "$FORIG" || fok=0
             for e in "$GUEST_SYSTEM_EXT"/* "$GUEST_SYSTEM_EXT"/.[!.]*; do
@@ -1505,7 +1759,8 @@ if { [ -d /system_ext/apex ] && [ -d "$GUEST_SYSTEM_EXT" ]; } || [ $INJ = 1 ] ||
             if [ $fok = 1 ]; then
                 chmod 755 "$FARM" "$FARM/apex"
                 $BB chcon -R u:object_r:system_file:s0 "$FARM" 2>/dev/null || true
-                if $BB mount --bind "$GUEST_SYSTEM_EXT" "$FORIG" && $BB mount --bind "$FARM" "$GUEST_SYSTEM_EXT"; then
+                if $BB mount --bind "$GUEST_SYSTEM_EXT" "$FORIG" && $BB mount --make-private "$FORIG" &&
+                   $BB mount --bind "$FARM" "$GUEST_SYSTEM_EXT" && $BB mount --make-private "$GUEST_SYSTEM_EXT"; then
                     for e in "$FORIG"/* "$FORIG"/.[!.]*; do
                         [ -e "$e" ] && [ ! -L "$e" ] || continue
                         if $BB mount --bind "$e" "$GUEST_SYSTEM_EXT/${e##*/}"; then fn=$((fn + 1)); else fok=0; break; fi
@@ -1523,14 +1778,15 @@ if { [ -d /system_ext/apex ] && [ -d "$GUEST_SYSTEM_EXT" ]; } || [ $INJ = 1 ] ||
                 echo "!!! system_ext without overlayfs: the bound copy failed, left as the image has it"
             fi
         fi
-        # The Samsung IMS set binds onto either overlay (the read-only one through the
-        # mount points made in its layer); an earlier prepare's overlay has none.
-        [ $SEC_IMS = 1 ] && [ $SECIMS_BOUND = 0 ] && { SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"; echo "Samsung IMS in the guest: off (no writable overlay to bind onto)"; }
-        # Samsung Camera's mount points are in the overlay's own layer, so the
-        # read-only form takes it as well.
+        # The Samsung IMS set binds onto any layer we made (overlay or farm_tree).
+        if [ $SEC_IMS = 1 ]; then
+            if [ $SEXT_LAYER = 1 ] && sec_ims_bind; then SECIMS_BOUND=1
+            else SEC_IMS=0; rm -f "$STAGE/data/oneos_sec_ims"; echo "Samsung IMS in the guest: off (no layer on $GUEST_SYSTEM_EXT to bind onto)"; fi
+        fi
+        # Samsung Camera's mount points are in the layer we made too.
         if [ $SAMCAM = 1 ]; then
-            if mount | grep -q " $GUEST_SYSTEM_EXT type overlay" && samcam_bind sysext "$GUEST_SYSTEM_EXT"; then SAMCAM_BOUND=1; else
-                SAMCAM=0; echo "Samsung Camera in the guest: off (bind-mount onto $GUEST_SYSTEM_EXT failed)"
+            if [ $SEXT_LAYER = 1 ] && samcam_bind sysext "$GUEST_SYSTEM_EXT"; then SAMCAM_BOUND=1; else
+                SAMCAM=0; rm -f "$STAGE/data/oneos_samcam"; echo "Samsung Camera in the guest: off (bind-mount onto $GUEST_SYSTEM_EXT failed)"
             fi
         fi
         if [ $HWSM = 1 ]; then
@@ -1563,9 +1819,15 @@ if { [ -d /system_ext/apex ] && [ -d "$GUEST_SYSTEM_EXT" ]; } || [ $INJ = 1 ] ||
     fi
 fi
 if [ $INJ = 1 ]; then
-    if ! grep -q " $GUEST_SYSTEM_EXT overlay ro[, ]" /proc/mounts; then
+    INJ_RO=0
+    if grep -q " $GUEST_SYSTEM_EXT/framework " /proc/mounts; then
+        grep -qE " $GUEST_SYSTEM_EXT/framework tmpfs ro[, ]" /proc/mounts && INJ_RO=1
+    elif grep -qE " $GUEST_SYSTEM_EXT (overlay|tmpfs) ro[, ]" /proc/mounts; then
+        INJ_RO=1
+    fi
+    if [ $INJ_RO = 0 ]; then
         INJ=0
-        echo "Signal poll: off (no read-only overlay on $GUEST_SYSTEM_EXT, which the injection needs)"
+        echo "Signal poll: off (no read-only layer on $GUEST_SYSTEM_EXT/framework, which the injection needs)"
     elif ! cmp -s "$GUEST_SYSTEM_EXT/framework/oneos-telephony.jar" "$STAGE/oneos-telephony.jar"; then
         INJ=0
         echo "Signal poll: off ($GUEST_SYSTEM_EXT/framework/oneos-telephony.jar missing or not the staged one)"
@@ -1654,7 +1916,7 @@ elif [ ! -d "$PETC" ] || [ -L "$PETC" ]; then
 # overlay on LineageOS's /system leaves its own overlay mount on system/product/etc, and this check took
 # it for ours: no One UI curve, LineageOS's default one (100 % at 255 lux, the panel's peak) on every
 # Galaxy (A36, 2026-11-15: full bright and full low by turns, heat). Over another mount ours stacks on top.
-elif grep -q " $PETC overlay .*lowerdir=$STAGE/product_etc_ov/up:" /proc/mounts; then
+elif grep -q " $PETC overlay .*lowerdir=$STAGE/product_etc_ov/up:" /proc/mounts || grep -q " $STAGE/product_etc_ov/ft" /proc/mounts; then
     echo "Display config: overlay on product/etc already there (an earlier prepare), left as it is"
 elif [ -e "$PETC/displayconfig/display_port_147.xml" ] || [ -e "$PETC/displayconfig/display_port_148.xml" ]; then
     echo "Display config: the image has its own display_port_147/148, left as it is"
@@ -1716,6 +1978,8 @@ else
     $BB chcon -R u:object_r:system_file:s0 "$DOV/up" 2>/dev/null || true
     if $BB mount -t overlay overlay -o "ro,lowerdir=$DOV/up:$PETC" "$PETC"; then
         echo "Display config: product/etc/displayconfig/display_port_ for ports ${DDC_PORTS:-none} (One UI's nits curve, brightnessMaximum${DDC_MAX:- none}$([ $DDC_PROX = 1 ] && echo ", Samsung's IR proximity"))"
+    elif farm_tree "$PETC" "$DOV/ft" "$DOV/up"; then
+        echo "Display config: product/etc/displayconfig/display_port_ for ports ${DDC_PORTS:-none} (bound tree, no overlayfs; One UI's nits curve, brightnessMaximum${DDC_MAX:- none}$([ $DDC_PROX = 1 ] && echo ", Samsung's IR proximity"))"
     else
         echo "Display config: read-only overlay on product/etc refused, left out"
     fi
@@ -1784,7 +2048,37 @@ elif $BB mount --rbind /mnt "$ROOTFS/mnt"; then
     $BB mount --make-rslave "$ROOTFS/mnt" 2>/dev/null || true
     echo "Guest /mnt: One UI's, a recursive bind (ONEOS_GUEST_OWN_MNT=${ONEOS_GUEST_OWN_MNT:-1})"
 fi
+PROF_DIR="$STAGE/data/misc/apexdata/com.android.art/oneos_prof"
+ORIG_DIR="$STAGE/data/.oneos_orig_jars"
+PROF_JARS_CK=$(for j in "$STAGE/services_patched.jar" "$STAGE/framework_patched.jar" "$STAGE/telephony-common_patched.jar" \
+        "$ROOTFS/system/etc/boot-image.prof" "$ROOTFS/system/framework/services.jar.prof"; do
+    [ -f "$j" ] && stat -c '%n %s %Y' "$j" 2>/dev/null
+done | sha256sum 2>/dev/null | cut -d' ' -f1)
+PROF_NEED=0
+if [ ! -s "$PROF_DIR/boot-image.prof" ] \
+        || { [ -f "$ROOTFS/system/framework/services.jar.prof" ] && [ ! -s "$PROF_DIR/services.jar.prof" ]; } \
+        || [ "$(cat "$PROF_DIR/jars_ck" 2>/dev/null)" != "v1:$PROF_JARS_CK" ]; then
+    PROF_NEED=1
+fi
+$BB rm -rf "$ORIG_DIR" 2>/dev/null || true
+if [ "$PROF_NEED" = 1 ]; then
+    $BB mkdir -p "$ORIG_DIR" "$PROF_DIR" 2>/dev/null || true
+    printf '%s\n' "v1:$PROF_JARS_CK" > "$PROF_DIR/jars_ck" 2>/dev/null || true
+fi
+stage_orig_jar_for_prof() {
+    # Save unpatched guest jar BEFORE unmounting any farm_tree bind or mounting
+    # the patched jar: on kernels without overlayfs (e.g. A53 android12-5.10),
+    # farm_tree mounts the real jar over a 0-byte tmpfs placeholder, so unmounting
+    # first exposes the 0-byte placeholder and breaks profman.
+    [ "${PROF_NEED:-0}" = 1 ] || return 0
+    [ -s "$1" ] && [ -s "$2" ] && [ -s "$3" ] || return 0
+    [ "$(stat -c %d:%i "$1" 2>/dev/null)" != "$(stat -c %d:%i "$2" 2>/dev/null)" ] || return 0
+    $BB mkdir -p "$ORIG_DIR" 2>/dev/null || true
+    $BB cp -f "$1" "$ORIG_DIR/${1##*/}" 2>/dev/null || true
+    [ -s "$ORIG_DIR/${1##*/}" ] || rm -f "$ORIG_DIR/${1##*/}" 2>/dev/null || true
+}
 if [ -f "$STAGE/services_patched.jar" ]; then
+    stage_orig_jar_for_prof "$ROOTFS/system/framework/services.jar" "$STAGE/services_patched.jar" "$ROOTFS/system/framework/services.jar.prof"
     $BB umount -l "$ROOTFS/system/framework/services.jar" 2>/dev/null || true
     $BB mount --bind "$STAGE/services_patched.jar" "$ROOTFS/system/framework/services.jar"
     echo "Bound services_patched.jar -> $ROOTFS/system/framework/services.jar"
@@ -2116,7 +2410,7 @@ apm_a2dp() {
             7.*) if $BB grep -qs 'AUDIO_DEVICE_OUT_BLUETOOTH_A2DP"' "${apm_bt%.xml}_7_0.xml"; then apm_bt="${apm_bt%.xml}_7_0.xml"; fi ;;
         esac
         if $BB grep -qs 'AUDIO_DEVICE_OUT_BLUETOOTH_A2DP"' "$apm_bt" && apm_hw_lib bluetooth \
-           && $BB grep -rqs -E 'ISehBluetoothAudioProviderFactory|IBluetoothAudioProviderFactory' /vendor/etc/vintf/ \
+           && $BB grep -rqs -E 'ISehBluetoothAudioProviders?Factory|IBluetoothAudioProviderFactory' /vendor/etc/vintf/ \
            && apm_include "$2" "$apm_bt" "Bluetooth A2DP through the vendor's own Bluetooth audio module"; then
             APM_NOTE="Bluetooth A2DP outputs added with the vendor's Bluetooth module (${apm_bt##*/})"
             APM_ADDED=1
@@ -2394,6 +2688,15 @@ if [ -e "$MIUI_FW/miui-services.jar" ] || [ -L "$MIUI_FW/miui-services.jar" ]; t
             if [ -s "$APM_OV/up/audio_policy_configuration_mi.xml" ] &&
                $BB mount -t overlay overlay -o "ro,lowerdir=$APM_OV/up:$ROOTFS$APM_D" "$ROOTFS$APM_D"; then
                 echo "HyperOS audio policy: $APM_X as $APM_D/audio_policy_configuration_mi.xml (no AIDL audio HAL)${APM_NOTE:+; $APM_NOTE}${APM_USB:+; $APM_USB}"
+                rm -f "$STAGE/guest_bt_sw"
+                case "$APM_NOTE" in
+                    *"vendor's Bluetooth module"*)
+                        if [ "$(getprop ro.soc.manufacturer)" = QTI ] ||
+                           { ! $BB grep -rqs -E 'ISehBluetoothAudioProviderFactory|IBluetoothAudioProviderFactory' /vendor/etc/vintf/ &&
+                             $BB grep -rqs 'ISehBluetoothAudioProvidersFactory' /vendor/etc/vintf/; }; then
+                            echo module > "$STAGE/guest_bt_sw"
+                        fi ;;
+                esac
             else
                 echo "!!! WARNING: HyperOS audio policy: the overlay on $APM_D was refused; HyperOS keeps its default (speaker only, no Bluetooth audio)"
             fi
@@ -2410,11 +2713,11 @@ fi
 # ONEOS_GUEST_APM_A2DP=0 and ONEOS_GUEST_APM_USB=0 together leave the vendor's
 # file; each alone leaves out its own outputs.
 GAPM=/vendor/etc/audio_policy_configuration.xml
-rm -f "$STAGE/guest_bt_sw"
 if [ ! -e "$MIUI_FW/miui-services.jar" ] && [ ! -L "$MIUI_FW/miui-services.jar" ] \
    && { [ "${ONEOS_GUEST_APM_A2DP:-1}" = 1 ] || [ "${ONEOS_GUEST_APM_USB:-1}" = 1 ]; } \
    && [ -f "$GAPM" ] && [ -f "$ROOTFS$GAPM" ] && [ ! -L "$ROOTFS$GAPM" ] \
    && ! "$BB" grep -rqs 'android.hardware.audio.core' /vendor/etc/vintf/; then
+    rm -f "$STAGE/guest_bt_sw"
     SKU=$(getprop ro.boot.product.vendor.sku)
     GAPM_OV="$STAGE/guest_apm"
     GAPM_FIRST=""
@@ -2446,8 +2749,12 @@ if [ ! -e "$MIUI_FW/miui-services.jar" ] && [ ! -L "$MIUI_FW/miui-services.jar" 
                     echo "Guest audio policy: $GAPM with $GAPM_SAID (no AIDL audio HAL)"
                     case "$APM_NOTE" in
                         *"vendor's Bluetooth module"*)
-                            # Software A2DP for the module's stream on Qualcomm (see apm_a2dp).
-                            [ "$(getprop ro.soc.manufacturer)" = QTI ] && echo module > "$STAGE/guest_bt_sw"
+                            # Software A2DP for the module's stream on Qualcomm or HIDL-only Samsung (see apm_a2dp).
+                            if [ "$(getprop ro.soc.manufacturer)" = QTI ] ||
+                               { ! $BB grep -rqs -E 'ISehBluetoothAudioProviderFactory|IBluetoothAudioProviderFactory' /vendor/etc/vintf/ &&
+                                 $BB grep -rqs 'ISehBluetoothAudioProvidersFactory' /vendor/etc/vintf/; }; then
+                                echo module > "$STAGE/guest_bt_sw"
+                            fi
                             # ColorOS and OxygenOS (libaudiopolicycomponents) read
                             # /vendor/etc/audio/sku_<sku>_qssi/ before this file: every
                             # S23 ColorOS session loaded sku_kalama_qssi's (Config source
@@ -3202,12 +3509,18 @@ done
 # type= the host policy lacks: such a rule can never apply here. Those apps
 # then get AOSP's generic rules (untrusted_app, priv_app, platform_app,
 # system_app), the same ones the host's installd uses for their data (One UI's
-# seapp_contexts has no OPPO rules either). Whole lines only, so the files stay
-# parseable; plat_seapp_contexts (system_server's rule, same AOSP build as the
-# host) is left alone. The host's types come from its CIL files, so this
-# follows whatever policy the phone has. ONEOS_GUEST_SEAPP=0 keeps ColorOS's files.
-SEAPP_FILES="$GUEST_SYSTEM_EXT/etc/selinux/system_ext_seapp_contexts $GUEST_PRODUCT/etc/selinux/product_seapp_contexts"
-for f in $SEAPP_FILES; do $BB umount -l "$f" 2>/dev/null; done
+# seapp_contexts has no OPPO/custom rules either). Whole lines only, so the files
+# stay parseable; plat_seapp_contexts is filtered too (with system_server checked
+# in HOST_TYPES below so core platform rules are never dropped). The host's types
+# come from its CIL files, so this follows whatever policy the phone has.
+# ONEOS_GUEST_SEAPP=0 keeps the guest's files unchanged.
+SEAPP_FILES="$ROOTFS/system/etc/selinux/plat_seapp_contexts $GUEST_SYSTEM_EXT/etc/selinux/system_ext_seapp_contexts $GUEST_PRODUCT/etc/selinux/product_seapp_contexts"
+for f in $SEAPP_FILES; do
+    _se_out="$STAGE/oneos_$(basename "$f")"
+    if [ -f "$_se_out" ] && [ "$(stat -c %d:%i "$f" 2>/dev/null)" = "$(stat -c %d:%i "$_se_out" 2>/dev/null)" ]; then
+        $BB umount -l "$f" 2>/dev/null || true
+    fi
+done
 if [ "${ONEOS_GUEST_SEAPP:-1}" = 1 ]; then
     HOST_TYPES="$STAGE/host_sepolicy_types.txt"
     for c in /system/etc/selinux/*.cil /system_ext/etc/selinux/*.cil /product/etc/selinux/*.cil \
@@ -3216,7 +3529,7 @@ if [ "${ONEOS_GUEST_SEAPP:-1}" = 1 ]; then
         [ -f "$c" ] && cat "$c"
     done | awk '$1 == "(type" || $1 == "(typealias" { t = $2; sub(/\).*$/, "", t); print t }' | sort -u > "$HOST_TYPES"
     SEAPP_OK=1
-    for t in untrusted_app priv_app platform_app system_app app_data_file privapp_data_file system_app_data_file; do
+    for t in system_server untrusted_app priv_app platform_app system_app app_data_file privapp_data_file system_app_data_file; do
         grep -qx "$t" "$HOST_TYPES" || SEAPP_OK=0
     done
     if [ "$SEAPP_OK" != 1 ]; then
@@ -3252,6 +3565,7 @@ fi
 # checked above, so a stage that has the jar binds the one the set was built
 # with or does not start.
 if [ -f "$STAGE/framework_patched.jar" ]; then
+    stage_orig_jar_for_prof "$ROOTFS/system/framework/framework.jar" "$STAGE/framework_patched.jar" "$ROOTFS/system/etc/boot-image.prof"
     $BB umount -l "$ROOTFS/system/framework/framework.jar" 2>/dev/null || true
     $BB mount --bind "$STAGE/framework_patched.jar" "$ROOTFS/system/framework/framework.jar"
     echo "Bound framework_patched.jar -> $ROOTFS/system/framework/framework.jar"
@@ -3262,6 +3576,7 @@ fi
 # framework.jar, so the boot image is not given up for it alone. Listed in
 # guards.txt and checked above.
 if [ -f "$STAGE/telephony-common_patched.jar" ] && [ -f "$ROOTFS/system/framework/telephony-common.jar" ]; then
+    stage_orig_jar_for_prof "$ROOTFS/system/framework/telephony-common.jar" "$STAGE/telephony-common_patched.jar" "$ROOTFS/system/etc/boot-image.prof"
     $BB umount -l "$ROOTFS/system/framework/telephony-common.jar" 2>/dev/null || true
     $BB mount --bind "$STAGE/telephony-common_patched.jar" "$ROOTFS/system/framework/telephony-common.jar"
     echo "Bound telephony-common_patched.jar -> $ROOTFS/system/framework/telephony-common.jar"
@@ -4117,6 +4432,14 @@ mkdir -p "$STAGE/data/anr" "$STAGE/data/app" "$STAGE/data/rollback" "$STAGE/data
 # The guest's own shared storage. Never the phone's /data/media: in run 25 the
 # guest's cleanup of a user it could not prepare deleted the photos in it.
 mkdir -p "$STAGE/data/media/0" "$STAGE/data/media/obb" "$STAGE/data/vendor_de/0" "$STAGE/data/vendor_ce/0"
+# HIDL biometric HALs (e.g. A53 fingerprint@2.1) check /data/vendor_de/0/fpdata
+# as system (uid 1000). If missing under a root-owned 0755 vendor_de/0,
+# FingerprintUpdateActiveUserClient fails EACCES and BiometricScheduler loops
+# thousands of times/sec, pinning system_server and logd.
+mkdir -p "$STAGE/data/vendor_de/0/fpdata" "$STAGE/data/vendor_de/0/facedata"
+chmod 771 "$STAGE/data/vendor_de" "$STAGE/data/vendor_de/0" "$STAGE/data/vendor_ce" "$STAGE/data/vendor_ce/0" 2>/dev/null || true
+chmod 700 "$STAGE/data/vendor_de/0/fpdata" "$STAGE/data/vendor_de/0/facedata" 2>/dev/null || true
+chown 1000:1000 "$STAGE/data/vendor_de/0" "$STAGE/data/vendor_de/0/fpdata" "$STAGE/data/vendor_de/0/facedata" "$STAGE/data/vendor_ce/0" 2>/dev/null || true
 
 # OneOS: without OneLineage's LineageOS packages (Launcher3, LatinIME,
 # LineageSettings; ColorOS has none of them) and with the OneOS app in place
@@ -4130,7 +4453,7 @@ for pkg in com.android.providers.settings \
            com.android.providers.downloads \
            com.android.providers.contacts \
            com.android.providers.calendar \
-           com.fahadali.oneos; do
+           com.fahadali.oneos com.dualos.a53; do
     mkdir -p "$STAGE/data/user_de/0/$pkg/databases" \
              "$STAGE/data/user_de/0/$pkg/shared_prefs" \
              "$STAGE/data/user_de/0/$pkg/files/datastore/education" \
@@ -4165,7 +4488,7 @@ echo "=== 5.9 $(date +%T) perms ==="
 for pkg in com.android.providers.settings com.android.providers.telephony com.android.phone \
            com.android.systemui com.android.settings \
            com.android.providers.media com.android.providers.downloads com.android.providers.contacts \
-           com.android.providers.calendar com.fahadali.oneos; do
+           com.android.providers.calendar com.fahadali.oneos com.dualos.a53; do
     chown -h -R 1000:1000 "$STAGE/data/user_de/0/$pkg" "$STAGE/data/user/0/$pkg" 2>/dev/null
     chmod -R 777 "$STAGE/data/user_de/0/$pkg" "$STAGE/data/user/0/$pkg" 2>/dev/null
     # Code an app saved there (vivo SystemUI's plugin APKs) read-only again: since Android 14
@@ -4203,9 +4526,67 @@ echo "=== 5.10 $(date +%T) realign ==="
 # GD stack asserts out of storage_module.cc if it cannot persist bt_config.conf,
 # and the staged tree never had this directory, so com.android.bluetooth
 # crash-looped every 4 s from early boot. uid 1002 = bluetooth.
-mkdir -p "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" 2>/dev/null
-chown 1002:1002 "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" 2>/dev/null || true
-chmod 0770 "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" 2>/dev/null || true
+mkdir -p "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth/logs" 2>/dev/null
+chown 1002:1002 "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" "$STAGE/data/misc/bluetooth/logs" 2>/dev/null || true
+chmod 0770 "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" "$STAGE/data/misc/bluetooth/logs" 2>/dev/null || true
+
+# Guest tombstones dir with host-compatible label (avoids NativeTombstoneManager
+# "Tombstone has invalid selinux label" warnings; host /data/tombstones is also
+# relabeled with restorecon -RF on return_to_oneui.sh).
+mkdir -p "$STAGE/data/tombstones" 2>/dev/null
+chown -h 1000:1000 "$STAGE/data/tombstones" 2>/dev/null || true
+chmod 0771 "$STAGE/data/tombstones" 2>/dev/null || true
+$BB chcon -h u:object_r:tombstone_data_file:s0 "$STAGE/data/tombstones" 2>/dev/null ||
+    $BB chcon -h u:object_r:system_data_file:s0 "$STAGE/data/tombstones" 2>/dev/null || true
+
+# NFC storage (uid 1027 = nfc) and first_boot=false seed so NfcService$EnableDisableTask
+# never calls INfc.factoryReset() against the shared Samsung NFC HAL/eSE on first boot.
+mkdir -p "$STAGE/data/nfc" "$STAGE/data/misc/nfc/logs" "$STAGE/data/vendor/nfc" 2>/dev/null
+chown -h 0:0 "$STAGE/data/vendor" 2>/dev/null || true
+chmod 0771 "$STAGE/data/vendor" 2>/dev/null || true
+chown -h 1027:1027 "$STAGE/data/nfc" "$STAGE/data/misc/nfc" "$STAGE/data/misc/nfc/logs" "$STAGE/data/vendor/nfc" 2>/dev/null || true
+chmod 0770 "$STAGE/data/nfc" "$STAGE/data/misc/nfc" "$STAGE/data/misc/nfc/logs" "$STAGE/data/vendor/nfc" 2>/dev/null || true
+for _nd in "$STAGE/data/nfc" "$STAGE/data/misc/nfc" "$STAGE/data/misc/nfc/logs" "$STAGE/data/vendor/nfc"; do
+    $BB chcon -h -R u:object_r:nfc_data_file:s0 "$_nd" 2>/dev/null ||
+        $BB chcon -h -R u:object_r:system_data_file:s0 "$_nd" 2>/dev/null || true
+done
+if [ "${ONEOS_GUEST_NFC:-1}" = 1 ]; then
+    for _npbase in "$STAGE/data/user_de/0/com.android.nfc" "$STAGE/data/user/0/com.android.nfc"; do
+        mkdir -p "$_npbase/shared_prefs" 2>/dev/null || continue
+        _npf="$_npbase/shared_prefs/NfcServicePrefs.xml"
+        if [ -L "$_npf" ]; then
+            echo "ERROR: $_npf is a symlink; not starting the guest"
+            exit 3
+        fi
+        if [ ! -e "$_npf" ]; then
+            printf '%s\n' "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
+                '<map>' \
+                '    <boolean name="first_boot" value="false" />' \
+                '</map>' > "$_npf"
+        elif grep -q 'name="first_boot"[^>]*value="true"' "$_npf" 2>/dev/null; then
+            _nptmp="$STAGE/nfc_prefs.tmp"
+            if sed 's/\(name="first_boot"[^>]*value=\)"true"/\1"false"/g' "$_npf" > "$_nptmp" && [ -s "$_nptmp" ]; then
+                mv -f "$_nptmp" "$_npf"
+            else
+                rm -f "$_nptmp"
+            fi
+        elif ! grep -q 'name="first_boot"' "$_npf" 2>/dev/null; then
+            _nptmp="$STAGE/nfc_prefs.tmp"
+            if awk '/<\/map>/ { print "    <boolean name=\"first_boot\" value=\"false\" />" } { print }' "$_npf" > "$_nptmp" && [ -s "$_nptmp" ]; then
+                mv -f "$_nptmp" "$_npf"
+            else
+                rm -f "$_nptmp"
+            fi
+        fi
+        chown -h 1027:1027 "$_npbase" "$_npbase/shared_prefs" "$_npf" 2>/dev/null || true
+        chmod 0700 "$_npbase" 2>/dev/null || true
+        chmod 0771 "$_npbase/shared_prefs" 2>/dev/null || true
+        chmod 0660 "$_npf" 2>/dev/null || true
+        $BB chcon -h u:object_r:system_app_data_file:s0 "$_npbase" "$_npbase/shared_prefs" "$_npf" 2>/dev/null ||
+            $BB chcon -h u:object_r:app_data_file:s0 "$_npbase" "$_npbase/shared_prefs" "$_npf" 2>/dev/null || true
+    done
+    echo "Guest NFC: data dirs labeled and NfcServicePrefs.xml seeded (first_boot=false)"
+fi
 
 # Apps uninstalled in the guest (0.4.50; owner and testers: "apps I uninstalled come back in the
 # next session", ColorOS Mod on the owner's Fold). The storage guard drops installd's rmPackageDir
@@ -5300,11 +5681,11 @@ echo "[fix_app_dirs] navigation: hide_navigationbar_enable=$(settings get secure
 # every ~4 seconds for the rest of the session (1880 tombstones in one boot).
 # The staged tree had no /data/misc/bluedroid at all; create it with the
 # bluetooth uid (1002) so the stack can save bt_config.conf.
-if [ ! -d /data/misc/bluedroid ]; then
-    mkdir -p /data/misc/bluedroid /data/misc/bluetooth 2>/dev/null
-    chown 1002:1002 /data/misc/bluedroid /data/misc/bluetooth 2>/dev/null
-    chmod 0770 /data/misc/bluedroid /data/misc/bluetooth 2>/dev/null
-    echo "[fix_app_dirs] created /data/misc/bluedroid for the bluetooth stack"
+if [ ! -d /data/misc/bluedroid ] || [ ! -d /data/misc/bluetooth/logs ]; then
+    mkdir -p /data/misc/bluedroid /data/misc/bluetooth/logs 2>/dev/null
+    chown 1002:1002 /data/misc/bluedroid /data/misc/bluetooth /data/misc/bluetooth/logs 2>/dev/null
+    chmod 0770 /data/misc/bluedroid /data/misc/bluetooth /data/misc/bluetooth/logs 2>/dev/null
+    echo "[fix_app_dirs] created /data/misc/bluedroid and /data/misc/bluetooth/logs for the bluetooth stack"
 fi
 
 # Code files must not be writable by the app that loads them. ART rejects any
@@ -5438,28 +5819,31 @@ cat > "$STAGE/data/local/tmp/net_fix.sh" <<'NETFIX'
 # UI's DHCP address with the link down (run 28: 192.168.x.y on a "linkdown"
 # wlan0 all session); picking it sent all traffic to a dead link.
 usable() {
-    [ "$(cat "/sys/class/net/$1/carrier" 2>/dev/null)" = 1 ] &&
-        ip -4 addr show "$1" 2>/dev/null | grep -q "inet "
+    _c=''
+    read -r _c < "/sys/class/net/$1/carrier" 2>/dev/null || return 1
+    [ "$_c" = 1 ] && ip -4 addr show "$1" 2>/dev/null | grep -q "inet "
 }
 # Without Wi-Fi: the mobile interface netd made the default network (its rule
 # "fwmark 0x0/0xffff iif lo lookup <if>"), then the first usable rmnet_data.
 # The first one alone could be the IMS PDN (0.4.60 reports 5278f632, 4cc84045:
 # 4242 on the IMS rmnet_data for a while, the phone's internet into the IMS APN).
+rules=$(ip rule show 2>/dev/null)
 iface=""
 if usable wlan0; then
     iface=wlan0
 else
-    d=$(ip rule show 2>/dev/null | awk '/fwmark 0x0\/0xffff iif lo lookup rmnet_data/ {print $NF; exit}')
+    d=$(printf '%s\n' "$rules" | awk '/fwmark 0x0\/0xffff iif lo lookup rmnet_data/ {print $NF; exit}')
     case "$d" in rmnet_data*) usable "$d" && iface=$d ;; esac
     [ -n "$iface" ] || for d in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep '^rmnet_data'); do
         if usable "$d"; then iface=$d; break; fi
     done
 fi
 [ -z "$iface" ] && exit 0
-subnet=$(ip route show table all 2>/dev/null | awk -v d="$iface" \
+rt_all=$(ip route show table all 2>/dev/null)
+subnet=$(printf '%s\n' "$rt_all" | awk -v d="$iface" \
     '$2=="dev" && $3==d && $0 ~ /scope link/ && $1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\// {print $1; exit}')
 [ -z "$subnet" ] && exit 0
-gw=$(ip route show table all 2>/dev/null | awk -v d="$iface" \
+gw=$(printf '%s\n' "$rt_all" | awk -v d="$iface" \
     '$1=="default" && $2=="via" && $4=="dev" && $5==d && $3 ~ /^[0-9]+\./ {print $3; exit}')
 case "$iface" in
     # Raw-IP link, no ARP: a device route is enough. Carriers hand out small
@@ -5468,9 +5852,11 @@ case "$iface" in
     # no IPv4 default anywhere (netd never installed one): assume the first host
     *) [ -z "$gw" ] && gw="${subnet%.*}.1"; via="via $gw dev $iface" ;;
 esac
-cur_if=$(ip route show table 4242 2>/dev/null | awk '$1=="default"{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); exit}}')
+rt_4242=$(ip route show table 4242 2>/dev/null)
+cur_if=$(printf '%s\n' "$rt_4242" | awk '$1=="default"{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); exit}}')
 if [ "$cur_if" != "$iface" ]; then
     ip route flush table 4242 2>/dev/null
+    rt_4242=""
     echo "net route: table 4242 now uses $iface ($via), was ${cur_if:-none}"
 fi
 ip route replace "$subnet" dev "$iface" table 4242 2>/dev/null
@@ -5482,14 +5868,16 @@ ip route replace default $via table 4242 2>/dev/null
 # from dnsmasq, ICMP) took 4242's default back out of the upstream (S25 Ultra
 # ColorOS sessions 30124d7e and 516ef4ce: clients connected, no internet).
 # Prefixes shorter than /8 are left alone (a VPN's 0.0.0.0/1 split routes).
-want=$(ip route show table all 2>/dev/null | awk -v d="$iface" \
+want=$(printf '%s\n' "$rt_all" | awk -v d="$iface" \
     '$2=="dev" && $3!=d && $0 ~ / scope link/ && $1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\/([89]|[12][0-9]|3[0-2])$/ {print $1}' | sort -u)
-have=$(ip route show table 4242 2>/dev/null | awk '$1=="throw"{print $2}')
+have=$(printf '%s\n' "$rt_4242" | awk '$1=="throw"{print $2}')
+want_sp=""; for w in $want; do want_sp="$want_sp $w"; done
+have_sp=""; for h in $have; do have_sp="$have_sp $h"; done
 for p in $have; do
-    case " $(echo $want) " in *" $p "*) ;; *) ip route del throw "$p" table 4242 2>/dev/null ;; esac
+    case "$want_sp " in *" $p "*) ;; *) ip route del throw "$p" table 4242 2>/dev/null ;; esac
 done
 for p in $want; do
-    case " $(echo $have) " in
+    case "$have_sp " in
         *" $p "*) ;;
         *) ip route replace throw "$p" table 4242 2>/dev/null && echo "net route: $p stays on netd's routes (not $iface)" ;;
     esac
@@ -5503,7 +5891,7 @@ done
 # back to the client's subnet. "from all lookup 4242" sent every reply from
 # the internet to a hotspot client back out of the upstream, where the FORWARD
 # chain dropped it.
-cur=$(ip rule show 2>/dev/null | awk '/^14999:/{print; exit}')
+cur=$(printf '%s\n' "$rules" | awk '/^14999:/{print; exit}')
 case "$cur" in
     *"iif lo lookup 4242"*) ;;
     *)
@@ -5522,16 +5910,20 @@ esac
 # use the IMS interface got its 401 at once. The same rules again at 14998, so
 # they win over 4242; a table without a matching route falls through to 14999
 # as before. Only mobile interfaces; kept in step with netd's.
-want=$(ip rule show 2>/dev/null | awk '$1 == "16000:" && / iif lo / && / fwmark / && $NF ~ /^rmnet_data/ { $1 = ""; sub(/^ +/, ""); print }')
-have=$(ip rule show 2>/dev/null | awk '$1 == "14998:" { $1 = ""; sub(/^ +/, ""); print }')
-echo "$have" | while read -r r; do
-    [ -n "$r" ] || continue
-    printf '%s\n' "$want" | grep -qxF "$r" || { ip rule del $r priority 14998 2>/dev/null && echo "net route: dropped 14998: $r"; }
-done
-echo "$want" | while read -r r; do
-    [ -n "$r" ] || continue
-    printf '%s\n' "$have" | grep -qxF "$r" || { ip rule add $r priority 14998 2>/dev/null && echo "net route: 14998: $r (bound sockets keep their network)"; }
-done
+want=$(printf '%s\n' "$rules" | awk '$1 == "16000:" && / iif lo / && / fwmark / && $NF ~ /^rmnet_data/ { $1 = ""; sub(/^ +/, ""); print }')
+have=$(printf '%s\n' "$rules" | awk '$1 == "14998:" { $1 = ""; sub(/^ +/, ""); print }')
+if [ -n "$have" ]; then
+    printf '%s\n' "$have" | while read -r r; do
+        [ -n "$r" ] || continue
+        printf '%s\n' "$want" | grep -qxF "$r" || { ip rule del $r priority 14998 2>/dev/null && echo "net route: dropped 14998: $r"; }
+    done
+fi
+if [ -n "$want" ]; then
+    printf '%s\n' "$want" | while read -r r; do
+        [ -n "$r" ] || continue
+        printf '%s\n' "$have" | grep -qxF "$r" || { ip rule add $r priority 14998 2>/dev/null && echo "net route: 14998: $r (bound sockets keep their network)"; }
+    done
+fi
 exit 0
 NETFIX
 chmod 755 "$STAGE/data/local/tmp/net_fix.sh" 2>/dev/null || true
@@ -5540,25 +5932,32 @@ cat > "$STAGE/data/local/tmp/app_storage_loop.sh" <<'APPLOOP'
 #!/system/bin/sh
 # Watches for installs/removals, gives the new package its data dirs, and makes
 # the launcher re-query so the app actually shows up.
+booted=0
 last=""
 while true; do
     sleep 10
-    case "$(getprop sys.boot_completed)" in 1) ;; *) continue ;; esac
-    netout=$(/system/bin/sh /data/local/tmp/net_fix.sh 2>/dev/null)
-    [ -n "$netout" ] && echo "$(date) $netout" >> /data/app_storage.log
-    cur=$(md5sum /data/system/packages.list 2>/dev/null | cut -d' ' -f1)
-    out=$(/system/bin/sh /data/local/tmp/ensure_app_storage.sh 2>/dev/null)
-    if [ -n "$last" ] && { [ "$cur" != "$last" ] || [ -n "$out" ]; }; then
-        # A package appeared or went away. LauncherApps caches the app list, so
-        # something installed from Aurora or Play Store is missing from both the
-        # drawer and app search until the launcher re-queries. Restarting the
-        # launcher forces that and does not touch whatever app is in front.
-        am force-stop com.android.launcher3 2>/dev/null
-        echo "$(date) package list changed -> launcher refreshed ${out:+($out)}" >> /data/app_storage.log
-    elif [ -n "$out" ]; then
-        echo "$(date) $out" >> /data/app_storage.log
+    if [ "$booted" = 0 ]; then
+        case "$(getprop sys.boot_completed)" in 1) booted=1 ;; *) continue ;; esac
     fi
-    last=$cur
+    if [ -z "$last" ]; then
+        netout=$(/system/bin/sh /data/local/tmp/net_fix.sh 2>/dev/null)
+        [ -n "$netout" ] && echo "$(date) $netout" >> /data/app_storage.log
+    fi
+    cur=$(stat -c '%i:%Y:%s' /data/system/packages.list 2>/dev/null)
+    if [ -z "$last" ] || { [ -n "$cur" ] && [ "$cur" != "$last" ]; }; then
+        out=$(/system/bin/sh /data/local/tmp/ensure_app_storage.sh 2>/dev/null)
+        if [ -n "$last" ]; then
+            # A package appeared or went away. LauncherApps caches the app list, so
+            # something installed from Aurora or Play Store is missing from both the
+            # drawer and app search until the launcher re-queries. Restarting the
+            # launcher forces that and does not touch whatever app is in front.
+            am force-stop com.android.launcher3 2>/dev/null
+            echo "$(date) package list changed -> launcher refreshed ${out:+($out)}" >> /data/app_storage.log
+        elif [ -n "$out" ]; then
+            echo "$(date) $out" >> /data/app_storage.log
+        fi
+        [ -n "$cur" ] && last=$cur
+    fi
 done
 APPLOOP
 chmod 755 "$STAGE/data/local/tmp/app_storage_loop.sh" 2>/dev/null || true
@@ -5617,7 +6016,7 @@ BRQ="$STAGE/data/oneos_bring_requests"; LOG="$STAGE/bring_watch.log"
 GAPP=com.fahadali.oneos.guest
 echo $$ > "$BRQ/.watch.pid"
 say() { echo "$(date +%T) $*" >> "$LOG"; }
-alive() { grep -q " $STAGE/rootfs " /proc/mounts; }
+alive() { while read -r _ mp _; do [ "$mp" = "$STAGE/rootfs" ] && return 0; done < /proc/mounts; return 1; }
 is_package() {
     case "$1" in ''|.*|*.|*[!A-Za-z0-9._]*|*..*) return 1 ;; esac
     case "$1" in *.*) return 0 ;; *) return 1 ;; esac
@@ -6002,103 +6401,351 @@ done
 
 # The guest's own APEX payloads on One UI's /linkerconfig: its namespaces are linked
 # from One UI's APEX manifests, and an image's module can need more (OriginOS CN:
-# vivo's wifi APEX needs libnativehelper.so; third CN run: system_server died on an
-# UnsatisfiedLinkError). A guest-only copy of ld.config.txt adds each missing
-# requireNativeLibs entry (make-overlays.sh: oneos-apex-requires.txt) of the payloads
-# mounted above, through the namespace the other namespaces of that section already
-# take it from, as linkerconfig would. Bound on the guest's view only:
-# $ROOTFS/linkerconfig is a slave of One UI's /linkerconfig, which the return checks.
+# vivo's wifi APEX needs libnativehelper.so; LineageOS 23 on A53: its appsearch
+# APEX has jniLibs=libicing.so and requireNativeLibs=libz.so while One UI's
+# Play-updated appsearch APEX has libicing_anywhere.so instead, so system_server
+# crashed at 60 s with "dlopen failed: library libicing.so not found").
+# Read each mounted payload's apex_manifest.pb (and oneos-apex-requires.txt if
+# present), update guest-only copies of both apex.libraries.config.txt (jni tags)
+# and ld.config.txt (requireNativeLibs, visible = true, and default/system/caller
+# links to each payload's jniLibs/provideNativeLibs), and bind them on the guest's
+# /linkerconfig only (rslave of One UI's /linkerconfig, which the return checks).
+apex_manifest_libs() {
+    local pb="$1" od_cmd=""
+    [ -s "$pb" ] || return 0
+    if "$BB" od -An -v -tx1 /dev/null >/dev/null 2>&1; then
+        od_cmd="$BB od -An -v -tx1"
+    elif [ -x /system/bin/od ] && /system/bin/od -An -v -tx1 /dev/null >/dev/null 2>&1; then
+        od_cmd="/system/bin/od -An -v -tx1"
+    else
+        od_cmd="$BB od -An -tx1"
+    fi
+    $od_cmd "$pb" 2>/dev/null | "$BB" awk '
+    BEGIN { for (i = 0; i < 16; i++) { h[sprintf("%x", i)] = i; h[sprintf("%X", i)] = i } }
+    {
+        for (i = 1; i <= NF; i++) {
+            t = $i
+            if (length(t) == 2 && (substr(t, 1, 1) in h) && (substr(t, 2, 1) in h))
+                b[++nb] = h[substr(t, 1, 1)] * 16 + h[substr(t, 2, 1)]
+        }
+    }
+    function rv(   v, m, x) {
+        v = 0; m = 1
+        while (pos <= nb) {
+            x = b[pos++]
+            v += (x % 128) * m
+            if (x < 128) return v
+            m *= 128
+        }
+        return -1
+    }
+    function rstr(len,   s, j, c) {
+        s = ""
+        for (j = 0; j < len && pos + j <= nb; j++) {
+            c = b[pos + j]
+            if (c > 0 && c != 10 && c != 13) s = s sprintf("%c", c)
+        }
+        pos += len
+        gsub(/[ \t]+/, "", s)
+        return s
+    }
+    END {
+        pos = 1; name = ""
+        while (pos <= nb) {
+            k = rv(); if (k < 0) break
+            w = k % 8; fn = (k - w) / 8
+            if (w == 0) {
+                if (rv() < 0) break
+            } else if (w == 1) {
+                pos += 8
+            } else if (w == 5) {
+                pos += 4
+            } else if (w == 2) {
+                len = rv(); if (len < 0 || pos + len - 1 > nb) break
+                if (fn == 1) { name = rstr(len) }
+                else if (fn == 7) { s = rstr(len); if (s != "" && !(s in sp)) { sp[s] = 1; prov[++np] = s } }
+                else if (fn == 8) { s = rstr(len); if (s != "" && !(s in sr)) { sr[s] = 1; req[++nr] = s } }
+                else if (fn == 9) { s = rstr(len); if (s != "" && !(s in sj)) { sj[s] = 1; jni[++nj] = s } }
+                else { pos += len }
+            } else {
+                break
+            }
+        }
+        if (name == "") exit
+        ns = name; gsub(/[^A-Za-z0-9_]/, "_", ns)
+        if (np > 0) { o = "prov " ns; for (i = 1; i <= np; i++) o = o " " prov[i]; print o }
+        if (nr > 0) { o = "req " ns; for (i = 1; i <= nr; i++) o = o " " req[i]; print o }
+        if (nj > 0) { o = "jni " ns; for (i = 1; i <= nj; i++) o = o " " jni[i]; print o }
+    }'
+}
+
 GLD="$ROOTFS/linkerconfig/ld.config.txt"
-if [ -f "$STAGE/oneos-apex-requires.txt" ] && [ -f "$STAGE/payload_loops" ] && [ -f "$GLD" ]; then
-    $BB umount -l "$GLD" 2>/dev/null || true
-    $BB awk 'NR == FNR { m[$1] = 1; next } ($1 in m) { $1 = ""; sub(/^ /, ""); print }' \
-        "$STAGE/payload_loops" "$STAGE/oneos-apex-requires.txt" > "$STAGE/ld.config.guest.req"
-    if $BB awk '
-FNR == 1 { f++ }
-f == 1 { for (i = 2; i <= NF; i++) req[$1] = req[$1] " " $i; next }
-f == 2 && FNR == 1 { pass = 1 }
-f == 3 && FNR == 1 {
-    pass = 2
-    for (k in exists) {
-        split(k, a, SUBSEP); s = a[1]; ns = a[2]
-        if (!(ns in req)) continue
-        n = split(req[ns], libs, " ")
-        for (i = 1; i <= n; i++) {
-            lib = libs[i]
-            if ((s SUBSEP ns SUBSEP lib) in have) continue
-            hit = 0
-            for (q in allowall) { split(q, b, SUBSEP); if (b[1] == s && b[2] == ns) hit = 1 }
-            if (hit) continue
-            best = ""; bc = 0
-            m = split(provs[s SUBSEP lib], ps, " ")
-            for (j = 1; j <= m; j++) if (ps[j] != ns && cnt[s SUBSEP lib SUBSEP ps[j]] > bc) { best = ps[j]; bc = cnt[s SUBSEP lib SUBSEP ps[j]] }
-            if (best == "") { print "linker: [" s "] " ns ": no namespace provides " lib ", left out" > "/dev/stderr"; continue }
-            addk = s SUBSEP ns SUBSEP best
-            if (addk in add) v = add[addk] ":" lib; else v = lib
-            add[addk] = v
-            addp[s SUBSEP ns] = addp[s SUBSEP ns] " " best
-            print "linker: [" s "] " ns " + " lib " from " best > "/dev/stderr"
-        }
-    }
-}
-/^\[[^]]*\]$/ { sec = substr($0, 2, length($0) - 2) }
-pass == 1 {
-    if (match($0, /^namespace\.[^.]+\./)) {
-        ns = substr($0, 11, RLENGTH - 11); exists[sec SUBSEP ns] = 1
-        rest = substr($0, RLENGTH + 1)
-        if (rest ~ /^links *= */) { v = rest; sub(/^links *= */, "", v); links[sec SUBSEP ns] = "," v "," }
-        else if (rest ~ /^link\.[^.]+\.shared_libs *= */) {
-            p = rest; sub(/^link\./, "", p); sub(/\..*/, "", p)
-            v = rest; sub(/^link\.[^.]+\.shared_libs *= */, "", v)
-            n = split(v, ls, ":")
-            for (i = 1; i <= n; i++) {
-                have[sec SUBSEP ns SUBSEP ls[i]] = 1
-                if (!((sec SUBSEP ls[i] SUBSEP p) in cnt)) provs[sec SUBSEP ls[i]] = provs[sec SUBSEP ls[i]] " " p
-                cnt[sec SUBSEP ls[i] SUBSEP p]++
-            }
-        } else if (rest ~ /^link\.[^.]+\.allow_all_shared_libs *= *true/) {
-            p = rest; sub(/^link\./, "", p); sub(/\..*/, "", p); allowall[sec SUBSEP ns SUBSEP p] = 1
-        }
-    }
-    next
-}
-pass == 2 {
-    line = $0
-    if (match($0, /^namespace\.[^.]+\./)) {
-        ns = substr($0, 11, RLENGTH - 11); rest = substr($0, RLENGTH + 1)
-        if (rest ~ /^links *= */ && ((sec SUBSEP ns) in addp)) {
-            n = split(addp[sec SUBSEP ns], ps, " "); newp = ""
-            for (i = 1; i <= n; i++) {
-                if (index(links[sec SUBSEP ns], "," ps[i] ",") || index(newp, " " ps[i] " ")) continue
-                line = line "," ps[i]; newp = newp " " ps[i] " "
-            }
-            print line
-            for (i = 1; i <= n; i++) if (index(newp, " " ps[i] " ") && !((sec SUBSEP ns SUBSEP ps[i]) in done)) {
-                print "namespace." ns ".link." ps[i] ".shared_libs = " add[sec SUBSEP ns SUBSEP ps[i]]
-                done[sec SUBSEP ns SUBSEP ps[i]] = 1
+GALC="$ROOTFS/linkerconfig/apex.libraries.config.txt"
+if [ -f "$STAGE/payload_loops" ] && { [ -f "$GLD" ] || [ -f "$GALC" ]; }; then
+    : > "$STAGE/ld.config.guest.meta"
+    while read -r p_target _p_rest; do
+        [ -n "$p_target" ] || continue
+        apex_manifest_libs "$ROOTFS/apex/$p_target/apex_manifest.pb" >> "$STAGE/ld.config.guest.meta"
+    done < "$STAGE/payload_loops"
+    if [ -f "$STAGE/oneos-apex-requires.txt" ]; then
+        $BB awk 'NR == FNR { m[$1] = 1; next } ($1 in m) { $1 = "req"; print }' \
+            "$STAGE/payload_loops" "$STAGE/oneos-apex-requires.txt" >> "$STAGE/ld.config.guest.meta"
+    fi
+
+    if [ -f "$GALC" ] && grep -q '^jni ' "$STAGE/ld.config.guest.meta"; then
+        $BB umount -l "$GALC" 2>/dev/null || true
+        if $BB awk '
+        FNR == 1 { f++ }
+        f == 1 {
+            if ($1 == "jni") {
+                for (i = 3; i <= NF; i++) {
+                    if (!(( $2 SUBSEP $i ) in jseen)) {
+                        jseen[$2 SUBSEP $i] = 1
+                        jlist[$2] = ($2 in jlist) ? jlist[$2] " " $i : $i
+                    }
+                }
             }
             next
         }
-        if (rest ~ /^link\.[^.]+\.shared_libs *= */) {
-            p = rest; sub(/^link\./, "", p); sub(/\..*/, "", p)
-            k = sec SUBSEP ns SUBSEP p
-            if ((k in add) && !(k in done)) { line = line ":" add[k]; done[k] = 1 }
+        {
+            if ($1 == "jni" && ($2 in jlist) && !done[$2]) {
+                n = split($3, cur, ":")
+                out = $3; added = 0
+                split("", have)
+                for (i = 1; i <= n; i++) if (cur[i] != "") have[cur[i]] = 1
+                m = split(jlist[$2], want, " ")
+                for (i = 1; i <= m; i++) {
+                    if (!(want[i] in have)) {
+                        out = (out != "" ? out ":" want[i] : want[i])
+                        have[want[i]] = 1
+                        added = 1
+                        print "apex.libraries: jni " $2 " + " want[i] > "/dev/stderr"
+                    }
+                }
+                done[$2] = 1
+                print "jni " $2 " " out
+                next
+            }
+            print $0
         }
-    }
-    print line
-}
-' "$STAGE/ld.config.guest.req" "$GLD" "$GLD" > "$STAGE/ld.config.guest.txt" 2> "$STAGE/ld.config.guest.log" &&
-       [ "$($BB wc -l < "$STAGE/ld.config.guest.txt")" -ge "$($BB wc -l < "$GLD")" ]; then
-        if $BB cmp -s "$STAGE/ld.config.guest.txt" "$GLD"; then
-            echo "Guest linker config: One UI's covers the guest's APEX payloads"
+        END {
+            for (ns in jlist) {
+                if (done[ns]) continue
+                out = ""
+                m = split(jlist[ns], want, " ")
+                for (i = 1; i <= m; i++) out = (out != "" ? out ":" want[i] : want[i])
+                if (out != "") {
+                    print "jni " ns " " out
+                    print "apex.libraries: + jni " ns " " out > "/dev/stderr"
+                }
+            }
+        }' "$STAGE/ld.config.guest.meta" "$GALC" > "$STAGE/apex.libraries.config.guest.txt" 2> "$STAGE/apex.libraries.config.guest.log" &&
+           [ "$($BB wc -l < "$STAGE/apex.libraries.config.guest.txt")" -ge "$($BB wc -l < "$GALC")" ]; then
+            if $BB cmp -s "$STAGE/apex.libraries.config.guest.txt" "$GALC"; then
+                echo "Guest apex.libraries config: One UI's covers the guest's APEX payloads"
+            else
+                chmod 644 "$STAGE/apex.libraries.config.guest.txt"
+                $BB chcon "$(ls -Z "$GALC" | $BB awk '{print $1}')" "$STAGE/apex.libraries.config.guest.txt" 2>/dev/null || true
+                $BB mount --bind "$STAGE/apex.libraries.config.guest.txt" "$GALC" &&
+                    echo "Guest apex.libraries config: $($BB grep -c '^apex\.libraries: ' "$STAGE/apex.libraries.config.guest.log") JNI entries updated for the guest's APEX payloads ($STAGE/apex.libraries.config.guest.log)"
+            fi
         else
-            chmod 644 "$STAGE/ld.config.guest.txt"
-            $BB chcon "$(ls -Z "$GLD" | $BB awk '{print $1}')" "$STAGE/ld.config.guest.txt" 2>/dev/null || true
-            $BB mount --bind "$STAGE/ld.config.guest.txt" "$GLD" &&
-                echo "Guest linker config: $($BB grep -c ' + ' "$STAGE/ld.config.guest.log") links added for the guest's APEX payloads ($STAGE/ld.config.guest.log)"
+            echo "!!! WARNING: guest apex.libraries config not made ($(head -c 300 "$STAGE/apex.libraries.config.guest.log" 2>/dev/null)); One UI's stays"
         fi
-    else
-        echo "!!! WARNING: guest linker config not made ($(head -c 300 "$STAGE/ld.config.guest.log" 2>/dev/null)); One UI's stays"
+    fi
+
+    if [ -s "$STAGE/ld.config.guest.meta" ] && [ -f "$GLD" ]; then
+        $BB umount -l "$GLD" 2>/dev/null || true
+        if $BB awk '
+        function add_link_lib(s, ns, prov_ns, lib,   addk, ap) {
+            if (ns == prov_ns) return
+            if ((s SUBSEP ns SUBSEP lib) in have) return
+            if ((s SUBSEP ns SUBSEP prov_ns) in allowall) return
+            have[s SUBSEP ns SUBSEP lib] = 1
+            addk = s SUBSEP ns SUBSEP prov_ns
+            if (addk in add) add[addk] = add[addk] ":" lib
+            else add[addk] = lib
+            ap = s SUBSEP ns
+            if (!index(" " addp[ap] " ", " " prov_ns " ")) addp[ap] = addp[ap] " " prov_ns
+            print "linker: [" s "] " ns " + " lib " from " prov_ns > "/dev/stderr"
+        }
+        FNR == 1 { f++ }
+        f == 1 {
+            kind = $1; ns = $2
+            for (i = 3; i <= NF; i++) {
+                lib = $i
+                if (kind == "req" && !((ns SUBSEP lib) in mreq)) { mreq[ns SUBSEP lib] = 1; req[ns] = req[ns] " " lib }
+                else if (kind == "prov" && !((ns SUBSEP lib) in mprov)) { mprov[ns SUBSEP lib] = 1; prov[ns] = prov[ns] " " lib }
+                else if (kind == "jni" && !((ns SUBSEP lib) in mjni)) { mjni[ns SUBSEP lib] = 1; jni[ns] = jni[ns] " " lib }
+            }
+            next
+        }
+        f == 2 && FNR == 1 { pass = 1 }
+        f == 3 && FNR == 1 {
+            pass = 2
+            # Register libs provided by mounted guest APEX payloads so sibling payloads can link them too.
+            for (k in exists) {
+                split(k, a, SUBSEP); s = a[1]; ns = a[2]
+                if (ns in prov) {
+                    n = split(prov[ns], libs, " ")
+                    for (i = 1; i <= n; i++) {
+                        lib = libs[i]
+                        if (!((s SUBSEP lib SUBSEP ns) in cnt)) {
+                            provs[s SUBSEP lib] = provs[s SUBSEP lib] " " ns
+                            cnt[s SUBSEP lib SUBSEP ns] = 1
+                        }
+                    }
+                }
+            }
+            for (k in exists) {
+                split(k, a, SUBSEP); s = a[1]; ns = a[2]
+                if (!(ns in req)) continue
+                n = split(req[ns], libs, " ")
+                for (i = 1; i <= n; i++) {
+                    lib = libs[i]
+                    if ((s SUBSEP ns SUBSEP lib) in have) continue
+                    hit = 0
+                    for (q in allowall) { split(q, b, SUBSEP); if (b[1] == s && b[2] == ns) hit = 1 }
+                    if (hit) continue
+                    best = ""; bc = 0
+                    m = split(provs[s SUBSEP lib], ps, " ")
+                    for (j = 1; j <= m; j++) if (ps[j] != ns && cnt[s SUBSEP lib SUBSEP ps[j]] > bc) { best = ps[j]; bc = cnt[s SUBSEP lib SUBSEP ps[j]] }
+                    if (best == "") { print "linker: [" s "] " ns ": no namespace provides " lib ", left out" > "/dev/stderr"; continue }
+                    add_link_lib(s, ns, best, lib)
+                }
+            }
+            for (k in exists) {
+                split(k, a, SUBSEP); s = a[1]; ns = a[2]
+                if (!(ns in jni) && !(ns in prov)) continue
+                if (!((s SUBSEP ns) in visible)) {
+                    need_vis[s SUBSEP ns] = 1
+                    print "linker: [" s "] " ns " visible = true" > "/dev/stderr"
+                }
+                all_exp = jni[ns] " " prov[ns]
+                n = split(all_exp, libs, " ")
+                if ((s == "system" || s == "unrestricted") && ((s SUBSEP "default") in exists)) {
+                    for (i = 1; i <= n; i++) add_link_lib(s, "default", ns, libs[i])
+                }
+                if (s == "isolated" && ((s SUBSEP "system") in exists)) {
+                    for (i = 1; i <= n; i++) add_link_lib(s, "system", ns, libs[i])
+                }
+            }
+            for (ns in jni) {
+                if (!(( "system" SUBSEP ns ) in exists)) {
+                    print "linker: [system] " ns " has jniLibs (" jni[ns] ") but no namespace in section" > "/dev/stderr"
+                }
+            }
+        }
+        /^\[[^]]*\]$/ { sec = substr($0, 2, length($0) - 2) }
+        pass == 1 {
+            if (match($0, /^namespace\.[^.]+\./)) {
+                ns = substr($0, 11, RLENGTH - 11); exists[sec SUBSEP ns] = 1
+                rest = substr($0, RLENGTH + 1)
+                if (rest ~ /^visible *= *true[ \t]*$/) { visible[sec SUBSEP ns] = 1 }
+                else if (rest ~ /^visible *= *false[ \t]*$/) { visible_false[sec SUBSEP ns] = 1 }
+                else if (rest ~ /^links *\+?= */) {
+                    has_links[sec SUBSEP ns] = 1
+                    v = rest; sub(/^links *\+?= */, "", v); gsub(/[ \t]+/, "", v)
+                    if (v != "") {
+                        if ((sec SUBSEP ns) in links) links[sec SUBSEP ns] = links[sec SUBSEP ns] v ","
+                        else links[sec SUBSEP ns] = "," v ","
+                    }
+                } else if (rest ~ /^link\.[^.]+\.shared_libs *\+?= */) {
+                    p = rest; sub(/^link\./, "", p); sub(/\..*/, "", p)
+                    has_shared[sec SUBSEP ns SUBSEP p] = 1
+                    v = rest; sub(/^link\.[^.]+\.shared_libs *\+?= */, "", v); gsub(/[ \t]+/, "", v)
+                    n = split(v, ls, ":")
+                    for (i = 1; i <= n; i++) {
+                        if (ls[i] == "") continue
+                        have[sec SUBSEP ns SUBSEP ls[i]] = 1
+                        if (!((sec SUBSEP ls[i] SUBSEP p) in cnt)) provs[sec SUBSEP ls[i]] = provs[sec SUBSEP ls[i]] " " p
+                        cnt[sec SUBSEP ls[i] SUBSEP p]++
+                    }
+                } else if (rest ~ /^link\.[^.]+\.allow_all_shared_libs *= *true[ \t]*$/) {
+                    p = rest; sub(/^link\./, "", p); sub(/\..*/, "", p); allowall[sec SUBSEP ns SUBSEP p] = 1
+                }
+            }
+            next
+        }
+        pass == 2 {
+            line = $0
+            if (match($0, /^namespace\.[^.]+\./)) {
+                ns = substr($0, 11, RLENGTH - 11); rest = substr($0, RLENGTH + 1)
+                kns = sec SUBSEP ns
+                if (rest ~ /^visible *= *false[ \t]*$/ && (kns in need_vis) && !(kns in vis_done)) {
+                    line = "namespace." ns ".visible = true"
+                    vis_done[kns] = 1
+                }
+                if (rest ~ /^links *\+?= */ && (kns in addp) && !(kns in links_done)) {
+                    links_done[kns] = 1
+                    sub(/[ \t]+$/, "", line)
+                    n = split(addp[kns], ps, " ")
+                    need_tail = !(kns in links)
+                    for (i = 1; i <= n; i++) {
+                        p = ps[i]
+                        if (index(links[kns], "," p ",")) continue
+                        line = (need_tail ? line " " p : line "," p)
+                        need_tail = 0
+                        links[kns] = (links[kns] ? links[kns] p "," : "," p ",")
+                    }
+                    print line
+                    if ((kns in need_vis) && !(kns in visible_false) && !(kns in vis_done)) {
+                        print "namespace." ns ".visible = true"
+                        vis_done[kns] = 1
+                    }
+                    for (i = 1; i <= n; i++) {
+                        p = ps[i]; k = kns SUBSEP p
+                        if (!(k in has_shared) && (k in add) && !(k in done)) {
+                            print "namespace." ns ".link." p ".shared_libs = " add[k]
+                            done[k] = 1
+                        }
+                    }
+                    next
+                }
+                if (rest ~ /^link\.[^.]+\.shared_libs *\+?= */) {
+                    p = rest; sub(/^link\./, "", p); sub(/\..*/, "", p)
+                    k = kns SUBSEP p
+                    if ((k in add) && !(k in done)) {
+                        sub(/[ \t]+$/, "", line)
+                        line = (line ~ /= *$/ ? line " " add[k] : line ":" add[k])
+                        done[k] = 1
+                    }
+                }
+                print line
+                if ((kns in need_vis) && !(kns in visible_false) && !(kns in vis_done)) {
+                    print "namespace." ns ".visible = true"
+                    vis_done[kns] = 1
+                }
+                if ((kns in addp) && !(kns in has_links) && !(kns in links_done)) {
+                    links_done[kns] = 1
+                    n = split(addp[kns], ps, " "); lstr = ""
+                    for (i = 1; i <= n; i++) lstr = (lstr != "" ? lstr "," ps[i] : ps[i])
+                    print "namespace." ns ".links = " lstr
+                    for (i = 1; i <= n; i++) {
+                        p = ps[i]; k = kns SUBSEP p
+                        if ((k in add) && !(k in done)) {
+                            print "namespace." ns ".link." p ".shared_libs = " add[k]
+                            done[k] = 1
+                        }
+                    }
+                }
+                next
+            }
+            print line
+        }
+        ' "$STAGE/ld.config.guest.meta" "$GLD" "$GLD" > "$STAGE/ld.config.guest.txt" 2> "$STAGE/ld.config.guest.log" &&
+           [ "$($BB wc -l < "$STAGE/ld.config.guest.txt")" -ge "$($BB wc -l < "$GLD")" ]; then
+            if $BB cmp -s "$STAGE/ld.config.guest.txt" "$GLD"; then
+                echo "Guest linker config: One UI's covers the guest's APEX payloads"
+            else
+                chmod 644 "$STAGE/ld.config.guest.txt"
+                $BB chcon "$(ls -Z "$GLD" | $BB awk '{print $1}')" "$STAGE/ld.config.guest.txt" 2>/dev/null || true
+                $BB mount --bind "$STAGE/ld.config.guest.txt" "$GLD" &&
+                    echo "Guest linker config: $($BB grep -c '^linker: .* + ' "$STAGE/ld.config.guest.log") links and $($BB grep -c 'visible = true' "$STAGE/ld.config.guest.log") visibility rules added for the guest's APEX payloads ($STAGE/ld.config.guest.log)"
+            fi
+        else
+            echo "!!! WARNING: guest linker config not made ($(head -c 300 "$STAGE/ld.config.guest.log" 2>/dev/null)); One UI's stays"
+        fi
     fi
 fi
 
@@ -6188,6 +6835,100 @@ bind_host_app() {
 }
 bind_host_app /system/priv-app/NetworkStackGoogle "$ROOTFS/system/priv-app/NetworkStack" com.google.android.networkstack
 bind_host_app /system/app/CaptivePortalLoginGoogle "$ROOTFS/system/app/CaptivePortalLogin" com.google.android.captiveportallogin
+# NetworkStackGoogle SELinux MMAC (DualOS 2.0.0): binding One UI's Google-signed
+# NetworkStackGoogle over the GSI's NetworkStack left uid 1073 without a matching
+# <signer> in the GSI's plat_mac_permissions.xml, so SELinuxMMAC assigned
+# seinfo=default and seapp_context_lookup_internal failed on every start. Merge
+# any missing host network_stack <signer> blocks into a staged copy of the guest's
+# plat_mac_permissions.xml (deduplicated across all guest mac_permissions.xml files
+# because SELinuxMMAC rejects duplicate signer signatures).
+GUEST_MAC="$ROOTFS/system/etc/selinux/plat_mac_permissions.xml"
+MAC_OUT="$STAGE/oneos_plat_mac_permissions.xml"
+if [ "${ONEOS_GUEST_SEAPP:-1}" = 1 ] && [ -f "$GUEST_MAC" ]; then
+    if [ -f "$MAC_OUT" ] && [ "$(stat -c %d:%i "$GUEST_MAC" 2>/dev/null)" = "$(stat -c %d:%i "$MAC_OUT" 2>/dev/null)" ]; then
+        $BB umount -l "$GUEST_MAC" 2>/dev/null || true
+    fi
+    _mac_guest_seen="$STAGE/oneos_mac_seen.txt"
+    _mac_host_extra="$STAGE/oneos_mac_extra.xml"
+    : > "$_mac_guest_seen"
+    : > "$_mac_host_extra"
+    for _mf in "$GUEST_MAC" \
+               "$GUEST_SYSTEM_EXT/etc/selinux/system_ext_mac_permissions.xml" \
+               "$GUEST_PRODUCT/etc/selinux/product_mac_permissions.xml" \
+               "$ROOTFS/vendor/etc/selinux/vendor_mac_permissions.xml" \
+               "$ROOTFS/odm/etc/selinux/odm_mac_permissions.xml"; do
+        [ -f "$_mf" ] && $BB awk '{
+            s = $0
+            while (match(s, /signature="[^"]+"/)) {
+                sig = substr(s, RSTART + 11, RLENGTH - 12)
+                print sig
+                s = substr(s, RSTART + RLENGTH)
+            }
+        }' "$_mf"
+    done | sort -u > "$_mac_guest_seen"
+    for _hm in /system/etc/selinux/plat_mac_permissions.xml \
+               /system_ext/etc/selinux/system_ext_mac_permissions.xml \
+               /product/etc/selinux/product_mac_permissions.xml; do
+        [ -f "$_hm" ] || continue
+        $BB awk -v seenf="$_mac_guest_seen" '
+            BEGIN { while ((getline k < seenf) > 0) seen[k] = 1 }
+            {
+                if (!in_s && index($0, "<signer")) {
+                    in_s = 1; blk = $0; sig = ""
+                    if (match($0, /signature="[^"]+"/)) sig = substr($0, RSTART + 11, RLENGTH - 12)
+                    if (index($0, "</signer>")) {
+                        if (sig != "" && !(sig in seen) && index(blk, "value=\"network_stack\"")) {
+                            print "    <!-- OneOS: host network_stack signer -->"
+                            print blk
+                            seen[sig] = 1
+                        }
+                        in_s = 0; blk = ""
+                    }
+                    next
+                }
+                if (in_s) {
+                    blk = blk "\n" $0
+                    if (sig == "" && match($0, /signature="[^"]+"/)) sig = substr($0, RSTART + 11, RLENGTH - 12)
+                    if (index($0, "</signer>")) {
+                        if (sig != "" && !(sig in seen) && index(blk, "value=\"network_stack\"")) {
+                            print "    <!-- OneOS: host network_stack signer -->"
+                            print blk
+                            seen[sig] = 1
+                        }
+                        in_s = 0; blk = ""
+                    }
+                }
+            }
+        ' "$_hm" >> "$_mac_host_extra"
+        # Record newly emitted signatures so a second host file cannot duplicate them.
+        $BB awk '{
+            s = $0
+            while (match(s, /signature="[^"]+"/)) {
+                print substr(s, RSTART + 11, RLENGTH - 12)
+                s = substr(s, RSTART + RLENGTH)
+            }
+        }' "$_mac_host_extra" >> "$_mac_guest_seen"
+    done
+    if [ -s "$_mac_host_extra" ]; then
+        if $BB awk -v ef="$_mac_host_extra" '
+            /<\/policy>/ && !done {
+                while ((getline l < ef) > 0) print l
+                close(ef)
+                done = 1
+            }
+            { print }
+        ' "$GUEST_MAC" > "$MAC_OUT" && $BB grep -q '</policy>' "$MAC_OUT"; then
+            chmod 644 "$MAC_OUT"
+            $BB chcon u:object_r:mac_perms_file:s0 "$MAC_OUT" 2>/dev/null ||
+                $BB chcon u:object_r:system_file:s0 "$MAC_OUT" 2>/dev/null || true
+            $BB mount --bind "$MAC_OUT" "$GUEST_MAC" &&
+                echo "Bound plat_mac_permissions.xml: merged $($BB grep -c 'host network_stack signer' "$MAC_OUT") host network_stack signer block(s)"
+        else
+            echo "WARNING: could not merge host network_stack signer into plat_mac_permissions.xml"
+        fi
+    fi
+    rm -f "$_mac_guest_seen" "$_mac_host_extra"
+fi
 if [ -d "$GUEST_SYSTEM_EXT/priv-app/CellBroadcastService" ]; then
     $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$GUEST_SYSTEM_EXT/priv-app/CellBroadcastService" && \
         echo "Hid guest system_ext/priv-app/CellBroadcastService"
@@ -6471,6 +7212,105 @@ if [ "$GMS_WANT" = 1 ]; then
     rm -f "$STAGE/data/oneos_gms_present"
     echo "$GMS_APK_NAME $(stat -c %s "$GMS_DIR/$GMS_APK_NAME")" > "$STAGE/data/oneos_gms_present"
     echo "Google services presented: ${GMS_DIR#$GUEST_PRODUCT/}/$GMS_APK_NAME in /system/product (the image's setup wizard runs until it is finished)"
+fi
+# Guest NFC presentation / gating (DualOS 2.0.0, ONEOS_GUEST_NFC=1|0, default 1).
+# On hosts without com.android.nfcservices in /apex/apex-info-list.xml (e.g.
+# Galaxy A53 One UI 8), PackageManagerService never scans NfcNciApex.apk inside
+# the mounted nfcservices_payload.img and ld.config.txt lacks a
+# com_android_nfcservices namespace. Present NfcNciApex.apk + libnfc_nci_jni.so
+# (and its libaconfig_storage_read_api_cc.so dependency) read-only inside
+# /system/priv-app/NfcNciApex and bind com.android.nfc.xml into
+# /system/etc/permissions/privapp-permissions-oneos-nfc.xml. When
+# ONEOS_GUEST_NFC=0, hide NFC priv-apps in both APEX and /system.
+if [ "${ONEOS_GUEST_NFC:-1}" != 1 ]; then
+    _nfc_hid=0
+    for _nd in "$ROOTFS/apex/com.android.nfcservices" "$ROOTFS/apex/com.android.nfcservices"@*; do
+        [ -d "$_nd/priv-app" ] || continue
+        $BB mount --make-private "$_nd" 2>/dev/null || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$_nd/priv-app" && _nfc_hid=$((_nfc_hid + 1))
+    done
+    for _nd in "$ROOTFS/system/priv-app/NfcNci" "$ROOTFS/system/priv-app/NfcNciApex"; do
+        [ -d "$_nd" ] && [ ! -L "$_nd" ] || continue
+        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$_nd" && _nfc_hid=$((_nfc_hid + 1))
+    done
+    echo "Guest NFC: disabled (ONEOS_GUEST_NFC=0; hid $_nfc_hid folder(s))"
+elif [ "$NFC_PRIVAPP_NEED" = 1 ] && [ -d "$ROOTFS/system/priv-app/NfcNciApex" ] && [ ! -L "$ROOTFS/system/priv-app/NfcNciApex" ]; then
+    NFC_APEX="$ROOTFS/apex/com.android.nfcservices"
+    NFC_DIR="$ROOTFS/system/priv-app/NfcNciApex"
+    NFC_PKG="$STAGE/nfc_pkg"
+    NFC_LOOP=$(awk '$1 == "com.android.nfcservices" { l = $2 } END { print l }' "$STAGE/payload_loops" 2>/dev/null)
+    NFC_LOOP_DEV=""
+    [ -n "$NFC_LOOP" ] && NFC_LOOP_DEV=$(loop_devnum "$NFC_LOOP")
+    _nfc_bf=$(cat "/sys/dev/block/$NFC_LOOP_DEV/loop/backing_file" 2>/dev/null)
+    NFC_APK_SRC=""; _nfc_n=0
+    for _na in "$NFC_APEX"/priv-app/NfcNciApex*/NfcNciApex*.apk; do
+        [ -f "$_na" ] && [ ! -L "$_na" ] || continue
+        NFC_APK_SRC="$_na"; _nfc_n=$((_nfc_n + 1))
+    done
+    if [ -n "$NFC_LOOP" ] && [ "$_nfc_bf" = "$STAGE/nfcservices_payload.img" ] && [ "$_nfc_n" = 1 ]; then
+        NFC_APK_NAME=${NFC_APK_SRC##*/}
+        [ -L "$NFC_PKG" ] && rm -f "$NFC_PKG"
+        mkdir -p "$NFC_PKG"
+        if [ -n "$(mount_source "$NFC_PKG")" ]; then
+            awk -v r="$NFC_PKG/" 'index($5, r) == 1 { print $5 }' /proc/self/mountinfo | sort -r | while read -r _nm; do $BB umount -l "$_nm" 2>/dev/null; done
+            $BB umount -l "$NFC_PKG" 2>/dev/null || true
+        fi
+        _nfc_lbl=mount
+        if ! $BB mount -t tmpfs -o size=64k,mode=755,context=u:object_r:system_file:s0 tmpfs "$NFC_PKG" 2>/dev/null; then
+            $BB mount -t tmpfs -o size=64k,mode=755 tmpfs "$NFC_PKG" 2>/dev/null || _nfc_lbl=fail
+            [ "$_nfc_lbl" != fail ] && _nfc_lbl=chcon
+        fi
+        if [ "$_nfc_lbl" != fail ] && $BB mount --make-private "$NFC_PKG" 2>/dev/null &&
+           mkdir -p "$NFC_PKG/lib/arm64" && : > "$NFC_PKG/$NFC_APK_NAME" &&
+           chmod 755 "$NFC_PKG" "$NFC_PKG/lib" "$NFC_PKG/lib/arm64" && chmod 644 "$NFC_PKG/$NFC_APK_NAME"; then
+            [ "$_nfc_lbl" = chcon ] && $BB chcon -R u:object_r:system_file:s0 "$NFC_PKG" 2>/dev/null || true
+            _nfc_ok=1
+            $BB mount --bind "$NFC_APK_SRC" "$NFC_PKG/$NFC_APK_NAME" || _nfc_ok=0
+            _nfc_libs=""
+            if [ "$_nfc_ok" = 1 ] && [ -d "$NFC_APEX/lib64" ]; then
+                for _nso in "$NFC_APEX/lib64"/*.so; do
+                    [ -f "$_nso" ] && [ ! -L "$_nso" ] || continue
+                    _nbase=${_nso##*/}
+                    case "$_nbase" in
+                        libnfc_nci_jni.so|libaconfig_storage_read_api_cc.so) _need_so=1 ;;
+                        *) [ ! -e "$ROOTFS/system/lib64/$_nbase" ] && _need_so=1 || _need_so=0 ;;
+                    esac
+                    [ "$_need_so" = 1 ] || continue
+                    : > "$NFC_PKG/lib/arm64/$_nbase" && chmod 644 "$NFC_PKG/lib/arm64/$_nbase" &&
+                        $BB chcon u:object_r:system_lib_file:s0 "$NFC_PKG/lib/arm64/$_nbase" 2>/dev/null || true
+                    if $BB mount --bind "$_nso" "$NFC_PKG/lib/arm64/$_nbase"; then
+                        _nfc_libs="$_nfc_libs $_nbase"
+                    else
+                        _nfc_ok=0; break
+                    fi
+                done
+            fi
+            if [ "$_nfc_ok" = 1 ]; then
+                $BB mount -o remount,ro "$NFC_PKG" 2>/dev/null || true
+                if $BB mount --rbind "$NFC_PKG" "$NFC_DIR" && $BB mount --make-rprivate "$NFC_DIR" 2>/dev/null; then
+                    _nfc_perm="$ROOTFS/system/etc/permissions/privapp-permissions-oneos-nfc.xml"
+                    if [ -f "$NFC_APEX/etc/permissions/com.android.nfc.xml" ] && [ -f "$_nfc_perm" ]; then
+                        $BB mount --bind "$NFC_APEX/etc/permissions/com.android.nfc.xml" "$_nfc_perm" 2>/dev/null &&
+                            $BB mount -o remount,bind,ro "$NFC_APEX/etc/permissions/com.android.nfc.xml" "$_nfc_perm" 2>/dev/null || true
+                    fi
+                    for _nd in "$NFC_APEX" "$NFC_APEX"@*; do
+                        [ -d "$_nd/priv-app" ] || continue
+                        $BB mount --make-private "$_nd" 2>/dev/null || continue
+                        $BB mount -t tmpfs -o ro,size=4k,mode=755 tmpfs "$_nd/priv-app" 2>/dev/null || true
+                    done
+                    echo "Guest NFC presented: /system/priv-app/NfcNciApex/$NFC_APK_NAME ($(stat -c %s "$NFC_DIR/$NFC_APK_NAME" 2>/dev/null) B), libs:${_nfc_libs:- none}"
+                else
+                    echo "!!! WARNING: Guest NFC: could not bind $NFC_PKG -> $NFC_DIR"
+                fi
+            else
+                echo "!!! WARNING: Guest NFC: could not bind NfcNciApex APK/libs from nfcservices_payload.img"
+            fi
+        else
+            echo "!!! WARNING: Guest NFC: could not prepare tmpfs $NFC_PKG"
+        fi
+    else
+        echo "Guest NFC: nfcservices_payload.img not mounted or missing NfcNciApex APK (loop=${NFC_LOOP:-none}, apks=$_nfc_n)"
+    fi
 fi
 # Google services in a global image (the Find X9 Ultra IN has Play services, the
 # Play Store and their setup/restore helpers in my_product/priv-app).

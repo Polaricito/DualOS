@@ -4,8 +4,10 @@ import android.app.Activity
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.LayoutInflater
+import android.view.Gravity
 import android.view.View
+import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -16,13 +18,8 @@ import com.fahadali.oneos.session.OldStagesJob
 import com.fahadali.oneos.session.RemoveJob
 
 /**
- * Start fresh, Remove and Delete saved copy of one system (0.5.09): the confirmations and the
- * jobs behind them, shared by the system card's menu and the system's own screen.
- *
- * While a run goes, a dialog shows what root is doing and for how long (owner, 11-14: "deleting
- * should show some kinda progress ... people think app just isnt working"), then how it ended,
- * with OK. If that dialog's screen goes away first, the screen showing next reports the result
- * once ([showResult] / [takeResult]); while the dialog is up, they leave it to the dialog.
+ * Start fresh, Remove and Delete saved copy of one system: confirmations,
+ * live progress dialog, and result reporting.
  */
 internal object SystemManage {
     private enum class Waiting { NONE, REMOVE, DELETE, DELETE_ALL }
@@ -32,10 +29,8 @@ internal object SystemManage {
     private var savedName: String? = null
     private var dialogUp = false
 
-    /** Whether a destructive item can run now (no other job uses root). */
     fun canRun(): Boolean = RemoveJob.canStart()
 
-    /** [onDone] runs after the user closed the result (e.g. leave a screen whose system is gone). */
     fun confirmStartFresh(a: Activity, image: ImageRef, onDone: (Result) -> Unit = {}) {
         if (!guard(a)) return
         AlertDialog.Builder(a)
@@ -56,7 +51,6 @@ internal object SystemManage {
             .show()
     }
 
-    /** The same job as Free up space's single delete, for the copy [savedCopy] holds of [image]. */
     fun confirmDeleteSaved(a: Activity, image: ImageRef, savedCopy: String, onDone: (Result) -> Unit = {}) {
         if (!guard(a)) return
         AlertDialog.Builder(a)
@@ -73,7 +67,6 @@ internal object SystemManage {
             .show()
     }
 
-    /** Free up space's single delete, after its own confirmation: the same progress dialog. */
     fun deleteCopy(a: Activity, stage: OldStage, label: String) {
         if (!canRun()) { busy(a); return }
         waiting = Waiting.DELETE
@@ -82,7 +75,6 @@ internal object SystemManage {
         progress(a, a.getString(R.string.manage_progress_deleting_copy, label)) {}
     }
 
-    /** Free up space's Delete all, after its own confirmation. */
     fun deleteAllCopies(a: Activity) {
         if (!canRun()) { busy(a); return }
         waiting = Waiting.DELETE_ALL
@@ -90,7 +82,6 @@ internal object SystemManage {
         progress(a, a.getString(R.string.manage_progress_deleting_all)) {}
     }
 
-    /** Advanced > Remove OneOS data, after its own confirmation. */
     fun removeAll(a: Activity) {
         if (!canRun()) { busy(a); return }
         waiting = Waiting.REMOVE
@@ -119,7 +110,6 @@ internal object SystemManage {
 
     private fun busy(a: Activity) = Toast.makeText(a, R.string.manage_busy, Toast.LENGTH_LONG).show()
 
-    /** The step root is on and when the run started, for the job [waiting] is on. */
     private var allSince = 0L
     private fun running(): Pair<String?, Long> = when (waiting) {
         Waiting.DELETE -> OldStagesJob.state.let { it.step to it.startedAt }
@@ -136,26 +126,37 @@ internal object SystemManage {
     }
 
     private fun progress(a: Activity, title: String, onDone: (Result) -> Unit) {
-        val view = LayoutInflater.from(a).inflate(R.layout.manage_progress, null)
-        val spinner = view.findViewById<View>(R.id.manage_progress_spinner)
-        val step = view.findViewById<TextView>(R.id.manage_progress_step)
-        val time = view.findViewById<TextView>(R.id.manage_progress_time)
+        val d = a.resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val spinner = ProgressBar(a).apply {
+            isIndeterminate = true
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(16) }
+        }
+        val step = TextView(a).apply { textSize = 15f }
+        val time = TextView(a).apply { textSize = 13f; alpha = 0.72f }
+        val textCol = LinearLayout(a).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(step)
+            addView(time)
+        }
+        val row = LinearLayout(a).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+            addView(spinner)
+            addView(textCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
         val handler = Handler(Looper.getMainLooper())
         val since = SystemClock.elapsedRealtime()
         val dialog = AlertDialog.Builder(a)
             .setTitle(title)
-            .setView(view)
+            .setView(row)
             .setCancelable(false)
-            // One button (a hidden second one left SESL's divider line beside it, 11-14): Hide while it runs
-            // (never trapped behind a dialog if root takes long; the screen showing when it ends reports how
-            // it went), OK once it ended.
             .setPositiveButton(R.string.manage_progress_hide, null)
             .create()
         val tick = object : Runnable {
             override fun run() {
                 val r = take()
-                // The dialog's own start: a job's state can be replaced when it ends (Free up space lists the
-                // copies again with a fresh state, startedAt 0: "Took 3580:56", the time since the phone started, 11-14).
                 val now = running().first
                 if (r == null) {
                     step.text = now ?: a.getString(R.string.manage_progress_starting)
@@ -182,10 +183,8 @@ internal object SystemManage {
         dialog.show()
     }
 
-    /** The outcome of the run this app started, once it ended (one call gets it); null while it runs or when none is waiting. */
     class Result(val message: String, val failed: Boolean, val systemRemoved: Boolean)
 
-    /** For screens: null while the progress dialog is up (it shows the result itself). */
     fun takeResult(): Result? = if (dialogUp) null else take()
 
     private fun take(): Result? {
@@ -209,7 +208,6 @@ internal object SystemManage {
                 val s = OldStagesJob.state
                 if (s.busy || (s.phase != OldStagesJob.Phase.DONE && s.phase != OldStagesJob.Phase.FAILED)) return null
                 waiting = Waiting.NONE
-                // The job's own line names the copy's folder (oneos.old-<time>); the card knows the system.
                 val freed = s.freedKib?.let { OldStagesJob.gib(it) }
                 val line = if (s.deleteFailed || freed == null) s.message.orEmpty() else "${savedName?.replaceFirstChar { it.uppercase() }} deleted: $freed freed."
                 return Result(line, s.deleteFailed, false)
@@ -217,7 +215,6 @@ internal object SystemManage {
         }
     }
 
-    /** Toasts [takeResult]; returns it. */
     fun showResult(a: Activity): Result? = takeResult()?.also {
         if (it.message.isNotEmpty()) Toast.makeText(a.applicationContext, it.message, Toast.LENGTH_LONG).show()
     }

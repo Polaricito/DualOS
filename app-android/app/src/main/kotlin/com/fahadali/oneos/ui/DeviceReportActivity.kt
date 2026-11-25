@@ -1,19 +1,37 @@
 package com.fahadali.oneos.ui
 
-import android.graphics.Typeface
-import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
-import androidx.appcompat.app.AlertDialog
-import androidx.fragment.app.Fragment
-import androidx.preference.Preference
-import androidx.preference.PreferenceCategory
-import androidx.preference.PreferenceFragmentCompat
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.device.FactProbe
 import com.fahadali.oneos.core.model.CompatEvaluator
@@ -33,37 +51,49 @@ import com.fahadali.oneos.core.model.Verdict
 import com.fahadali.oneos.core.root.RootProbe
 import com.fahadali.oneos.core.root.SuProbe
 import com.fahadali.oneos.probe.CarrierProps
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveLoadingBox
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
+import com.fahadali.oneos.shared.ExpressiveStatusPill
+import com.fahadali.oneos.shared.LocalDualOsStatusColors
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import dev.oneuiproject.oneui.R as OuiIcons
 
 /** Device report: the read-only facts plus the Compatible / Warning / Not supported summary. */
-class DeviceReportActivity : ToolbarActivity() {
-    override val screenTitle: CharSequence get() = getString(R.string.report_title)
-
-    override fun createFragment(): Fragment = DeviceReportFragment()
-}
-
-class DeviceReportFragment : PreferenceFragmentCompat() {
+class DeviceReportActivity : AppCompatActivity() {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
-    /** Result of the user-started `su -c id`, kept across recreation. */
-    private var probe: SuProbeResult? = null
-    private var probing = false
-    private var checkRootPref: Preference? = null
-
-    /** Set once a report is drawn: the screen lock it showed (null = unknown). */
-    private var rendered = false
+    private var probe: SuProbeResult? by mutableStateOf(null)
+    private var probing: Boolean by mutableStateOf(false)
+    private var facts: DeviceFacts? by mutableStateOf(null)
+    private var report: CompatReport? by mutableStateOf(null)
+    private var errorText: String? by mutableStateOf(null)
+    private var showRootDialog: Boolean by mutableStateOf(false)
     private var shownScreenLock: Boolean? = null
 
-    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
         probe = savedInstanceState?.let(::restoreProbe)
-        preferenceScreen = preferenceManager.createPreferenceScreen(preferenceManager.context)
-        category(getString(R.string.report_cat_summary))
-            .row(getString(R.string.report_reading), null)
+        setContent {
+            DualOsTheme {
+                Screen()
+            }
+        }
         refresh()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (facts != null && !probing && FactProbe.screenLockSet(this) != shownScreenLock) {
+            refresh()
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -76,144 +106,342 @@ class DeviceReportFragment : PreferenceFragmentCompat() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Back from Settings after removing (or setting) the screen lock: read again.
-        if (rendered && !probing && FactProbe.screenLockSet(requireContext()) != shownScreenLock) refresh()
-    }
-
     override fun onDestroy() {
         executor.shutdownNow()
         main.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
-    /** Re-reads every fact off the main thread, then redraws. */
     private fun refresh() {
-        val ctx = requireContext().applicationContext
+        val ctx = applicationContext
         val probeNow = probe
         val app = getString(R.string.app_name)
         executor.execute {
-            // An exception escaping execute() would kill the app: show it instead.
             val result = runCatching {
-                val facts = CarrierProps.withCarrier(FactProbe(ctx).collect(RootProbe(ctx).signals(probeNow)))
-                facts to CompatEvaluator.evaluate(facts, app = app)
+                val f = CarrierProps.withCarrier(FactProbe(ctx).collect(RootProbe(ctx).signals(probeNow)))
+                f to CompatEvaluator.evaluate(f, app = app)
             }
             main.post {
-                if (!isAdded) return@post
+                if (isDestroyed) return@post
                 result.fold(
-                    onSuccess = { (facts, report) -> render(facts, report) },
-                    onFailure = ::renderError,
+                    onSuccess = { (f, r) ->
+                        facts = f
+                        report = r
+                        errorText = null
+                        shownScreenLock = f.screenLockSet
+                    },
+                    onFailure = { e ->
+                        errorText = "${e.javaClass.simpleName}: ${e.message.orEmpty()}".take(500)
+                    },
                 )
             }
         }
     }
 
-    private fun renderError(e: Throwable) {
-        preferenceScreen.removeAll()
-        category(getString(R.string.report_cat_summary))
-            .row(getString(R.string.report_failed), "${e.javaClass.simpleName}: ${e.message.orEmpty()}".take(500))
+    private fun runRootCheck() {
+        if (probing) return
+        probing = true
+        executor.execute {
+            val result = SuProbe.runId()
+            main.post {
+                probing = false
+                probe = result
+                if (!isDestroyed) refresh()
+            }
+        }
     }
 
-    private fun render(f: DeviceFacts, report: CompatReport) {
-        val screen = preferenceScreen
-        screen.removeAll()
-        rendered = true
-        shownScreenLock = f.screenLockSet
-        (activity as? ToolbarActivity)?.setExpandedSubtitle("${f.model} · ${report.verdict.label}")
+    @Composable
+    private fun Screen() {
+        val f = facts
+        val r = report
+        val err = errorText
+        val subtitle = if (f != null && r != null) "${f.model} · ${r.verdict.label}" else null
 
-        // Summary + findings, worst first.
-        val summary = category(getString(R.string.report_cat_summary))
-        summary.row(verdictTitle(report.verdict), verdictSummary(report))
-        for (finding in report.sorted) {
-            summary.row(finding.title, finding.detail.ifEmpty { null }, icon = levelIcon(finding.level))
-        }
-
-        val phone = category(getString(R.string.report_cat_phone))
-        val family = f.family
-        phone.row("Model", if (family == ModelFamily.OTHER) f.model else "${f.model} · ${family.label}")
-        phone.row("Codename", f.device.ifEmpty { NOT_REPORTED })
-        phone.row("Maker", "${f.brand} / ${f.manufacturer}")
-        phone.row("Form factor", buildString {
-            append(f.form.form.label)
-            append("\n")
-            append(f.form.evidence.joinToString("; "))
-            if (f.form.mismatch) append("\nModel number says ${f.form.prefixForm?.label}")
-        })
-        phone.row("Displays", displaysText(f))
-
-        val chip = category(getString(R.string.report_cat_chip))
-        chip.row("SoC", f.soc.display)
-        chip.row("Chip maker", buildString {
-            append(f.soc.vendor.label)
-            if (f.socProps.manufacturer.isNotEmpty()) append(" (ro.soc.manufacturer ${f.socProps.manufacturer})")
-        })
-        chip.row("Graphics", f.socProps.egl.ifEmpty { NOT_REPORTED })
-        chip.row("64-bit ABIs", f.abis64.joinToString().ifEmpty { "None" })
-        // Every image this phone takes: its CPU rule and what preparing it needs.
-        val profile = Profiles.resolve(f).profile
-        val images = profile?.images().orEmpty()
-        chip.row("CPU", f.cpu?.let { cpu ->
-            if (images.isNotEmpty()) {
-                "${cpu.summary}\n${CpuRules.presence(cpu)}\n" +
-                    images.joinToString("\n") { "${it.shortName} image: ${CpuRules.forImage(it, cpu).title}" }
-            } else {
-                val missing = CpuRules.missingForColorOs(cpu)
-                "${cpu.summary}\n${CpuRules.presence(cpu)}\nSome system images need " +
-                    CpuRules.COLOROS_REQUIRED.joinToString(", ") { it.uppercase(Locale.ROOT) } + ": " +
-                    if (missing.isEmpty()) "all present" else "missing ${missing.joinToString(", ") { it.uppercase(Locale.ROOT) }}"
-            }
-        } ?: NOT_REPORTED)
-
-        val sw = category(getString(R.string.report_cat_software))
-        sw.row("One UI", f.oneUi?.let { "$it (${f.oneUiRaw})" } ?: "Not found")
-        sw.row("Android", "${f.androidRelease} (SDK ${f.sdk})")
-        sw.row("Build ID", f.buildId.ifEmpty { NOT_REPORTED })
-        sw.row("Fingerprint", f.fingerprint.ifEmpty { NOT_REPORTED })
-        sw.row("Vendor API level", f.vendorApiLevel.ifEmpty { NOT_REPORTED })
-        sw.row("Kernel", f.kernel.ifEmpty { NOT_REPORTED })
-
-        val root = category(getString(R.string.report_cat_root))
-        root.row("Root manager", rootText(f))
-        checkRootPref = root.row(
-            getString(R.string.check_root_title),
-            if (probing) getString(R.string.check_root_running) else probeText(probe),
-            onClick = ::confirmRootCheck,
-        )
-
-        val storage = category(getString(R.string.report_cat_storage))
-        storage.row("Free space on /data", f.storage?.let {
-            "${Units.bytes(it.freeBytes)} free of ${Units.bytes(it.totalBytes)}\n" +
-                if (profile != null && images.isNotEmpty()) {
-                    images.joinToString("\n") { image ->
-                        "Preparing the ${image.shortName} image needs about " +
-                            Units.bytes(SpaceRule.toStage(image, profile.choice(image.id)?.let { c -> PackageSets.byId(c.packageSetId) }))
+        DualOsScaffold(
+            title = stringResource(R.string.report_title),
+            subtitle = subtitle,
+            onBack = { finish() },
+        ) { padding ->
+            when {
+                err != null -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp, end = 16.dp,
+                            top = padding.calculateTopPadding() + 8.dp,
+                            bottom = padding.calculateBottomPadding() + 24.dp,
+                        ),
+                    ) {
+                        item {
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.report_failed),
+                                    subtitle = err,
+                                    icon = levelIcon(Level.BLOCK),
+                                    iconTint = levelColor(Level.BLOCK),
+                                )
+                            }
+                        }
                     }
-                } else {
-                    "A session with a typical ${Units.bytes(SpaceRule.TYPICAL_IMAGE_BYTES)} image needs about " + Units.bytes(SpaceRule.required())
                 }
-        } ?: NOT_REPORTED)
-        storage.row("Battery", f.battery?.let { b ->
-            buildString {
-                append("${b.levelPercent}%")
-                append(if (b.charging) ", charging" else ", not charging")
-                b.temperatureC?.let { append(String.format(Locale.ROOT, ", %.1f °C", it)) }
-            }
-        } ?: NOT_REPORTED)
+                f == null || r == null -> {
+                    ExpressiveLoadingBox(
+                        label = stringResource(R.string.report_reading),
+                        modifier = Modifier.fillMaxSize().padding(padding),
+                    )
+                }
+                else -> {
+                    val statusColors = LocalDualOsStatusColors.current
+                    val (vBg, vFg) = when (r.verdict) {
+                        Verdict.COMPATIBLE -> statusColors.okContainer to statusColors.ok
+                        Verdict.WARNING -> statusColors.warnContainer to statusColors.warn
+                        Verdict.NOT_SUPPORTED -> statusColors.blockContainer to statusColors.block
+                    }
+                    val profile = Profiles.resolve(f).profile
+                    val images = profile?.images().orEmpty()
 
-        val boot = category(getString(R.string.report_cat_boot))
-        boot.row("Bootloader", when (f.flashLocked) {
-            "1" -> "Locked (OneOS works locked; nothing is flashed)"
-            "0" -> "Unlocked"
-            else -> NOT_REPORTED
-        })
-        boot.row("Verified boot", f.verifiedBootState.ifEmpty { NOT_REPORTED })
-        boot.row("Screen lock", when (f.screenLockSet) {
-            true -> "Set (PIN, pattern or password). Remove it before switching."
-            false -> "None"
-            null -> NOT_REPORTED
-        })
-        boot.row(getString(R.string.report_readonly_title), getString(R.string.report_readonly_summary))
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp, end = 16.dp,
+                            top = padding.calculateTopPadding() + 8.dp,
+                            bottom = padding.calculateBottomPadding() + 32.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(28.dp),
+                                colors = CardDefaults.cardColors(containerColor = vBg),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        ExpressiveStatusPill(
+                                            text = r.verdict.label,
+                                            containerColor = vFg,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        )
+                                    }
+                                    Text(
+                                        text = verdictSummary(r),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = vFg,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
+                        }
+
+                        if (r.sorted.isNotEmpty()) {
+                            item { ExpressiveSectionHeader(stringResource(R.string.report_cat_summary)) }
+                            item {
+                                ExpressiveGroupedCard {
+                                    r.sorted.forEachIndexed { idx, finding ->
+                                        if (idx > 0) ExpressiveListDivider()
+                                        ExpressiveListItem(
+                                            title = finding.title,
+                                            subtitle = finding.detail.ifEmpty { null },
+                                            icon = levelIcon(finding.level),
+                                            iconTint = levelColor(finding.level),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        item { ExpressiveSectionHeader(stringResource(R.string.report_cat_phone)) }
+                        item {
+                            val family = f.family
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(
+                                    title = "Model",
+                                    subtitle = if (family == ModelFamily.OTHER) f.model else "${f.model} · ${family.label}",
+                                    icon = DualOsIcons.PhoneAndroid,
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Codename", subtitle = f.device.ifEmpty { NOT_REPORTED })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Maker", subtitle = "${f.brand} / ${f.manufacturer}")
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = "Form factor",
+                                    subtitle = buildString {
+                                        append(f.form.form.label)
+                                        append("\n")
+                                        append(f.form.evidence.joinToString("; "))
+                                        if (f.form.mismatch) append("\nModel number says ${f.form.prefixForm?.label}")
+                                    },
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Displays", subtitle = displaysText(f))
+                            }
+                        }
+
+                        item { ExpressiveSectionHeader(stringResource(R.string.report_cat_chip)) }
+                        item {
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(title = "SoC", subtitle = f.soc.display)
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = "Chip maker",
+                                    subtitle = buildString {
+                                        append(f.soc.vendor.label)
+                                        if (f.socProps.manufacturer.isNotEmpty()) append(" (ro.soc.manufacturer ${f.socProps.manufacturer})")
+                                    },
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Graphics", subtitle = f.socProps.egl.ifEmpty { NOT_REPORTED })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "64-bit ABIs", subtitle = f.abis64.joinToString().ifEmpty { "None" })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = "CPU",
+                                    subtitle = f.cpu?.let { cpu ->
+                                        if (images.isNotEmpty()) {
+                                            "${cpu.summary}\n${CpuRules.presence(cpu)}\n" +
+                                                images.joinToString("\n") { "${it.shortName} image: ${CpuRules.forImage(it, cpu).title}" }
+                                        } else {
+                                            val missing = CpuRules.missingForColorOs(cpu)
+                                            "${cpu.summary}\n${CpuRules.presence(cpu)}\nSome system images need " +
+                                                CpuRules.COLOROS_REQUIRED.joinToString(", ") { it.uppercase(Locale.ROOT) } + ": " +
+                                                if (missing.isEmpty()) "all present" else "missing ${missing.joinToString(", ") { it.uppercase(Locale.ROOT) }}"
+                                        }
+                                    } ?: NOT_REPORTED,
+                                )
+                            }
+                        }
+
+                        item { ExpressiveSectionHeader(stringResource(R.string.report_cat_software)) }
+                        item {
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(title = "One UI", subtitle = f.oneUi?.let { "$it (${f.oneUiRaw})" } ?: "Not found")
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Android", subtitle = "${f.androidRelease} (SDK ${f.sdk})")
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Build ID", subtitle = f.buildId.ifEmpty { NOT_REPORTED })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Fingerprint", subtitle = f.fingerprint.ifEmpty { NOT_REPORTED })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Vendor API level", subtitle = f.vendorApiLevel.ifEmpty { NOT_REPORTED })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Kernel", subtitle = f.kernel.ifEmpty { NOT_REPORTED })
+                            }
+                        }
+
+                        item { ExpressiveSectionHeader(stringResource(R.string.report_cat_root)) }
+                        item {
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(
+                                    title = "Root manager",
+                                    subtitle = rootText(f),
+                                    icon = DualOsIcons.Security,
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.check_root_title),
+                                    subtitle = if (probing) stringResource(R.string.check_root_running) else probeText(probe),
+                                    icon = DualOsIcons.Terminal,
+                                    enabled = !probing,
+                                    showChevron = !probing,
+                                    onClick = { showRootDialog = true },
+                                )
+                            }
+                        }
+
+                        item { ExpressiveSectionHeader(stringResource(R.string.report_cat_storage)) }
+                        item {
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(
+                                    title = "Free space on /data",
+                                    subtitle = f.storage?.let {
+                                        "${Units.bytes(it.freeBytes)} free of ${Units.bytes(it.totalBytes)}\n" +
+                                            if (profile != null && images.isNotEmpty()) {
+                                                images.joinToString("\n") { image ->
+                                                    "Preparing the ${image.shortName} image needs about " +
+                                                        Units.bytes(SpaceRule.toStage(image, profile.choice(image.id)?.let { c -> PackageSets.byId(c.packageSetId) }))
+                                                }
+                                            } else {
+                                                "A session with a typical ${Units.bytes(SpaceRule.TYPICAL_IMAGE_BYTES)} image needs about " + Units.bytes(SpaceRule.required())
+                                            }
+                                    } ?: NOT_REPORTED,
+                                    icon = DualOsIcons.Storage,
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = "Battery",
+                                    subtitle = f.battery?.let { b ->
+                                        buildString {
+                                            append("${b.levelPercent}%")
+                                            append(if (b.charging) ", charging" else ", not charging")
+                                            b.temperatureC?.let { append(String.format(Locale.ROOT, ", %.1f °C", it)) }
+                                        }
+                                    } ?: NOT_REPORTED,
+                                    icon = DualOsIcons.Battery,
+                                )
+                            }
+                        }
+
+                        item { ExpressiveSectionHeader(stringResource(R.string.report_cat_boot)) }
+                        item {
+                            ExpressiveGroupedCard {
+                                ExpressiveListItem(
+                                    title = "Bootloader",
+                                    subtitle = when (f.flashLocked) {
+                                        "1" -> "Locked (nothing is flashed)"
+                                        "0" -> "Unlocked"
+                                        else -> NOT_REPORTED
+                                    },
+                                    icon = DualOsIcons.Shield,
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(title = "Verified boot", subtitle = f.verifiedBootState.ifEmpty { NOT_REPORTED })
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = "Screen lock",
+                                    subtitle = when (f.screenLockSet) {
+                                        true -> "Set (PIN, pattern or password). Remove it before switching."
+                                        false -> "None"
+                                        null -> NOT_REPORTED
+                                    },
+                                    icon = Icons.Rounded.Lock,
+                                )
+                                ExpressiveListDivider()
+                                ExpressiveListItem(
+                                    title = stringResource(R.string.report_readonly_title),
+                                    subtitle = stringResource(R.string.report_readonly_summary),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showRootDialog) {
+                AlertDialog(
+                    onDismissRequest = { showRootDialog = false },
+                    title = { Text(stringResource(R.string.check_root_dialog_title)) },
+                    text = { Text(stringResource(R.string.check_root_dialog_message)) },
+                    confirmButton = {
+                        TextButton(onClick = { showRootDialog = false; runRootCheck() }) {
+                            Text(stringResource(R.string.check_root_run))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRootDialog = false }) {
+                            Text(stringResource(android.R.string.cancel))
+                        }
+                    },
+                )
+            }
+        }
     }
 
     private fun displaysText(f: DeviceFacts): String {
@@ -249,94 +477,15 @@ class DeviceReportFragment : PreferenceFragmentCompat() {
         SuState.ERROR -> "Check failed: ${p.output}"
     }
 
-    private fun confirmRootCheck() {
-        if (probing) return
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.check_root_dialog_title)
-            .setMessage(R.string.check_root_dialog_message)
-            .setPositiveButton(R.string.check_root_run) { _, _ -> runRootCheck() }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    /** The one root command of M1, started only from the dialog above. */
-    private fun runRootCheck() {
-        if (probing) return
-        probing = true
-        checkRootPref?.summary = getString(R.string.check_root_running)
-        executor.execute {
-            val result = SuProbe.runId()
-            main.post {
-                probing = false
-                probe = result
-                if (isAdded) refresh()
-            }
-        }
-    }
-
-    private fun verdictTitle(v: Verdict): CharSequence {
-        val color = requireContext().getColor(
-            when (v) {
-                Verdict.COMPATIBLE -> R.color.verdict_ok
-                Verdict.WARNING -> R.color.verdict_warn
-                Verdict.NOT_SUPPORTED -> R.color.verdict_block
-            },
-        )
-        return SpannableString(v.label).apply {
-            setSpan(ForegroundColorSpan(color), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-    }
-
     private fun verdictSummary(r: CompatReport): String {
         val warns = r.count(Level.WARN)
         val blocks = r.count(Level.BLOCK)
+        val app = getString(R.string.app_name)
         return when (r.verdict) {
-            Verdict.COMPATIBLE -> "Nothing found that stops OneOS on this phone. ${CompatEvaluator.TESTED_SCOPE}"
-            Verdict.WARNING -> "Read the $warns warning${plural(warns)} below. ${getString(R.string.report_warning_next)}"
-            Verdict.NOT_SUPPORTED -> "OneOS can't run on this phone: $blocks blocking finding${plural(blocks)} below."
+            Verdict.COMPATIBLE -> "Nothing found that stops $app on this phone. ${CompatEvaluator.TESTED_SCOPE}"
+            Verdict.WARNING -> "Read the $warns warning${if (warns == 1) "" else "s"} below. ${getString(R.string.report_warning_next)}"
+            Verdict.NOT_SUPPORTED -> "$app can't run on this phone: $blocks blocking finding${if (blocks == 1) "" else "s"} below."
         }
-    }
-
-    private fun plural(n: Int) = if (n == 1) "" else "s"
-
-    private fun levelIcon(level: Level): Drawable? {
-        val ctx = requireContext()
-        val (icon, color) = when (level) {
-            Level.BLOCK -> OuiIcons.drawable.ic_oui_block to R.color.verdict_block
-            Level.WARN -> OuiIcons.drawable.ic_oui_info to R.color.verdict_warn
-            Level.OK -> OuiIcons.drawable.ic_oui_checkbox_checked to R.color.verdict_ok
-            Level.INFO -> OuiIcons.drawable.ic_oui_info_outline to R.color.verdict_info
-        }
-        return ctx.getDrawable(icon)?.mutate()?.apply { setTint(ctx.getColor(color)) }
-    }
-
-    private fun category(title: String): PreferenceCategory {
-        val c = PreferenceCategory(preferenceManager.context)
-        c.title = title
-        c.isIconSpaceReserved = false
-        preferenceScreen.addPreference(c)
-        return c
-    }
-
-    private fun PreferenceCategory.row(
-        title: CharSequence,
-        summary: CharSequence?,
-        icon: Drawable? = null,
-        onClick: (() -> Unit)? = null,
-    ): Preference {
-        val p = Preference(context)
-        p.title = title
-        p.summary = summary
-        p.icon = icon
-        p.isIconSpaceReserved = icon != null
-        if (onClick == null) {
-            p.isSelectable = false
-        } else {
-            p.setOnPreferenceClickListener { onClick(); true }
-        }
-        addPreference(p)
-        return p
     }
 
     private fun restoreProbe(b: Bundle): SuProbeResult? {

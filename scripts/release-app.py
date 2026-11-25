@@ -37,7 +37,7 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app-android")
 GRADLE = os.path.join(APP, "app/build.gradle.kts")
-REPO = "fahadalijaved/OneOS"
+REPO = "Polaricito/DualOS"
 RCLONE = os.environ.get("RCLONE", os.path.expanduser("~/bin/rclone"))
 # The test channel (0.4.56): the owner's own Drive folder OneOS-test, outside the shared OneOS folder,
 # each file shared by link only (rclone link). The app reads update.json by its id, a code the owner
@@ -242,12 +242,12 @@ def main():
         sys.exit("the APK is not releasable:\n  " + "\n  ".join(problems))
     dest = os.path.join(ROOT, "out/release", f"v{name}")
     os.makedirs(dest, exist_ok=True)
-    apk = os.path.join(dest, f"OneOS-{name}.apk")
+    apk = os.path.join(dest, f"DualOS-{name}.apk")
     shutil.copyfile(built[-1], apk)
     update = {
         "versionCode": code,
         "versionName": name,
-        "apk": f"https://github.com/{REPO}/releases/download/v{name}/OneOS-{name}.apk",
+        "apk": f"https://github.com/{REPO}/releases/download/v{name}/DualOS-{name}.apk",
         "bytes": os.path.getsize(apk),
         "sha256": sha256(apk),
     }
@@ -270,7 +270,7 @@ def main():
         return
     print("Release (the APK and update.json as assets, marked latest):")
     print(f"  gh release create v{name} {apk} {dest}/update.json --repo {REPO} --latest "
-          f"--title 'OneOS {name}' --notes-file out/release-notes/v{name}.md")
+          f"--title 'DualOS {name}' --notes-file out/release-notes/v{name}.md")
 
 
 if __name__ == "__main__":

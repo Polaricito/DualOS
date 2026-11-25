@@ -41,7 +41,7 @@ MIRROR_DIRS = [f"gdrive:OneOS/files{n}" for n in range(2, 7)]
 # GitHub release assets (0.4.53), the app's first source: a repository of their own, so a takedown
 # of these OEM binaries could never reach fahadalijaved/OneOS. A release holds at most 1000 assets:
 # a new tag (sets-2) before this one fills up.
-GH_REPO = "fahadalijaved/OneOS-files"
+GH_REPO = "Polaricito/DualOS"
 # On from 0.4.54 (owner: "Drive is still problematic, lets make github repo"); 0.4.53 shipped the
 # app side, so turning it on only changes remote.txt.
 GH_ENABLED = True

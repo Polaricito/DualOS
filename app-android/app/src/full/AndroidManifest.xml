@@ -94,11 +94,6 @@
             android:exported="false"
             android:parentActivityName=".ui.MainActivity" />
 
-        <activity
-            android:name=".ui.TeamActivity"
-            android:exported="false"
-            android:parentActivityName=".ui.AdvancedActivity" />
-
         <!-- The still OneOS screen for the black gap of a switch. Not exported:
              oneos_switch.sh starts it as root (am start -n
              com.fahadali.oneos/.ui.GapSplashActivity, ONEOS_SPLASH_COMPONENT)

@@ -64,7 +64,7 @@ class StringsNeutralTest {
         // The screens' titles: what Advanced's rows and the team's rows say.
         val titles = mapOf(
             "prepare_title" to "Repair or start fresh", "image_title" to "Use a downloaded file", "space_title" to "Free up space",
-            "team_title" to "For the OneOS team", "switch_title" to "All checks and Test run", "report_title" to "Phone details",
+            "team_title" to "For the DualOS team", "switch_title" to "All checks and Test run", "report_title" to "Phone details",
             "prepare_title_team" to "Setup details", "image_title_team" to "File details and checks",
             // Not "Run tests" next to "Test run" on the OneOS team's screen.
             "tests_title" to "Phone tests",
@@ -93,7 +93,7 @@ class StringsNeutralTest {
         }
         // The legal line names every system's owner's trademarks (main edition).
         val main = strings(File(src, "main/res/values/strings.xml"))
-        for (n in listOf("Galaxy", "One UI", "ColorOS", "Pixel", "Android")) assertTrue(n, main.getValue("about_legal_summary").contains(n))
+        for (n in listOf("Galaxy", "One UI", "LineageOS", "Project Infinity-X", "Evolution X", "Android")) assertTrue(n, main.getValue("about_legal_summary").contains(n))
     }
 
     @Test
@@ -101,19 +101,11 @@ class StringsNeutralTest {
         val ui = File(src, "full/kotlin/com/fahadali/oneos/ui")
         val files = listOf(
             "EditionHome.kt", "SwitchConfirm.kt", "FixActions.kt", "AdvancedActivity.kt",
-            // Advanced's screens (the card look): Set up again, Use a downloaded file, Free up space,
-            // Last session, For the OneOS team, All checks and Test run, and their shared pieces.
-            "CardScreen.kt", "TeamActivity.kt", "PrepareActivity.kt", "ImageActivity.kt", "OldStagesActivity.kt",
-            "LastSessionActivity.kt", "SwitchActivity.kt",
+            "FullComposeComponents.kt", "DebugSettingsActivity.kt", "PrepareActivity.kt",
+            "ImageActivity.kt", "OldStagesActivity.kt", "LastSessionActivity.kt", "SwitchActivity.kt",
         ).map { File(ui, it) } +
             File(src, "full/kotlin/com/fahadali/oneos/session/Readiness.kt") +
-            listOf(
-                "activity_home.xml", "dialog_switch.xml", "home_content.xml", "home_hero.xml", "home_progress.xml",
-                "home_stat_tile.xml", "home_welcome_logs.xml", "home_way_tile.xml", "home_switch_ack.xml",
-                "oneos_cards_screen.xml", "oneos_storage_bar.xml",
-            ).map { File(src, "full/res/layout/$it") } +
-            listOf("activity_home.xml", "home_content.xml", "home_hero.xml").map { File(src, "full/res/layout-w600dp-h480dp/$it") } +
-            File(src, "full/res/menu/home.xml")
+            File(src, "full/res/values/strings_dualos.xml")
         for (f in files) {
             assertTrue("${f.name} is missing", f.isFile)
             // Comments may say what the text was; the code's own strings may not name a system.

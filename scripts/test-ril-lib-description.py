@@ -53,5 +53,76 @@ class RilLibDescription(unittest.TestCase):
         self.assertEqual('inbound SMS: 12 loads of 1000000 looked at, 8 with a flag check before them', lines[-1])
 
 
+class RilLibAltMatchPatch(unittest.TestCase):
+    """apply() patches any unique cmp wRn, w8 register variant (including A53's w26) and rejects invalid/duplicate hits."""
+
+    def run_apply(self, data):
+        snippet = SOURCE.split('ORIG_PAT=', 1)[1].split('\nBB=""', 1)[0] + '\n'
+        snippet += SOURCE.split('is_mounted() {', 1)[1].split('\nrestore() {', 1)[0]
+        # Prepend function header back onto is_mounted
+        snippet = 'ORIG_PAT=' + snippet.replace('    "$BB" grep -Fq " $LIB " /proc/1/mountinfo', 'is_mounted() {\n    "$BB" grep -Fq " $LIB " "$MOUNTINFO"', 1)
+        snippet = snippet.replace('/proc/1/mountinfo', '"$MOUNTINFO"')
+        snippet = snippet.replace('/system/bin/grep', 'grep')
+        snippet = snippet.replace('/system/bin/setprop', 'true')
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            stage = root / 'stage'
+            session = stage / 'session'
+            lib = root / 'libsec-ril.so'
+            mountinfo = root / 'mountinfo'
+            lib.write_bytes(data)
+            mountinfo.write_text('')
+            bb = root / 'busybox'
+            bb.write_text(
+                '#!/bin/sh\n'
+                'cmd=$1; shift\n'
+                'if [ "$cmd" = mount ] && [ "$1" = --bind ]; then\n'
+                '    printf "1 1 0:0 %s %s rw - tmpfs tmpfs rw\\n" "$2" "$3" >> "$MOUNTINFO"\n'
+                '    cp -f "$2" "$3"\n'
+                '    exit 0\n'
+                'fi\n'
+                'exec "$cmd" "$@"\n'
+            )
+            bb.chmod(0o755)
+            head = (
+                f'STAGE={stage}\nLIB={lib}\nSESSION={session}\n'
+                f'PATCHED={session / "libsec-ril.session.so"}\n'
+                f'MARKER={session / "ril_patch.active"}\nBB={bb}\nMOUNTINFO={mountinfo}\n'
+            )
+            env = {**os.environ, 'LC_ALL': 'C', 'MOUNTINFO': str(mountinfo)}
+            res = subprocess.run(['/bin/sh', '-c', head + snippet + '\napply\n'], env=env, capture_output=True, text=True)
+            patched_bytes = (session / 'libsec-ril.session.so').read_bytes() if (session / 'libsec-ril.session.so').exists() else None
+            return res, patched_bytes
+
+    def test_patches_w28_and_a53_w26(self):
+        for name, cmp_hex in (('S23 w28', '9f03086b'), ('A53 w26', '5f03086b'), ('w0', '1f00086b'), ('w31', 'ff03086b')):
+            with self.subTest(name):
+                ldr_x20 = bytes.fromhex('880640f9')
+                ldrb_cbz = bytes.fromhex('08054439' 'a8010034')
+                data = NOP * 4 + ldr_x20 + ldrb_cbz + MILLION + bytes.fromhex(cmp_hex) + NOP * 4
+                cbz_off = 20 + 4  # 4*4 + len(ldr_x20) + len(ldrb)
+                res, patched = self.run_apply(data)
+                self.assertEqual(0, res.returncode, res.stdout + res.stderr)
+                self.assertIsNotNone(patched)
+                self.assertEqual(NOP, patched[cbz_off:cbz_off + 4])
+                # Everything except the cbz instruction is preserved.
+                expected = data[:cbz_off] + NOP + data[cbz_off + 4:]
+                self.assertEqual(expected, patched)
+
+    def test_rejects_non_cmp_w8_and_duplicate_matches(self):
+        ldrb_cbz = bytes.fromhex('08054439' 'a8010034')
+        # Wrong instruction after 1000000 (not cmp wRn, w8)
+        bad = NOP * 4 + bytes.fromhex('880640f9') + ldrb_cbz + MILLION + bytes.fromhex('5f03096b') + NOP * 4
+        res_bad, patched_bad = self.run_apply(bad)
+        self.assertNotEqual(0, res_bad.returncode)
+        self.assertIsNone(patched_bad)
+        # Duplicate match (m = 2)
+        one = bytes.fromhex('880640f9') + ldrb_cbz + MILLION + bytes.fromhex('5f03086b')
+        dup = NOP * 4 + one + NOP * 4 + one + NOP * 4
+        res_dup, patched_dup = self.run_apply(dup)
+        self.assertNotEqual(0, res_dup.returncode)
+        self.assertIsNone(patched_dup)
+
+
 if __name__ == '__main__':
     unittest.main()

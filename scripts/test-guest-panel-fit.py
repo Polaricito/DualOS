@@ -195,31 +195,54 @@ class GuestPanelFit(unittest.TestCase):
 
 
 class ActivatorScript(unittest.TestCase):
-    """The activator is one double-quoted string of the switch; a quote too many in it only shows on a phone."""
+    """The activator is extracted from the bottom section so argv never hits Linux's E2BIG."""
 
-    def test_it_parses_for_every_kind_of_guest(self):
-        start = SOURCE.index('\n$BB sh -c "\n', SOURCE.index('\nGUEST_FOLD_FORM=')) + 1
-        end = SOURCE.index('\n" </dev/null >/data/local/tmp/ui_activator.log 2>&1 &\n', start)
-        body = SOURCE[start + len('$BB sh -c "\n'):end]
-        names = sorted(set(re.findall(r'(?<!\\)\$\{?([A-Za-z_][A-Za-z0-9_]*)', body)))
-        self.assertIn('GUEST_OXYGEN', names)
-        kinds = ({'GUEST_OPLUS': '1', 'GUEST_AOSP_SYSUI': '0', 'GUEST_MIUI': '0', 'GUEST_FOLD_FORM': '0', 'GUEST_OXYGEN': '1'},
-                 {'GUEST_OPLUS': '1', 'GUEST_AOSP_SYSUI': '0', 'GUEST_MIUI': '0', 'GUEST_FOLD_FORM': '1', 'GUEST_OXYGEN': '0'},
-                 {'GUEST_OPLUS': '0', 'GUEST_AOSP_SYSUI': '1', 'GUEST_MIUI': '0', 'GUEST_FOLD_FORM': '1', 'GUEST_OXYGEN': '0'},
-                 {'GUEST_OPLUS': '0', 'GUEST_AOSP_SYSUI': '0', 'GUEST_MIUI': '1', 'GUEST_FOLD_FORM': '0', 'GUEST_OXYGEN': '0'})
+    @staticmethod
+    def _extract():
+        begin = '\n# === ONEOS_UI_ACTIVATOR_BEGIN ===\n'
+        end = '\n# === ONEOS_UI_ACTIVATOR_END ===\n'
+        return SOURCE.split(begin, 1)[1].split(end, 1)[0]
+
+    def test_extracted_activator_and_switch_parse_and_stay_under_e2big(self):
+        body = self._extract()
+        self.assertIn('[UI Activator] guest display 0: ', body)
+        self.assertIn('[UI Activator] stable display size: ', body)
+        self.assertIn('$GUEST_OXYGEN', body)
+        self.assertIn('$HOST_PRODUCT_DEVICE', body)
+
         with tempfile.TemporaryDirectory() as d:
-            for kind in kinds:
-                # No command of the server runs while the string is put together: nothing is on the PATH.
-                env = {n: '1' if n.startswith('GUEST_') or n.endswith('_PID') else '/x/' + n.lower() for n in names}
-                env.update(kind, PATH='/nonexistent')
-                Path(d, 'gen.sh').write_text("printf '%s\\n' \"" + body + '"\n')
-                made = subprocess.run(['/bin/sh', str(Path(d, 'gen.sh'))], env=env, capture_output=True, text=True, cwd=d, timeout=60)
-                self.assertEqual((0, ''), (made.returncode, made.stderr), kind)
-                self.assertIn("[UI Activator] guest display 0: ", made.stdout)
-                self.assertIn('[UI Activator] stable display size: ', made.stdout)
-                Path(d, 'activator.sh').write_text(made.stdout)
-                r = subprocess.run(['/bin/sh', '-n', str(Path(d, 'activator.sh'))], capture_output=True, text=True, timeout=60)
-                self.assertEqual((0, ''), (r.returncode, r.stderr), kind)
+            p = Path(d, 'ui_activator.sh')
+            p.write_text(body)
+            for path in (ROOT / 'switcher/assets/oneos_switch.sh', p):
+                r = subprocess.run(['/bin/sh', '-n', str(path)], capture_output=True, text=True, timeout=60)
+                self.assertEqual((0, ''), (r.returncode, r.stderr), path)
+
+            # Real awk extraction + launched-env sanity check.
+            fake_stage = Path(d, 'stage')
+            fake_stage.mkdir()
+            (fake_stage / 'oneos_switch.sh').write_text(SOURCE)
+            r = subprocess.run(
+                ['/bin/sh', '-c',
+                 'awk \'/^# === ONEOS_UI_ACTIVATOR_END ===$/ { p = 0 } p { print } /^# === ONEOS_UI_ACTIVATOR_BEGIN ===$/ { p = 1 }\' '
+                 '"$1" > "$2" && /bin/sh -n "$2"', 'sh', str(fake_stage / 'oneos_switch.sh'), str(p)],
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual((0, ''), (r.returncode, r.stderr))
+
+    def test_no_inline_sh_c_exceeds_64kib(self):
+        for m in re.finditer(r'(?m)^[^\n#]*\$BB sh -c "\n', SOURCE):
+            end_m = re.search(r'(?m)^[ \t]*"(?:\s+</dev/null|\s*$)', SOURCE[m.end():])
+            self.assertIsNotNone(end_m, f'unterminated inline sh -c at offset {m.start()}')
+            size = end_m.start()
+            self.assertLessEqual(size, 65536, f'inline sh -c at offset {m.start()} is {size} bytes')
+
+    def test_launcher_exports_all_activator_config_vars(self):
+        body = self._extract()
+        refs = set(re.findall(r'\$\{?(GUEST_[A-Z0-9_]+|ONEOS_[A-Z0-9_]+|WIFI_VERBOSE|HDH|HOST_PRODUCT_DEVICE|STAGE|BB)\b', body))
+        start = SOURCE.index('# Extracted from the bottom section')
+        launcher = SOURCE[start:SOURCE.index('\nfi\n', start) + 4]
+        missing = sorted(v for v in refs if not re.search(rf'\b{re.escape(v)}\b', launcher))
+        self.assertEqual([], missing)
 
 
 if __name__ == '__main__':

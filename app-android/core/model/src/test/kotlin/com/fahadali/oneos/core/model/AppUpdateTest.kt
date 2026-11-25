@@ -7,9 +7,9 @@ import org.junit.Test
 class AppUpdateTest {
     private val sha = "a".repeat(64)
     private fun json(
-        code: String = "58",
-        name: String = "\"0.4.42\"",
-        apk: String = "\"https://github.com/fahadalijaved/OneOS/releases/download/v0.4.42/OneOS-0.4.42.apk\"",
+        code: String = "200",
+        name: String = "\"2.0.0\"",
+        apk: String = "\"https://github.com/Polaricito/DualOS/releases/download/v2.0.0/DualOS-2.0.0.apk\"",
         bytes: String = "52428800",
         sha256: String = "\"$sha\"",
     ) = """{"versionCode": $code, "versionName": $name, "apk": $apk, "bytes": $bytes, "sha256": $sha256}"""
@@ -17,9 +17,9 @@ class AppUpdateTest {
     @Test
     fun readsTheReleasesUpdate() {
         val u = AppUpdate.parse(json()).getOrThrow()
-        assertEquals(AppUpdate(58, "0.4.42", "https://github.com/fahadalijaved/OneOS/releases/download/v0.4.42/OneOS-0.4.42.apk", 52428800L, sha), u)
-        assertTrue(u.newerThan(57))
-        assertTrue(!u.newerThan(58))
+        assertEquals(AppUpdate(200, "2.0.0", "https://github.com/Polaricito/DualOS/releases/download/v2.0.0/DualOS-2.0.0.apk", 52428800L, sha), u)
+        assertTrue(u.newerThan(199))
+        assertTrue(!u.newerThan(200))
     }
 
     @Test
@@ -49,9 +49,9 @@ class AppUpdateTest {
     @Test
     fun refusesAnythingElse() {
         val bad = listOf(
-            json(apk = "\"https://example.com/OneOS-0.4.42.apk\""),
-            json(apk = "\"https://github.com/fahadalijaved/OneOS/releases/download/v0.4.42/../../x.apk\""),
-            json(apk = "\"https://github.com/someone/OneOS/releases/download/v0.4.42/OneOS-0.4.42.apk\""),
+            json(apk = "\"https://example.com/DualOS-2.0.0.apk\""),
+            json(apk = "\"https://github.com/Polaricito/DualOS/releases/download/v2.0.0/../../x.apk\""),
+            json(apk = "\"https://github.com/someone/DualOS/releases/download/v2.0.0/DualOS-2.0.0.apk\""),
             json(code = "0"),
             json(code = "\"58\""),
             json(name = "\"0.4.42; rm\""),

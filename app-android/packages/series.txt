@@ -1,6 +1,2 @@
-# The series downloads (app/build.gradle.kts -Poneos.series=<id>): each line is
-# a series id and the package sets its APK carries. ApkSeries lists the same
-# sets, every set its phones' systems use (ApkSeriesTest).
-fold n6-global-f8 hyper-f8u infinityx lineage n6-f8u nothing-f8u originos pixel-f8 pixel-f8u
-s26 hyper-f8u infinityx lineage nothing-f8u originos pixel-sultra x9u-in-1105-sultra
-s25 hyper-f8u infinityx lineage lineage23 nothing-a nothing-f8u originos oxygen16 pixel9-sultra x9u-in-1105-sultra
+# DualOS Galaxy A53 5G series
+a53 lineage23 infinityx35

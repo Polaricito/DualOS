@@ -460,11 +460,13 @@ class Copy(unittest.TestCase):
                 self.assertEqual(f'rc=0 note={PRIMARY_SAID} usb= added=1', line)
                 self.assert_added(text, plain, etc)
                 self.assertNotIn(BT_FILE, text)
-        # Without an AIDL factory there is no session for either way.
-        for bt in (HIDL_BT, None):
-            line, text, etc = self.copy(bt=bt, more=True, **BT_ONLY)
-            self.assertEqual(('rc=0 note=no A2DP outputs added (no AIDL Bluetooth audio HAL on this phone) usb= added=0',
-                              self.absolute(PLAIN, etc)), (line, text))
+        # Without a Bluetooth audio factory at all, neither way opens; HIDL with its own module IS accepted.
+        line, text, etc = self.copy(bt=HIDL_BT, more=True, **BT_ONLY)
+        self.assertEqual(f'rc=0 note={BT_SAID} usb= added=1', line)
+        self.assert_included(text, PLAIN, etc, [BT_FILE])
+        line, text, etc = self.copy(bt=None, more=True, **BT_ONLY)
+        self.assertEqual(('rc=0 note=no A2DP outputs added (no AIDL Bluetooth audio HAL on this phone) usb= added=0',
+                          self.absolute(PLAIN, etc)), (line, text))
         # The switch for A2DP is for both ways.
         line, text, etc = self.copy(env={'ONEOS_GUEST_APM_A2DP': '0'}, more=True, **BT_ONLY)
         self.assertEqual(('rc=0 note=no A2DP outputs added (ONEOS_GUEST_APM_A2DP=0) usb= added=0', self.absolute(PLAIN, etc)), (line, text))
@@ -578,6 +580,8 @@ class OtherGuests(unittest.TestCase):
             lines = f.run(COPY + OTHER, env=env)
             self.assertEqual('', f.err)
             c = f.stage / 'guest_apm/audio_policy_configuration.xml'
+            sw = f.stage / 'guest_bt_sw'
+            f.bt_sw = sw.read_text() if sw.exists() else None
             return lines, (c.read_text() if c.exists() else None), f.log(), str(f.v / 'etc'), f
 
     def test_the_copy_is_bound_over_the_guests_file(self):
@@ -598,6 +602,13 @@ class OtherGuests(unittest.TestCase):
         self.assertNotIn('OneOS BT A2DP', copy)
         target = f'{f.guest_etc}/audio_policy_configuration.xml'
         self.assertEqual([f'mount --bind {f.stage}/guest_apm/audio_policy_configuration.xml {target}', f'mount -o remount,ro,bind {target}'], log[-2:])
+        # HIDL BT with Samsung's bluetooth module + audio.bluetooth.*.so marks guest_bt_sw (e.g. Exynos A53).
+        lines, copy, log, etc, f = self.prepare(bt=HIDL_BT, **BT_ONLY)
+        self.assertEqual([f'Guest audio policy: {etc}/audio_policy_configuration.xml with {BT_SAID} (no AIDL audio HAL)'], lines)
+        self.assertEqual('module\n', f.bt_sw)
+        # AIDL BT on non-QTI does not mark guest_bt_sw.
+        _, _, _, _, f_aidl = self.prepare(bt=AIDL_BT, **BT_ONLY)
+        self.assertIsNone(f_aidl.bt_sw)
         # USB alone is reason enough for the copy: after the primary module way, with no Bluetooth to add, with A2DP switched off.
         for kw, env, said in (
                 (USB_ONLY, None, f'{PRIMARY_SAID}; {USB_SAID}'),
@@ -649,19 +660,25 @@ service() { command echo "$*" >> "$R/service"; if [ -n "$FOUND" ]; then command 
 
 
 class Bridge(unittest.TestCase):
-    def why(self, bt, found=''):
+    def why(self, bt, found='', hidl_found='0'):
         with tempfile.TemporaryDirectory() as t:
             f = Fixture(t, bt=bt)
             f.stage.mkdir(exist_ok=True)
-            (f.stage / 'oneos_btaudio').write_text('#!/bin/sh\n[ "$1" = --declared ] && echo 0\n')
-            lines = f.run(BRIDGE_PRELUDE + BRIDGE + 'command echo "why=$BT_WHY"\n', env={'FOUND': found})
+            (f.stage / 'oneos_btaudio').write_text(
+                '#!/bin/sh\n'
+                '[ "$1" = --declared ] && echo 0\n'
+                '[ "$1" = --check ] && echo "samsung_factory=0 samsung_hidl_factory=$HIDL_FOUND android_factory=0 android_declared=0"\n'
+            )
+            lines = f.run(BRIDGE_PRELUDE + BRIDGE + 'command echo "why=$BT_WHY"\n',
+                          env={'FOUND': found, 'HIDL_FOUND': hidl_found})
             self.assertEqual('', f.err)
             count = lambda n: len((f.r / n).read_text().splitlines()) if (f.r / n).exists() else 0
             return lines[-1], count('sleeps'), count('service')
 
-    def test_the_hidl_factory_is_named_without_a_wait(self):
-        self.assertEqual(("why=not started: Samsung's Bluetooth audio HAL on this phone is the older HIDL one, which the bridge "
-                          'cannot serve (no Bluetooth audio in the guest)', 0, 0), self.why(HIDL_BT))
+    def test_the_hidl_factory_waits_for_oneos_btaudio_check(self):
+        self.assertEqual(('why=', 0, 0), self.why(HIDL_BT, hidl_found='1'))
+        self.assertEqual(("why=Samsung's HIDL Bluetooth audio factory was not registered 15 s after the audio HAL restart; "
+                          'not started', 30, 0), self.why(HIDL_BT, hidl_found='0'))
 
     def test_the_aidl_factory_is_waited_for_as_before(self):
         self.assertEqual(('why=', 0, 2), self.why(AIDL_BT, found='1'))

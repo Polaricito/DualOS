@@ -248,6 +248,17 @@ BUILDS = [
         "service.incremental.so": "86c26d2b45e4cada376a25dda533d2206558bdf4fac63a2f82f3b6cee5ebf9be",
         "crashrecovery-aosp.capex": "3ce444e23e5f626ef1f0f6d0126f3e3ffe598846fc0fc9194be96b1eeb742d37",
     }, [("vold", 0xd7fc, NAME), ("vold", 0x5ee4c, TRY_START), ("service.incremental.so", 0x4e8b2, NAME)]),
+    # Project Infinity-X 3.5 BP2A.250805.005 (Doze-off VANILLA EXT4 GSI, Android 16
+    # QPR0, SDK 36; 2026-04-04): start() (0x5f630) passes "vold" at 0xd7fd (leading
+    # NUL at 0xd7fc; adrp 0xd000 + add 0x7fd at 0x5f66c..0x5f670), and try_start's
+    # tbz w19, #0, +0xd4 on isDeclared() is at 0x5f03c. service.incremental.so is
+    # byte-identical to LineageOS 23.0's (0x4e8b2), and com.android.crashrecovery.capex
+    # has AOSP's RescueParty.isDisabled.
+    ("Project Infinity-X 3.5 BP2A.250805.005 (Doze-off GSI)", {
+        "vold": "bfecfc8246ce198610ccc3d6e52bfe5b9ffc950fea933188949305d64c8f6747",
+        "service.incremental.so": "86c26d2b45e4cada376a25dda533d2206558bdf4fac63a2f82f3b6cee5ebf9be",
+        "crashrecovery-aosp.capex": "83ca7b9bda8e6ec54e52f2ec3ec67674c41746be1ac8b8be62f10861cb87276f",
+    }, [("vold", 0xd7fc, NAME), ("vold", 0x5f03c, TRY_START), ("service.incremental.so", 0x4e8b2, NAME)]),
 ]
 def read(name):
     p = os.path.join(work, name)
@@ -337,6 +348,8 @@ done
 # guest_no_gatekeeper's guard, so it runs after that loop; a framework of another
 # shape is left as it is (no guest lock there, as before).
 KEY_DIRS="$KEY_DIRS $(python3 -I "$ROOT/switcher/patches/guest_local_lock.py" "$WORK/services")"
+LOCAL_LOCK=0
+[ -n "$(find "$WORK/services" -name OneOSGuestLock.smali 2>/dev/null)" ] && LOCAL_LOCK=1
 # The guest's own idmap2d instead of One UI's (patches/guest_own_idmap.py).
 KEY_DIRS="$KEY_DIRS $(python3 -I "$ROOT/switcher/patches/guest_own_idmap.py" "$WORK/services")"
 # A WebView zygote that cannot start is logged, not fatal (S24 Ultra, Find X9
@@ -433,6 +446,10 @@ for d in $(printf '%s\n' "$DISPLAY_DIR" $KEY_DIRS | sort -u); do
     (cd "$WORK/dex" && zip -q -0 "$OUT/services_patched.jar" "$DEX")
     echo "built $OUT/services_patched.jar (replaced $DEX)"
 done
+if [ -x "$BT/zipalign" ]; then
+    "$BT/zipalign" -f 4 "$OUT/services_patched.jar" "$WORK/services_aligned.jar"
+    mv -f "$WORK/services_aligned.jar" "$OUT/services_patched.jar"
+fi
 
 # oplus-services.jar: waitForService -> checkService for OPPO-only services
 # (patches/oplus_wait_for_service.py). Every dex it touched is replaced.
@@ -1040,10 +1057,27 @@ fi
 # telephony-common.jar is on the boot class path: built only next to a
 # framework_patched.jar (that set's boot image is not used already).
 rm -f "$OUT/telephony-common_patched.jar"
+PHH_SEHRADIO=0
 if [ -f "$OUT/framework_patched.jar" ] && in_image /system/framework/telephony-common.jar; then
     "$DEBUGFS" -R "dump /system/framework/telephony-common.jar $WORK/telephony-common.jar" "$IMG" 2>/dev/null
     "$ROOT/scripts/patch-built-jar.sh" "$WORK/telephony-common.jar" "$ROOT/switcher/patches/guest_smsc_international.py" "$WORK/telephony-common_smsc.jar"
     "$ROOT/scripts/patch-built-jar.sh" "$WORK/telephony-common_smsc.jar" "$ROOT/switcher/patches/guest_sms_invalid_response.py" "$OUT/telephony-common_patched.jar"
+    if python3 -I - "$OUT/telephony-common_patched.jar" <<'PYEOF'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as zf:
+    found = any(
+        n.startswith("classes") and n.endswith(".dex")
+        and b"Lvendor/samsung/hardware/radio/V2_2/ISehRadio;" in zf.read(n)
+        for n in zf.namelist()
+    )
+sys.exit(0 if found else 1)
+PYEOF
+    then
+        cp "$OUT/telephony-common_patched.jar" "$WORK/telephony-common_sms.jar"
+        "$ROOT/scripts/patch-built-jar.sh" "$WORK/telephony-common_sms.jar" "$ROOT/switcher/patches/guest_no_phh_sehradio.py" "$OUT/telephony-common_patched.jar"
+        PHH_SEHRADIO=1
+        rm -f "$WORK/telephony-common_sms.jar"
+    fi
     rm -f "$WORK/telephony-common.jar" "$WORK/telephony-common_smsc.jar"
 fi
 
@@ -1067,6 +1101,7 @@ python3 -I "$ROOT/scripts/check-dex.py" $JARS
 # looks up "gvld": guest_prepare.sh binds all three or none of them.
 {
     echo "# framework overlays built by scripts/make-overlays.sh with the storage, installd, power, sysrq, weaver, biometric, gatekeeper, pdb, apexd, appid15000, nousers, nativeservices, wipesecrets and ksuappid guards, and the secims carve-out (com.sec.imsservice kept in android.uid.system from /system_ext/priv-app/OneOSSecIms only)"
+    [ "$LOCAL_LOCK" = 1 ] && echo "# guest local lock: local_lock (patches/guest_local_lock.py, OneOSGuestLock)"
     [ "$VOLD_GVLD" = 1 ] && echo "# guest vold name: gvld (vold_patched, service.incremental_patched.so and services_patched.jar)"
     # HyperOS images (miui-services_patched.jar) and Pixel images list their
     # files in the order and with the notes each set was built with.
@@ -1086,7 +1121,11 @@ python3 -I "$ROOT/scripts/check-dex.py" $JARS
             $([ -f libcameracompatbilityinfo_patched.so ] && echo libcameracompatbilityinfo_patched.so))
     else
         [ -f "$OUT/framework_patched.jar" ] && echo "# framework_patched.jar: the image's framework.jar with One UI's camera transaction codes (patches/pixel_camera_abi.py)"
-        [ -f "$OUT/telephony-common_patched.jar" ] && echo "# telephony-common_patched.jar: the SMS service centre as an international number (patches/guest_smsc_international.py); SEND_SMS error 66 (sent, no result payload) counted as sent (patches/guest_sms_invalid_response.py)"
+        if [ -f "$OUT/telephony-common_patched.jar" ]; then
+            PHH_NOTE=""
+            [ "$PHH_SEHRADIO" = 1 ] && PHH_NOTE="; PHH ISehRadio bypassed (patches/guest_no_phh_sehradio.py)"
+            echo "# telephony-common_patched.jar: the SMS service centre as an international number (patches/guest_smsc_international.py); SEND_SMS error 66 (sent, no result payload) counted as sent (patches/guest_sms_invalid_response.py)${PHH_NOTE}"
+        fi
         [ -f "$OUT/libcamera_client_patched.so" ] && echo "# libcamera_client_patched.so, libcameracompatbilityinfo_patched.so: the native camera client with One UI's codes (patches/pixel_camera_native.py)"
         [ -f "$OUT/vivo-services_patched.jar" ] && echo "# vivo: vivo-services_patched.jar (patches/vivo_guards.py: no IOemNetd to One UI's netd, vivo-only HAL extensions; and the storage guards)"
         [ -f "$OUT/vivo-telephony-common-platform-ex_patched.jar" ] && echo "# vivo: vivo-telephony-common-platform-ex_patched.jar (patches/vivo_telephony.py: MtkRIL ready without MediaTek's mtkradioex services)"

@@ -22,6 +22,7 @@ Usage: guest_secims_members.py <apktool smali root of framework.jar>
 Prints the smali directories it changed.
 """
 import os
+import re
 import sys
 
 TM = "Landroid/telephony/TelephonyManager;"
@@ -130,6 +131,7 @@ MEMBERS = [
      "    const/4 v0, 0x1\n"
      "    return v0"),
     (TM, ".method public semGetDataState(I)I", per_slot("getDataState()I", "int")),
+    (TM, ".method public semGetNrMode()I", FALSE),
     (TM, ".method public semGetNrMode(I)I", FALSE),
     (TM, ".method public semGetServiceState(I)Landroid/telephony/ServiceState;", per_slot(f"getServiceState(){SS}", "obj")),
     (TM, ".method public static semGetTelephonyProperty(ILjava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
@@ -164,9 +166,15 @@ MEMBERS = [
     # IMS SMS: Samsung's longer error reports carry Android's five values first.
     (SMS, ".method public onSendSmsResultError(IIIIIIII)V",
      f".locals 0\n    invoke-virtual/range {{p0 .. p5}}, {SMS}->onSendSmsResultError(IIIII)V\n    return-void"),
+    (SMS, ".method public onSendSmsResultIncludeErrClass(IIIIII)V",
+     f".locals 0\n    invoke-virtual/range {{p0 .. p5}}, {SMS}->onSendSmsResultError(IIIII)V\n    return-void"),
     (SMS, ".method public onSendSmsResultIncludeErrClass(IIIIIIIII)V",
      f".locals 0\n    invoke-virtual/range {{p0 .. p5}}, {SMS}->onSendSmsResultError(IIIII)V\n    return-void"),
     (SMS, ".method public onReceiveSmsDeliveryReportAck(II)V", VOID),
+    ("Landroid/media/ToneGenerator;", ".method public semSetVolume(F)V", VOID),
+    ("Landroid/os/storage/StorageVolume;", ".method public semGetPath()Ljava/lang/String;",
+     ".locals 1\n    invoke-virtual {p0}, Landroid/os/storage/StorageVolume;->getPath()Ljava/lang/String;\n    move-result-object v0\n    return-object v0"),
+    ("Landroid/os/UserHandle;", ".field public static final SEM_CURRENT:Landroid/os/UserHandle;", None),
     ("Landroid/telephony/ims/ImsCallProfile;", ".method public setCallExtraStringArray(Ljava/lang/String;[Ljava/lang/String;)V",
      ".locals 1\n    invoke-virtual {p0}, Landroid/telephony/ims/ImsCallProfile;->getCallExtras()Landroid/os/Bundle;\n"
      "    move-result-object v0\n    invoke-virtual {v0, p1, p2}, Landroid/os/Bundle;->putStringArray(Ljava/lang/String;[Ljava/lang/String;)V\n"
@@ -175,6 +183,17 @@ MEMBERS = [
     ("Lcom/android/internal/telephony/uicc/IccUtils;", ".method public static getIccType(I)I", FALSE),
 ]
 
+
+# Instance getters returning an existing field if declared on the class (else fallback).
+FIELD_GETTERS = [
+    ("Landroid/telephony/BarringInfo;", ".method public getCellIdentity()Landroid/telephony/CellIdentity;",
+     "mCellIdentity:Landroid/telephony/CellIdentity;", NULL_OBJ),
+]
+
+# Static fields added to a class that must be initialized in <clinit> from an existing field.
+CLINIT_ALIASES = [
+    ("Landroid/os/UserHandle;", "SEM_CURRENT:Landroid/os/UserHandle;", "CURRENT:Landroid/os/UserHandle;"),
+]
 
 # Fields One UI's subclasses read that the guest declares private: made protected,
 # as One UI declares them (still invisible outside the class's subclasses).
@@ -219,6 +238,35 @@ def main(root):
                 continue
             text = text.rstrip("\n") + f"\n\n# OneOS: Samsung IMS (patches/guest_secims_members.py)\n{header}\n    {body}\n.end method\n"
         changed[path] = text
+    for cls, header, field_sig, fallback in FIELD_GETTERS:
+        path = find(root, cls)
+        text = changed.get(path) or open(path, encoding="utf-8").read()
+        k = key(header)
+        lines = text.split("\n")
+        existing = [l.split()[-1] for l in lines if l.startswith(".method ")]
+        if k not in existing:
+            if any(l.startswith(".field ") and f" {field_sig}" in l for l in lines):
+                body = f".locals 1\n    iget-object v0, p0, {cls}->{field_sig}\n    return-object v0"
+            else:
+                body = fallback
+            text = text.rstrip("\n") + f"\n\n# OneOS: Samsung IMS (patches/guest_secims_members.py)\n{header}\n    {body}\n.end method\n"
+            changed[path] = text
+    for cls, dst_field, src_field in CLINIT_ALIASES:
+        path = find(root, cls)
+        text = changed.get(path) or open(path, encoding="utf-8").read()
+        m = re.search(r"(\.method[^\n]*\s<clinit>\(\)V\n)(.*?)(\n\.end method)", text, re.S)
+        if not m:
+            sys.exit(f"{cls}.<clinit> not found for {dst_field}")
+        body_text = m.group(2)
+        if f"{cls}->{dst_field}" not in body_text:
+            body_text = re.sub(r"(\.locals\s+)0\b", r"\g<1>1", body_text, count=1)
+            idx = body_text.rfind("    return-void")
+            if idx < 0:
+                sys.exit(f"{cls}.<clinit> has no return-void for {dst_field}")
+            inject = (f"    sget-object v0, {cls}->{src_field}\n\n"
+                      f"    sput-object v0, {cls}->{dst_field}\n\n")
+            body_text = body_text[:idx] + inject + body_text[idx:]
+            changed[path] = text[:m.start(2)] + body_text + text[m.end(2):]
     for cls, name in WIDEN:
         path = find(root, cls)
         text = changed.get(path) or open(path, encoding="utf-8").read()

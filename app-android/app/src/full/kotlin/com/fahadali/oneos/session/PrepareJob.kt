@@ -58,10 +58,10 @@ object PrepareJob : BackgroundJob<PrepareJob.State>(State(), "oneos-prepare") {
     enum class Step(val label: String, val userStep: UserStep) {
         CHECK("Check this phone and the stage", UserStep.CHECK_DOWNLOAD),
         HASH("Check the download", UserStep.CHECK_DOWNLOAD),
-        DOWNLOAD("Download this system's OneOS files", UserStep.CHECK_DOWNLOAD),
+        DOWNLOAD("Download this system's DualOS files", UserStep.CHECK_DOWNLOAD),
         BEGIN("Stage folder", UserStep.INSTALL),
         IMAGE("System image", UserStep.INSTALL),
-        FILES("OneOS files and session scripts", UserStep.FINISH),
+        FILES("DualOS files and session scripts", UserStep.FINISH),
         TABLE("installd table", UserStep.FINISH),
         ENV("Session settings", UserStep.FINISH),
         FINISH("Finish", UserStep.FINISH),
@@ -250,7 +250,7 @@ object PrepareJob : BackgroundJob<PrepareJob.State>(State(), "oneos-prepare") {
         s.startsWith("verify ") -> "Root is checking ${s.removePrefix("verify ")}…"
         s.startsWith("receive ") -> "Writing ${s.removePrefix("receive ").substringBefore(' ')}…"
         s.startsWith("aside ") -> "Moving the old stage aside…"
-        s.startsWith("rename ${RootScript.LEGACY_STAGE} ") -> "Renaming the stage to its OneOS name…"
+        s.startsWith("rename ${RootScript.LEGACY_STAGE} ") -> "Renaming the stage to its DualOS name…"
         s == "attic" -> "Moving leftovers to the attic…"
         else -> s
     }
@@ -260,7 +260,7 @@ object PrepareJob : BackgroundJob<PrepareJob.State>(State(), "oneos-prepare") {
         step(Step.CHECK)
         val check = StageCheck.runBlocking(app, StageCheck.Mode.FULL) { detail(it) }
         StageCheck.publish(check)
-        val profile = Profiles.resolve(check.facts).profile ?: throw Stop("No OneOS profile for this phone.")
+        val profile = Profiles.resolve(check.facts).profile ?: throw Stop("No DualOS profile for this phone.")
         val st = check.status
         var picked = SessionPrefs.picked(app)
 
@@ -361,7 +361,7 @@ object PrepareJob : BackgroundJob<PrepareJob.State>(State(), "oneos-prepare") {
             update(state.copy(bytesTotal = state.bytesTotal + need, stepTotal = need))
             val free = SetDownloader.dir(app).usableSpace
             if (free < need + 256L * 1024 * 1024) {
-                throw Stop("Not enough free space for this system's OneOS files: ${Units.bytes(need)} to download, ${Units.bytes(free)} free.")
+                throw Stop("Not enough free space for this system's DualOS files: ${Units.bytes(need)} to download, ${Units.bytes(free)} free.")
             }
             // (0.4.42) Three at a time: Drive took 16-80 s to start some files (one at a time, the
             // screen sat still that long); the others keep coming meanwhile.
@@ -409,7 +409,7 @@ object PrepareJob : BackgroundJob<PrepareJob.State>(State(), "oneos-prepare") {
                         "${finished.get()} of ${downloads.size} files · ${Units.bytes(got)} of ${Units.bytes(need)}$rate$waiting"
                     }
                 }
-                firstFailure.get()?.let { throw Stop("Downloading this system's OneOS files: ${it.message ?: it}") }
+                firstFailure.get()?.let { throw Stop("Downloading this system's DualOS files: ${it.message ?: it}") }
                 if (abort.get() || cancelled) throw Stop(STOPPED)
             } finally {
                 // Stopped or failed: close the live connections so blocked reads end now, and wait for
@@ -425,7 +425,7 @@ object PrepareJob : BackgroundJob<PrepareJob.State>(State(), "oneos-prepare") {
         }
 
         // 3. begin.
-        step(Step.BEGIN, "Making the stage OneOS's…")
+        step(Step.BEGIN, "Making the stage DualOS's…")
         verb(app, Step.BEGIN, RootScript.Verb.BEGIN, listOf(mode.word, profile.id, image.id, set.id, code))
 
         // 4. The image.

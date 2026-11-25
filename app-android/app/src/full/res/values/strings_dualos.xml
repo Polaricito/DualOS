@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_systems">Systems</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_diagnostics">Diagnostics</string>
+
+    <string name="a53_caps_section">Galaxy A53 guest features</string>
+    <string name="a53_nfc_title">Guest NFC</string>
+    <string name="a53_nfc_summary">Enable NFC inside the guest session with host HAL handoff (ONEOS_GUEST_NFC)</string>
+    <string name="a53_sdcard_title">microSD access</string>
+    <string name="a53_sdcard_summary">Safe kernel-only mount into ExternalSD. Encrypted cards stay read-only to protect One UI data.</string>
+    <string name="a53_sdcard_ro">Read-only</string>
+    <string name="a53_sdcard_rw">Read-write</string>
+    <string name="a53_sdcard_off">Off</string>
+    <string name="a53_blur_title">Kawase2 window blurs</string>
+    <string name="a53_blur_summary">Smooth RenderEngine blurs on Mali-G68 with automatic thermal protection</string>
+    <string name="a53_pin_badge">Local guest PIN isolated</string>
+    <string name="a53_pin_note">Guest lockscreen PIN/password stays inside the guest stage and never touches One UI or Weaver/Gatekeeper.</string>
+    <string name="a53_selinux_badge">SELinux contexts fixed · Permissive in session</string>
+    <string name="a53_selinux_note">Guest SELinux labels and mac_permissions are repaired; the kernel stays Permissive during guest sessions and restores Enforcing on return to One UI.</string>
+
+    <string name="hub_pick_file">Pick .img.gz file</string>
+    <string name="hub_open_checks">Open checks &amp; boot</string>
+    <string name="hub_quick_tools">Quick tools</string>
+    <string name="hub_diagnostics_device">Device &amp; checks</string>
+    <string name="hub_diagnostics_help">Help &amp; about</string>
+    <string name="details_title">Details</string>
+    <string name="systems_badge_ready">Set up</string>
+</resources>

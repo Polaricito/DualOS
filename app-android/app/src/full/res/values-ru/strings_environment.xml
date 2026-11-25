@@ -6,7 +6,7 @@
     <string name="environment_battery">Батарея</string>
     <string name="environment_lock">Блокировка экрана</string>
     <string name="environment_guest_root">Root-доступ гостевой системы</string>
-    <string name="environment_guest_root_status">Включён существующим мостом гостевого root в OneOS</string>
+    <string name="environment_guest_root_status">Включён существующим мостом гостевого root в DualOS</string>
     <string name="environment_no_root">Root не обнаружен</string>
     <string name="environment_lock_off">Выкл.</string>
     <string name="environment_lock_on">Вкл.</string>
@@ -15,10 +15,10 @@
     <string name="environment_active">%1$s активна</string>
     <string name="environment_apps">Приложения</string>
     <string name="environment_bring_summary">Взять приложения из One UI с их данными и входами в аккаунты</string>
-    <string name="environment_report">Сообщить о проблеме команде OneOS</string>
+    <string name="environment_report">Сообщить о проблеме команде DualOS</string>
     <string name="environment_checking">Проверка телефона и подготовленной системы…</string>
     <string name="environment_busy_logs">Сохранение журналов последнего сеанса (личные данные удалены). Запуск и обновление начнутся после завершения, обычно в течение нескольких минут.</string>
-    <string name="environment_busy_other">OneOS завершает другую задачу. Запуск и обновление начнутся после её завершения.</string>
+    <string name="environment_busy_other">DualOS завершает другую задачу. Запуск и обновление начнутся после её завершения.</string>
     <string name="environment_preview">Режим предпросмотра · имитация среды и запуска</string>
     <string name="switch_blocked_now">С прошлой проверки что-то изменилось. Что мешает, смотрите на странице системы.</string>
     <string name="boot_cannot_cancel">Сейчас отменить нельзя</string>

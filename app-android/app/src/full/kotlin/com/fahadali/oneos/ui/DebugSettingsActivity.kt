@@ -3,67 +3,174 @@ package com.fahadali.oneos.ui
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
-import androidx.fragment.app.Fragment
-import androidx.preference.EditTextPreference
-import androidx.preference.Preference
-import androidx.preference.SwitchPreferenceCompat
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.BuildConfig
 import com.fahadali.oneos.R
 import com.fahadali.oneos.session.AppUpdater
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
+import com.fahadali.oneos.shared.ExpressiveSwitchItem
 
-class DebugSettingsActivity : ToolbarActivity() {
-    override val screenTitle: CharSequence get() = getString(R.string.team_title)
-    override val preferenceInsets = true
-    override fun createFragment(): Fragment = DebugSettingsFragment()
-}
-
-class DebugSettingsFragment : InsetPreferenceFragment() {
-    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-        val ctx = preferenceManager.context
-        preferenceScreen = preferenceManager.createPreferenceScreen(ctx)
-        if (BuildConfig.DEBUG) {
-            preferenceScreen.addDescribedPreference(SwitchPreferenceCompat(ctx).apply {
-                key = "setup_preview"
-                setTitle(R.string.setup_preview_setting)
-                setSummary(R.string.setup_preview_setting_summary)
-                isPersistent = false
-                isIconSpaceReserved = false
-                isChecked = DebugPreview.enabled(ctx)
-                setOnPreferenceChangeListener { _, value -> DebugPreview.setEnabled(ctx, value as Boolean); true }
-            })
-        }
-        fun category(title: Int) = androidx.preference.PreferenceCategory(ctx).apply {
-            setTitle(title); preferenceScreen.addPreference(this)
-        }
-        fun entry(group: androidx.preference.PreferenceCategory, title: Int, summary: Int, target: Class<*>, team: Boolean = false) {
-            group.addPreference(Preference(ctx).apply {
-                setTitle(title); setSummary(summary); isIconSpaceReserved = false
-                setOnPreferenceClickListener {
-                    startActivity(Intent(ctx, target).apply { if (team) putExtra(ImageActivity.EXTRA_TEAM, true) }); true
-                }
-            })
-        }
-        val checks = category(R.string.team_card_checks)
-        entry(checks, R.string.switch_title, R.string.team_switch_summary, SwitchActivity::class.java)
-        entry(checks, R.string.report_title, R.string.team_phone_summary, DeviceReportActivity::class.java)
-        entry(checks, R.string.tests_title, R.string.team_tests_summary, RunTestsActivity::class.java)
-        val setup = category(R.string.team_card_setup)
-        entry(setup, R.string.prepare_title_team, R.string.team_setup_summary, PrepareActivity::class.java, true)
-        entry(setup, R.string.image_title_team, R.string.team_file_summary, ImageActivity::class.java, true)
-        // 0.4.56: a code the owner enters (the test channel's Drive id), not a switch anyone can turn on.
-        setup.addPreference(EditTextPreference(ctx).apply {
-            key = "update_test_code"
-            setTitle(R.string.team_update_test)
-            isPersistent = false; isIconSpaceReserved = false
-            fun summary() = setSummary(if (AppUpdater.testChannel(ctx)) R.string.team_update_test_on else R.string.team_update_test_summary)
-            text = AppUpdater.testCode(ctx).orEmpty(); summary()
-            setDialogMessage(R.string.team_update_test_dialog)
-            setOnPreferenceChangeListener { _, value ->
-                val ok = AppUpdater.setTestCode(ctx, value as String)
-                if (!ok) Toast.makeText(ctx, R.string.team_update_test_invalid, Toast.LENGTH_LONG).show()
-                summary(); ok
+/** Technical tools & team screens in Material 3 Expressive Compose. */
+class DebugSettingsActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        setContent {
+            DualOsTheme {
+                Screen()
             }
-        })
-        preferenceScreen.addBottomInset()
+        }
+    }
+
+    @Composable
+    private fun Screen() {
+        var previewOn by remember { mutableStateOf(DebugPreview.enabled(this)) }
+        var testChannelOn by remember { mutableStateOf(AppUpdater.testChannel(this)) }
+        var showCodeDialog by remember { mutableStateOf(false) }
+
+        DualOsScaffold(
+            title = stringResource(R.string.team_title),
+            onBack = { finish() },
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 32.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (BuildConfig.DEBUG) {
+                    item {
+                        ExpressiveGroupedCard {
+                            ExpressiveSwitchItem(
+                                title = stringResource(R.string.setup_preview_setting),
+                                subtitle = stringResource(R.string.setup_preview_setting_summary),
+                                icon = Icons.Rounded.Build,
+                                checked = previewOn,
+                                onCheckedChange = {
+                                    previewOn = it
+                                    DebugPreview.setEnabled(this@DebugSettingsActivity, it)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.team_card_checks)) }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = stringResource(R.string.switch_title),
+                            subtitle = stringResource(R.string.team_switch_summary),
+                            icon = DualOsIcons.Power,
+                            showChevron = true,
+                            onClick = { startActivity(Intent(this@DebugSettingsActivity, SwitchActivity::class.java)) },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.report_title),
+                            subtitle = stringResource(R.string.team_phone_summary),
+                            icon = DualOsIcons.PhoneAndroid,
+                            showChevron = true,
+                            onClick = { startActivity(Intent(this@DebugSettingsActivity, DeviceReportActivity::class.java)) },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.tests_title),
+                            subtitle = stringResource(R.string.team_tests_summary),
+                            icon = DualOsIcons.Science,
+                            showChevron = true,
+                            onClick = { startActivity(Intent(this@DebugSettingsActivity, RunTestsActivity::class.java)) },
+                        )
+                    }
+                }
+
+                item { ExpressiveSectionHeader(stringResource(R.string.team_card_setup)) }
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = stringResource(R.string.prepare_title_team),
+                            subtitle = stringResource(R.string.team_setup_summary),
+                            icon = DualOsIcons.Tune,
+                            showChevron = true,
+                            onClick = { startActivity(Intent(this@DebugSettingsActivity, PrepareActivity::class.java).putExtra(PrepareActivity.EXTRA_TEAM, true)) },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.image_title_team),
+                            subtitle = stringResource(R.string.team_file_summary),
+                            icon = DualOsIcons.FolderOpen,
+                            showChevron = true,
+                            onClick = { startActivity(Intent(this@DebugSettingsActivity, ImageActivity::class.java).putExtra(ImageActivity.EXTRA_TEAM, true)) },
+                        )
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.team_update_test),
+                            subtitle = stringResource(if (testChannelOn) R.string.team_update_test_on else R.string.team_update_test_summary),
+                            icon = Icons.Rounded.Edit,
+                            showChevron = true,
+                            onClick = { showCodeDialog = true },
+                        )
+                    }
+                }
+            }
+
+            if (showCodeDialog) {
+                var code by remember { mutableStateOf(AppUpdater.testCode(this@DebugSettingsActivity).orEmpty()) }
+                AlertDialog(
+                    onDismissRequest = { showCodeDialog = false },
+                    title = { Text(stringResource(R.string.team_update_test)) },
+                    text = {
+                        OutlinedTextField(
+                            value = code,
+                            onValueChange = { code = it },
+                            label = { Text(stringResource(R.string.team_update_test_dialog)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val ok = AppUpdater.setTestCode(this@DebugSettingsActivity, code)
+                            if (!ok) Toast.makeText(this@DebugSettingsActivity, R.string.team_update_test_invalid, Toast.LENGTH_LONG).show()
+                            testChannelOn = AppUpdater.testChannel(this@DebugSettingsActivity)
+                            showCodeDialog = false
+                        }) { Text(stringResource(android.R.string.ok)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCodeDialog = false }) { Text(stringResource(android.R.string.cancel)) }
+                    },
+                )
+            }
+        }
     }
 }

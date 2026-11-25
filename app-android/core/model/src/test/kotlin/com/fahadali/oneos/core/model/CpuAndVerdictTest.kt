@@ -74,41 +74,38 @@ class CpuAndVerdictTest {
 
     @Test
     fun cpuFindingInTheDeviceReport() {
-        val ok = CompatEvaluator.evaluate(Fixtures.facts())
+        val ok = CompatEvaluator.evaluate(Fixtures.a53())
         assertEquals(Level.OK, ok.level(CpuRules.ID_OK))
         assertEquals(Verdict.COMPATIBLE, ok.verdict)
 
-        val missing = CompatEvaluator.evaluate(Fixtures.facts(cpu = CpuInfoParser.parse(Fixtures.NO_SVE_CPUINFO)))
-        // 0.4.38: the F8U's first image (Find N6 global) needs no SVE itself, only some of its apps.
-        assertEquals(Level.WARN, missing.level(CpuRules.ID_APP_FEATURES))
-        assertEquals(Verdict.WARNING, missing.verdict)
+        val noSve = CompatEvaluator.evaluate(Fixtures.a53(cpu = CpuInfoParser.parse(Fixtures.NO_SVE_CPUINFO)))
+        assertEquals(Level.OK, noSve.level(CpuRules.ID_OK))
+        assertEquals(Verdict.COMPATIBLE, noSve.verdict)
 
         // Unreadable /proc/cpuinfo is a note, not a warning.
-        val unknown = CompatEvaluator.evaluate(Fixtures.facts(cpu = null))
+        val unknown = CompatEvaluator.evaluate(Fixtures.a53(cpu = null))
         assertEquals(Level.INFO, unknown.level(CpuRules.ID_UNKNOWN))
         assertEquals(Verdict.COMPATIBLE, unknown.verdict)
     }
 
     @Test
-    fun androidVersionOtherThan17Warns() {
-        // 0.4.67: Android 16 has an image (OxygenOS 16); Android 15 (SDK 35) has none.
-        // A phone without a profile is compared with every image of the build.
+    fun androidVersionOtherThan16Warns() {
         val noProfile = SocProps(manufacturer = "Samsung", model = "s5e9955")
         val r = CompatEvaluator.evaluate(Fixtures.facts(model = "SM-S948B", device = "m3s", soc = noProfile, sdk = 35))
         val f = r.find(CompatEvaluator.ID_ANDROID_DIFFERS)!!
         assertEquals(Level.WARN, f.level)
-        assertEquals("Android version differs from the OneOS images (16, 17); switching may not work", f.title)
+        assertEquals("Android version differs from the DualOS images (16); switching may not work", f.title)
         assertNull(r.find(CompatEvaluator.ID_ANDROID_MATCHES))
         assertEquals(Level.OK, CompatEvaluator.evaluate(Fixtures.facts(model = "SM-S948B", device = "m3s", soc = noProfile, sdk = 36)).level(CompatEvaluator.ID_ANDROID_MATCHES))
-        // 0.4.85: a profiled phone with its own systems (the Z Fold8 Ultra's are all Android 17).
-        for (sdk in listOf(35, 36)) {
-            val fold = CompatEvaluator.evaluate(Fixtures.facts(sdk = sdk))
-            assertEquals("The systems for this phone need Android 17: update One UI first", fold.find(CompatEvaluator.ID_ANDROID_DIFFERS)!!.title)
-            assertEquals(Verdict.WARNING, fold.verdict)
-            assertNull(fold.find(CompatEvaluator.ID_ANDROID_MATCHES))
+
+        for (sdk in listOf(35, 37)) {
+            val mismatch = CompatEvaluator.evaluate(Fixtures.a53(sdk = sdk))
+            assertEquals(Level.WARN, mismatch.find(CompatEvaluator.ID_ANDROID_DIFFERS)!!.level)
+            assertEquals(Verdict.WARNING, mismatch.verdict)
+            assertNull(mismatch.find(CompatEvaluator.ID_ANDROID_MATCHES))
         }
 
-        val same = CompatEvaluator.evaluate(Fixtures.facts(sdk = 37))
+        val same = CompatEvaluator.evaluate(Fixtures.a53(sdk = 36))
         assertNull(same.find(CompatEvaluator.ID_ANDROID_DIFFERS))
         assertEquals(Level.OK, same.level(CompatEvaluator.ID_ANDROID_MATCHES))
 
@@ -118,40 +115,25 @@ class CpuAndVerdictTest {
     }
 
     @Test
-    fun oneUi90IsTheTestedVersion() {
-        assertNull(CompatEvaluator.evaluate(Fixtures.facts(oneUi = "90000")).find("oneui-unseen"))
-        assertEquals(Level.WARN, CompatEvaluator.evaluate(Fixtures.facts(oneUi = "90100")).level("oneui-unseen"))
+    fun oneUi80IsTheTestedVersion() {
+        assertNull(CompatEvaluator.evaluate(Fixtures.a53(oneUi = "80000")).find("oneui-unseen"))
+        assertEquals(Level.WARN, CompatEvaluator.evaluate(Fixtures.a53(oneUi = "90000")).level("oneui-unseen"))
     }
 
     @Test
-    fun s25UltraIsATestedPhoneInTheReport() {
-        // Owner, 0.3.1: the S25 Ultra profile is on, untested (the S26 Ultra's WARN);
-        // 0.4.7: the Find X9 Ultra build is marked tested on it.
-        val f = Fixtures.s25Ultra()
-        assertEquals(ModelFamily.S_ULTRA, f.family)
-        assertEquals("Snapdragon 8 Elite (SM8750, sun)", f.soc.display)
-        val r = CompatEvaluator.evaluate(f)
-        assertEquals(Verdict.COMPATIBLE, r.verdict)
-        assertNull(r.find(CompatEvaluator.ID_PROFILE_DISABLED))
-        assertEquals(Level.OK, r.level("tested-model"))
-        assertNull(r.find("untested-model"))
-        assertEquals(Level.OK, r.level("soc-snapdragon"))
-        assertEquals(0, r.count(Level.BLOCK))
+    fun a53IsTestedAndFlagshipsAreOutOfScope() {
+        val a53 = CompatEvaluator.evaluate(Fixtures.a53())
+        assertEquals(Verdict.COMPATIBLE, a53.verdict)
+        assertNull(a53.find(CompatEvaluator.ID_PROFILE_DISABLED))
+        assertEquals(Level.OK, a53.level("tested-model"))
+        assertNull(a53.find("untested-model"))
+        assertEquals(Level.OK, a53.level("soc-exynos"))
+        assertEquals(0, a53.count(Level.BLOCK))
 
-        // Same phone without SVE/SME (the real SM8750): the Find X9 Ultra image does not
-        // need them; a WARN that some OPPO features may crash, never BLOCK.
-        val noSve = CompatEvaluator.evaluate(Fixtures.s25Ultra(cpu = CpuInfoParser.parse(Fixtures.NO_SVE_CPUINFO)))
-        assertEquals(Verdict.WARNING, noSve.verdict)
-        assertEquals(Level.WARN, noSve.level(CpuRules.ID_APP_FEATURES))
-        assertNull(noSve.find(CpuRules.ID_MISSING))
-        assertEquals(0, noSve.count(Level.BLOCK))
-    }
-
-    @Test
-    fun s26UltraIsTested() {
-        val r = CompatEvaluator.evaluate(Fixtures.s26Ultra())
-        assertEquals(Verdict.COMPATIBLE, r.verdict)
-        assertEquals(Level.OK, r.level("tested-model"))
-        assertEquals(0, r.count(Level.BLOCK))
+        for (f in listOf(Fixtures.s25Ultra(), Fixtures.s26Ultra())) {
+            val r = CompatEvaluator.evaluate(f)
+            assertEquals(Verdict.NOT_SUPPORTED, r.verdict)
+            assertEquals(Level.BLOCK, r.level(CompatEvaluator.ID_OUT_OF_SCOPE))
+        }
     }
 }

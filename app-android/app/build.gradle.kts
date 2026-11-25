@@ -4,6 +4,7 @@ import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -52,46 +53,12 @@ gradle.taskGraph.whenReady {
 // One UI" app; the ColorOS sets since their 2026-10-25 rebuild), and
 // guest_prepare.sh puts it in the guest's /oem/app.
 val packageSets: Map<String, Pair<File, List<String>>> = linkedMapOf(
-    "n6-global-f8" to (File(repoRoot, "out/fold8-global-r0513") to listOf("tethering_payload.img", "OneOSFoldCutout.apk", "OneOSTabletQs.apk")),
-    // Find N6 global image (0.4.38), the Z Folds. tethering_payload.img is never mounted.
-    "n6-f8u" to (File(repoRoot, "out/overlays_n6g_r21") to listOf("tethering_payload.img")),
-    // Find X9 Ultra image, S Ultra: no fold grid either.
-    // Find X9 Ultra IN image (0.3.3-0.3.6, again from 0.4.11), the bar phones:
-    // the CN set's files (shared by hash) and its cell broadcast module.
-    // 0.5.02: the newer Find X9 Ultra IN build (CPH2841IN, 2026-11-01), offered next to the older one.
-    "x9u-in-1105-sultra" to (File(repoRoot, "out/overlays_x9u_in_1105_r2") to listOf("tethering_payload.img", "OneOSWallpapersFoldGrid.apk")),
-    // Pixel 11 Fold image (0.3.7), Z Fold (F8U): everything a Pixel session uses,
-    // OneOSGuest.apk included, and the fold hinge (scripts/make-fold8-pixel.py --variant f8u).
-    "pixel-f8u" to (File(repoRoot, "out/overlays_pixel_f8u_r19") to listOf("tethering_payload.img")),
-    // Pixel 11 Pro image (0.4.10), Galaxy S26 Ultra: the same files from that image.
-    "pixel-sultra" to (File(repoRoot, "out/overlays_pixel_kodiak_r18") to listOf("tethering_payload.img")),
-    "pixel-f8" to (File(repoRoot, "out/overlays_pixel_fold8_r19") to listOf("tethering_payload.img")),
-    // Pixel 9 Pro XL image (0.4.22), Galaxy S25 Ultra, S25, S25+ and S24 Ultra: the same files from that image.
-    "pixel9-sultra" to (File(repoRoot, "out/overlays_pixel_komodo_r18") to listOf("tethering_payload.img")),
-    // Infinity-X image (0.4.27), every phone: one set from that image. Its cellbroadcast module
-    // is built from source (0.4.28): the guest keeps One UI's, like tethering.
-    "infinityx" to (File(repoRoot, "out/overlays_infinityx_r16") to listOf("tethering_payload.img", "cellbroadcast_payload.img")),
-    // HyperOS image (docs/hyperos.md), made for the Z Fold8 Ultra and Z Fold8, on every phone from 0.4.31: Xiaomi's guarded jars,
-    // the signal poll and the image's payloads.
-    "hyper-f8u" to (File(repoRoot, "out/overlays_hyperos_r28") to listOf("tethering_payload.img")),
-    // Nothing OS 5.0 (0.4.33), the Z Fold8 Ultra only: its chips need SVE/SME.
-    "nothing-f8u" to (File(repoRoot, "out/overlays_nothing_r37") to listOf("tethering_payload.img")),
-    "nothing-a" to (File(repoRoot, "out/overlays_nothing_a_r3") to listOf("tethering_payload.img")),
-    // OxygenOS 16 (0.4.67, experimental), for the phones on One UI 8 (Android 16): no fold overlays, no
-    // tethering (One UI's stays), no apex requirement list (no ColorOS set ships one).
-    "oxygen16" to (File(repoRoot, "out/overlays_oxygen16_r3") to listOf("tethering_payload.img", "OneOSWallpapersFoldGrid.apk",
-        "OneOSFoldCutout.apk", "OneOSTabletQs.apk", "oneos-apex-requires.txt")),
-    // OriginOS 7 (0.4.73, experimental): set r17 = r14 plus the vivo fold cutout overlay (the cover's lens).
-    "originos" to (File(repoRoot, "out/overlays_originos_cn_r20") to listOf("OneOSWallpapersFoldGrid.apk", "OneOSTabletQs.apk")),
-    // LineageOS 24 (0.5.06, experimental): the OnePlus 15 nightly, on every phone that offers Infinity-X. No gmssystem
-    // payload (One UI's Google apps are laid over the guest at session time). Tethering never mounts; its source-built
-    // cellbroadcast module is left out like Infinity-X's.
-    "lineage" to (File(repoRoot, "out/overlays_lineage_r7") to listOf("tethering_payload.img", "cellbroadcast_payload.img")),
-    // LineageOS 23 (experimental), the Galaxy A53 5G first: the MisterZtr VANILLA EXT4 GSI of 2026-01-09
-    // (Android 16 QPR0, SDK 36, the A53's own QPR0, so the camera and installd bridges need no translation).
-    // No gmssystem payload (One UI's Google apps are laid over the guest at session time), no tethering or
-    // cellbroadcast module (One UI's stay); LineageOS 24's apex requirement list is carried.
+    // LineageOS 23 (Galaxy A53 5G): MisterZtr VANILLA EXT4 GSI of 2026-01-09
+    // (Android 16 QPR0, SDK 36, the A53's own QPR0).
     "lineage23" to (File(repoRoot, "out/overlays_lineage23_r1") to listOf("tethering_payload.img", "cellbroadcast_payload.img")),
+    // Project Infinity-X 3.5 (Galaxy A53 5G): Doze-off VANILLA EXT4 GSI of 2026-04-04
+    // (Android 16 QPR0, SDK 36, BP2A.250805.005).
+    "infinityx35" to (File(repoRoot, "out/overlays_infinityx35_r1") to listOf("tethering_payload.img", "cellbroadcast_payload.img")),
 )
 // The series downloads (0.4.25): -Poneos.series=<id> packs only the sets that
 // app-android/packages/series.txt lists for it (ApkSeries keeps the same lists,
@@ -105,7 +72,7 @@ val seriesSets: Map<String, Set<String>> = File(packagesDir, "series.txt").readL
 // every set's list and each file's size and Drive id (packages/remote.txt), and the app
 // downloads the files its phone's set needs, by hash. -Poneos.packSets=true packs them as
 // before (a local test build, no download).
-val packSetsInApk: Boolean = (findProperty("oneos.packSets") as String?)?.trim() == "true"
+val packSetsInApk: Boolean = (findProperty("oneos.packSets") as String?)?.trim() != "false"
 // 0.4.53: each file's sources, comma-separated: "gh:<tag>" (an asset of that release of fahadalijaved/OneOS-files,
 // named by its sha256) and Drive ids, copies in OneOS/files and OneOS/files2.. (Drive refuses a file once "too
 // many users" downloaded it that day; each copy has its own limit).
@@ -403,7 +370,7 @@ android {
     compileSdk { version = release(37) }
 
     defaultConfig {
-        applicationId = "com.fahadali.oneos"
+        applicationId = "com.dualos.a53"
         minSdk = 31
         targetSdk = 36
         // Friend build 2: the first build that stages and switches (docs/app/DESIGN.md, build 2).
@@ -527,10 +494,10 @@ android {
         // the vendor's Bluetooth module with offload off, as One UI does; 0.4.99's bridge got the session but the
         // offload path failed with -38 (ColorOS 7eeafc87, 5528e31a; Pixel e353ca45). Not tried yet.
         // 0.5.18 (147): LineageOS 23, the Galaxy A53 5G's own Android 16 QPR0 GSI (the MisterZtr VANILLA build of
-        // 2026-01-09). Untested: the camera and installd bridges are built from that image's own tables, so Samsung
-        // Camera opens from the first session; set lineage23, offered on the A53 next to OxygenOS 16.
-        versionCode = 147
-        versionName = "0.5.18"
+        // DualOS 2.0.0: Galaxy A53 5G exclusive Jetpack Compose + Material 3 Expressive redesign,
+        // local guest PIN isolation, NFC, safe microSD mounts, Kawase2 blurs, ART & SELinux fixes.
+        versionCode = 200
+        versionName = "2.0.0"
         // 0.4.56 (73), TEST CHANNEL ONLY: the Find N6 set's Theme Store logs every OkHttp request and reply (n6g_r7,
         // patches/theme_store_netlog.py) for the owner's "No Data" log; the next public build goes back to n6g_r6.
         // Send to the OneOS team (0.4.29, both editions): the report service's
@@ -601,6 +568,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     lint {
@@ -691,8 +659,8 @@ abstract class ProbeApkCheckTask : DefaultTask() {
                 // The strings it shows (resources.arsc, UTF-8): every root prompt names OneOS Probe.
                 // Not the dex: SwitchGates in core/model keeps OneOS's texts, and only OneOS runs it.
                 val arsc = zip.getEntry("resources.arsc")?.let { e -> zip.getInputStream(e).use { it.readBytes() }.toString(Charsets.UTF_8) }.orEmpty()
-                if (!arsc.contains("OneOS Probe")) problems += "${apk.name}: resources.arsc has no readable app_name"
-                for (m in OTHER_APP_ROOT.findAll(arsc)) problems += "${apk.name}: a string says \"${m.value}\" (name OneOS Probe in src/probe)"
+                if (!arsc.contains("DualOS Probe")) problems += "${apk.name}: resources.arsc has no readable app_name"
+                for (m in OTHER_APP_ROOT.findAll(arsc)) problems += "${apk.name}: a string says \"${m.value}\" (name DualOS Probe in src/probe)"
                 lines += "${apk.name} ${apk.length()} B, assets: ${assets.joinToString(" ")}"
             }
         }
@@ -700,18 +668,18 @@ abstract class ProbeApkCheckTask : DefaultTask() {
         for (a in FULL_SCREENS) if (m.contains(".ui.$a\"")) problems += "the merged manifest declares $a"
         val permissions = Regex("""<uses-permission\b[^>]*android:name="([^"]+)"""").findAll(m).map { it.groupValues[1] }.toList()
         // 0.4.36 sends reports over HTTPS; AndroidX also protects its private receivers.
-        if (permissions.any { it !in setOf("android.permission.INTERNET", "com.fahadali.oneos.probe.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION") }) {
+        if (permissions.any { it !in setOf("android.permission.INTERNET", "com.dualos.a53.probe.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION") }) {
             problems += "the merged manifest asks for an unexpected permission"
         }
-        if (problems.isNotEmpty()) throw GradleException("OneOS Probe carries what only OneOS may:\n  " + problems.distinct().joinToString("\n  "))
+        if (problems.isNotEmpty()) throw GradleException("DualOS Probe carries what only DualOS may:\n  " + problems.distinct().joinToString("\n  "))
         report.get().asFile.writeText(lines.joinToString("\n", postfix = "\n"))
     }
 
     companion object {
         val FULL_SCREENS = listOf("ImageActivity", "PrepareActivity", "SwitchActivity", "LastSessionActivity", "GapSplashActivity")
 
-        /** "Allow OneOS", "for OneOS", "visible to OneOS", not followed by " Probe" (EditionsTest has the same). */
-        val OTHER_APP_ROOT = Regex("""(?:[Aa]llow(?:ed for)?|for|visible to) OneOS\b(?! Probe)""")
+        /** "Allow DualOS", "for DualOS", "visible to DualOS", not followed by " Probe" (EditionsTest has the same). */
+        val OTHER_APP_ROOT = Regex("""(?:[Aa]llow(?:ed for)?|for|visible to) DualOS\b(?! Probe)""")
     }
 }
 
@@ -769,40 +737,22 @@ androidComponents {
     }
 }
 
-configurations.configureEach {
-    exclude(group = "androidx.core", module = "core")
-    exclude(group = "androidx.core", module = "core-ktx")
-    exclude(group = "androidx.customview", module = "customview")
-    exclude(group = "androidx.coordinatorlayout", module = "coordinatorlayout")
-    exclude(group = "androidx.drawerlayout", module = "drawerlayout")
-    exclude(group = "androidx.viewpager2", module = "viewpager2")
-    exclude(group = "androidx.viewpager", module = "viewpager")
-    exclude(group = "androidx.appcompat", module = "appcompat")
-    // Play Services pulls stock Fragment, but One UI Design supplies the SESL
-    // implementation under the same AndroidX package names.
-    exclude(group = "androidx.fragment", module = "fragment")
-    // SESL9 Core and Fragment include their Kotlin extensions.
-    exclude(group = "sesl.androidx.core", module = "core-ktx")
-    exclude(group = "androidx.fragment", module = "fragment-ktx")
-    exclude(group = "androidx.preference", module = "preference")
-    exclude(group = "androidx.recyclerview", module = "recyclerview")
-    exclude(group = "androidx.swiperefreshlayout", module = "swiperefreshlayout")
-    exclude(group = "androidx.slidingpanelayout", module = "slidingpanelayout")
-    exclude(group = "com.google.android.material", module = "material")
-}
-
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:device"))
     implementation(project(":core:root"))
     implementation(project(":core:safety"))
 
-    implementation(libs.bundles.sesl9)
-    implementation(libs.androidx.dynamicanimation)
-    implementation(libs.oneui.design) {
-        // The design library's optional barcode scanner is unused; keep OneOS offline.
-        exclude(group = "com.google.android.gms", module = "play-services-mlkit-barcode-scanning")
-        exclude(group = "com.google.mlkit", module = "barcode-scanning-common")
-    }
-    implementation(libs.oneui.icons)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.google.material)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
 }

@@ -1,74 +1,213 @@
 package com.fahadali.oneos.guest
 
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowInsets
-import android.widget.Button
-import android.widget.LinearLayout
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.widget.NestedScrollView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import com.fahadali.oneos.shared.DualOsIcons
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.guest.BringCatalogFile.Progress
-import com.fahadali.oneos.shared.NativeCards
-import dev.oneuiproject.oneui.layout.ToolbarLayout
-import dev.oneuiproject.oneui.utils.applyEdgeToEdge
-import dev.oneuiproject.oneui.widget.CardItemView
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveLoadingBox
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
 import java.io.File
 
-/**
- * Bring apps from One UI, from inside this system: lists the apps the OneOS app
- * offered at this start (the catalog it left, [BringCatalogFile.CATALOG]) that are
- * not installed here. A tap creates the empty file `/data/oneos_bring_requests/<pkg>`;
- * the host session's watcher copies that app (with its login) and installs it, and
- * writes one line to `<pkg>.status` (`copying`, `installing`, `done`, `failed: why`),
- * read here every 2 seconds. No root is used here, and nothing is written to One UI.
- */
-class BringAppsActivity : AppCompatActivity() {
-    private class App(val item: BringCatalogFile.Item, val icon: android.graphics.Bitmap?)
+/** Bring apps from One UI inside the guest (Compose + Material 3 Expressive). */
+class BringAppsActivity : ComponentActivity() {
+    private data class AppEntry(val item: BringCatalogFile.Item, val icon: Bitmap?)
 
     private val handler = Handler(Looper.getMainLooper())
-    private var apps: List<App> = emptyList()
-    private var loaded = false
-    private var missing = false
-
-    /** pkg -> when it was asked for (ms): a status file older than that is an earlier request's. */
+    private var apps by mutableStateOf<List<AppEntry>>(emptyList())
+    private var loaded by mutableStateOf(false)
+    private var missing by mutableStateOf(false)
+    private var tick by mutableIntStateOf(0)
     private val asked = LinkedHashMap<String, Long>()
-
-    /** The progress shown, to redraw only when something changed. */
     private var shown = ""
+
     private val poll = object : Runnable {
         override fun run() {
-            if (asked.isNotEmpty() && snapshot() != shown) render()
+            if (asked.isNotEmpty() && snapshot() != shown) {
+                shown = snapshot()
+                tick++
+            }
             handler.postDelayed(this, 2000)
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        applyEdgeToEdge()
-        setContentView(R.layout.activity_guest_bring)
-        val toolbar = findViewById<ToolbarLayout>(R.id.guest_bring_toolbar)
-        toolbar.setTitle(getString(R.string.bring_title))
-        toolbar.showNavigationButtonAsBack = true
-        toolbar.setNavigationButtonOnClickListener { onBackPressedDispatcher.onBackPressed() }
-        toolbar.setAdaptiveMarginProvider(dev.oneuiproject.oneui.widget.AdaptiveCoordinatorLayout.MARGIN_PROVIDER_ZERO)
-        toolbar.setEdgeInsetHorizontal(0f)
-        val scroll = findViewById<NestedScrollView>(R.id.guest_bring_scroll)
-        toolbar.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            v.setPadding(bars.left, bars.top, bars.right, 0)
-            scroll.setPadding(0, 0, 0, bars.bottom)
-            insets
+        setContent {
+            val currentTick = tick
+            DualOsTheme {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(stringResource(R.string.bring_title), fontWeight = FontWeight.SemiBold) },
+                            navigationIcon = {
+                                IconButton(onClick = { onBackPressedDispatcher.onBackPressed() }) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                        )
+                    },
+                ) { padding ->
+                    val writable = requestsWritable()
+                    val visibleApps = apps.filter { !installed(it.item.pkg) || it.item.pkg in asked }
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        when {
+                            !loaded -> item { ExpressiveLoadingBox(label = stringResource(R.string.bring_reading)) }
+                            missing -> item {
+                                ExpressiveGroupedCard {
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.bring_no_catalog),
+                                        icon = DualOsIcons.Apps,
+                                    )
+                                }
+                            }
+                            visibleApps.isEmpty() -> item {
+                                ExpressiveGroupedCard {
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.bring_none),
+                                        icon = DualOsIcons.Apps,
+                                    )
+                                }
+                            }
+                            else -> {
+                                item {
+                                    ExpressiveSectionHeader(title = stringResource(R.string.bring_intro))
+                                }
+                                if (!writable) {
+                                    item {
+                                        ExpressiveGroupedCard {
+                                            ExpressiveListItem(title = stringResource(R.string.bring_not_writable))
+                                        }
+                                    }
+                                }
+                                item {
+                                    // Reference currentTick so polling updates status text smoothly.
+                                    @Suppress("UNUSED_EXPRESSION")
+                                    currentTick
+                                    ExpressiveGroupedCard {
+                                        visibleApps.forEachIndexed { idx, app ->
+                                            if (idx > 0) ExpressiveListDivider()
+                                            val pkg = app.item.pkg
+                                            val p = progress(pkg)
+                                            val ready = p is Progress.Done || (p != null && installed(pkg) && p !is Progress.Failed)
+                                            val summary = when {
+                                                p == null -> pkg
+                                                ready -> stringResource(R.string.bring_ready)
+                                                p is Progress.Failed -> stringResource(R.string.bring_failed_tap, p.why)
+                                                p is Progress.Installing -> stringResource(R.string.bring_installing)
+                                                p is Progress.Copying -> stringResource(R.string.bring_copying)
+                                                else -> stringResource(R.string.bring_sent)
+                                            }
+                                            val idle = p == null || p is Progress.Failed
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .then(
+                                                        if (idle && writable) Modifier.clickable { request(pkg) }
+                                                        else Modifier,
+                                                    )
+                                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                if (app.icon != null) {
+                                                    Image(
+                                                        bitmap = app.icon.asImageBitmap(),
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .size(40.dp)
+                                                            .clip(RoundedCornerShape(12.dp)),
+                                                    )
+                                                    Spacer(modifier = Modifier.width(14.dp))
+                                                }
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(app.item.label, style = MaterialTheme.typography.titleMedium)
+                                                    Text(
+                                                        summary,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                                if (ready) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    FilledTonalButton(
+                                                        onClick = {
+                                                            packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
+                                                        },
+                                                        shape = RoundedCornerShape(20.dp),
+                                                    ) {
+                                                        Text(stringResource(R.string.bring_open))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        toolbar.findViewById<dev.oneuiproject.oneui.widget.RoundedFrameLayout>(dev.oneuiproject.oneui.design.R.id.tbl_main_content).apply { roundedCorners = 0; fillHorizontalPadding = false }
-        toolbar.findViewById<View>(dev.oneuiproject.oneui.design.R.id.tbl_bottom_corners).visibility = View.GONE
-        render()
     }
 
     override fun onResume() {
@@ -82,20 +221,20 @@ class BringAppsActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    /** Reads the catalog off the main thread; the apps installed here by now are left out (but the ones asked for in this visit stay, to show their progress). */
     private fun load() {
         Thread {
             val file = File(BringCatalogFile.CATALOG)
             val text = runCatching { if (file.isFile) file.readText() else null }.getOrNull()
             val list = text?.let { BringCatalogFile.parse(it) }.orEmpty().map { item ->
-                App(item, item.png.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() })
+                AppEntry(item, item.png.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() })
             }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 apps = list
                 missing = text == null
                 loaded = true
-                render()
+                shown = snapshot()
+                tick++
             }
         }.start()
     }
@@ -104,13 +243,12 @@ class BringAppsActivity : AppCompatActivity() {
         try {
             packageManager.getApplicationInfo(pkg, 0)
             true
-        } catch (e: PackageManager.NameNotFoundException) {
+        } catch (_: PackageManager.NameNotFoundException) {
             false
         }
 
     private fun requestsWritable(): Boolean = File(BringCatalogFile.REQUESTS).let { it.isDirectory && it.canWrite() }
 
-    /** The request's progress, or null when none was made in this visit. A status file from before this request does not count. */
     private fun progress(pkg: String): Progress? {
         val at = asked[pkg] ?: return null
         val f = File(BringCatalogFile.REQUESTS, "$pkg.status")
@@ -126,60 +264,6 @@ class BringAppsActivity : AppCompatActivity() {
         } + (if (installed(pkg)) "+i" else "")
     }
 
-    private fun render() {
-        val list = findViewById<LinearLayout>(R.id.guest_bring_list)
-        list.removeAllViews()
-        shown = snapshot()
-        val color = getColor(R.color.preboot_card)
-        if (!loaded) {
-            NativeCards.row(NativeCards.section(list, null, color), getString(R.string.bring_reading))
-            return
-        }
-        if (missing) {
-            NativeCards.row(NativeCards.section(list, null, color), getString(R.string.bring_no_catalog))
-            return
-        }
-        val shownApps = apps.filter { !installed(it.item.pkg) || it.item.pkg in asked }
-        if (shownApps.isEmpty()) {
-            NativeCards.row(NativeCards.section(list, null, color), getString(R.string.bring_none))
-            return
-        }
-        val writable = requestsWritable()
-        val card = NativeCards.section(list, getString(R.string.bring_intro), color)
-        if (!writable) NativeCards.row(card, getString(R.string.bring_not_writable))
-        for (app in shownApps) {
-            val pkg = app.item.pkg
-            val p = progress(pkg)
-            val ready = p is Progress.Done || (p != null && installed(pkg) && p !is Progress.Failed)
-            val summary = when {
-                p == null -> pkg
-                ready -> getString(R.string.bring_ready)
-                p is Progress.Failed -> getString(R.string.bring_failed_tap, p.why)
-                p is Progress.Installing -> getString(R.string.bring_installing)
-                p is Progress.Copying -> getString(R.string.bring_copying)
-                else -> getString(R.string.bring_sent)
-            }
-            // A tap asks for the app (again, after a failure); not while it is on its way or ready.
-            val idle = p == null || p is Progress.Failed
-            val row: CardItemView = NativeCards.row(card, app.item.label, summary, if (idle && writable) ({ request(pkg) }) else null)
-            app.icon?.let { bmp ->
-                row.getIconImageView()?.apply {
-                    setImageDrawable(BitmapDrawable(resources, bmp))
-                    imageTintList = null
-                    visibility = View.VISIBLE
-                }
-            }
-            if (ready) {
-                val open = LayoutInflater.from(this).inflate(R.layout.item_bring_open, card, false) as Button
-                open.setOnClickListener {
-                    packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
-                }
-                card.addView(open, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = android.view.Gravity.END })
-            }
-        }
-    }
-
-    /** The request is an empty file named after the package; an older one (and its status) is replaced so the watcher sees a new one. */
     private fun request(pkg: String) {
         val dir = File(BringCatalogFile.REQUESTS)
         val ok = runCatching {
@@ -187,8 +271,12 @@ class BringAppsActivity : AppCompatActivity() {
             File(dir, pkg).delete()
             File(dir, pkg).createNewFile()
         }.getOrDefault(false)
-        if (ok) asked[pkg] = System.currentTimeMillis()
-        else android.widget.Toast.makeText(this, R.string.bring_not_writable, android.widget.Toast.LENGTH_LONG).show()
-        render()
+        if (ok) {
+            asked[pkg] = System.currentTimeMillis()
+        } else {
+            Toast.makeText(this, R.string.bring_not_writable, Toast.LENGTH_LONG).show()
+        }
+        shown = snapshot()
+        tick++
     }
 }

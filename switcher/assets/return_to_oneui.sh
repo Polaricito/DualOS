@@ -258,6 +258,7 @@ if [ "$(cat "$KS/boot" 2>/dev/null)" = "$(cat /proc/sys/kernel/random/boot_id 2>
 fi
 pkill -INT -x screenrecord 2>/dev/null && sleep 2
 pkill -9 -f "ctl.stop zygote" 2>/dev/null || true
+pkill -9 -f "suppress-host-svcs" 2>/dev/null || true
 pkill -9 -f "kill -STOP" 2>/dev/null || true
 pkill -9 -f "ui_activator" 2>/dev/null || true
 pkill -9 -f "zygote_exec" 2>/dev/null || true
@@ -282,10 +283,38 @@ if [ -f $S/heat_cap.active ]; then
     # last vote kept the phone at 2.2 of 3.5 GHz after the return until power
     # saving went on and off (0.4.34 report bdbb0509).
     CFL=/sys/devices/system/cpu/cpufreq_limit/cpufreq_max_limit
+    OVL=/sys/devices/system/cpu/cpufreq_limit/over_limit
+    LML=/sys/devices/system/cpu/cpufreq_limit/little_max_limit
+    EMS=/sys/kernel/ems/emstune/req_mode
+    GPU=/sys/kernel/gpu/gpu_max_clock
     if [ -f $S/cpufreq_max_limit.released ] && [ -w $CFL ]; then
         echo -1 > $CFL 2>/dev/null
         hc=" cpufreq_max_limit=$(cat $CFL 2>/dev/null) (One UI's was $(cat $S/cpufreq_max_limit.released))"
         rm -f $S/cpufreq_max_limit.released
+    elif [ -w $CFL ] && [ "$(cat $CFL 2>/dev/null)" != -1 ]; then
+        echo -1 > $CFL 2>/dev/null
+        hc="$hc cpufreq_max_limit=$(cat $CFL 2>/dev/null)"
+    fi
+    for node in $OVL $LML; do
+        if [ -w $node ] && [ "$(cat $node 2>/dev/null)" != -1 ]; then
+            echo -1 > $node 2>/dev/null
+            hc="$hc ${node##*/}=$(cat $node 2>/dev/null)"
+        fi
+    done
+    if [ -w $EMS ] && [ "$(cat $EMS 2>/dev/null)" != 0 ]; then
+        echo 0 > $EMS 2>/dev/null
+        hc="$hc emstune=$(cat $EMS 2>/dev/null)"
+    fi
+    gmax=""
+    if [ -r /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies ]; then
+        gmax=$(awk '{for(i=1;i<=NF;i++)if($i~/^[0-9]+$/){v=int($i/1000000);if(v>m)m=v}}END{print m+0}' /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies 2>/dev/null)
+    elif [ -r /sys/kernel/gpu/gpu_freq_table ]; then
+        gmax=$(awk '{for(i=1;i<=NF;i++)if($i~/^[0-9]+$/)if($i>m)m=$i}END{print m+0}' /sys/kernel/gpu/gpu_freq_table 2>/dev/null)
+    fi
+    case "$gmax" in ''|*[!0-9]*) gmax=0 ;; esac
+    if [ "$gmax" -gt 0 ] && [ -w $GPU ] && [ "$(cat $GPU 2>/dev/null)" != "$gmax" ]; then
+        echo "$gmax" > $GPU 2>/dev/null
+        hc="$hc gpu_max_clock=$(cat $GPU 2>/dev/null)"
     fi
     for p in /sys/devices/system/cpu/cpufreq/policy*; do
         hw=$(cat "$p/cpuinfo_max_freq" 2>/dev/null)
@@ -506,6 +535,9 @@ for c in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/bus
 done
 n=0
 while [ $n -lt 10 ] && grep -q " $STAGE_ROOT/" /proc/mounts; do
+    if [ -n "$BB" ]; then
+        awk -v r="$STAGE_ROOT" 'index($2, r "/") == 1 && $2 !~ /\\/ {print $2}' /proc/mounts | sort -r | "$BB" xargs -n 64 "$BB" umount -l 2>/dev/null || true
+    fi
     awk -v r="$STAGE_ROOT" 'index($2, r "/") == 1 {print $2}' /proc/mounts | sort -r | while read -r m; do
         umnt -l "$m" || true
     done
@@ -847,6 +879,7 @@ done
 # restarted and set it once.
 for k in ro.control_privapp_permissions \
          audio.offload.disable audio.deep_buffer.media audio.offload.video vendor.audio.offload.track.enable \
+         service.sf.cache_dir_available \
          service.bootanim.exit oneos.guest.powerctl oneos.vivo.inner_display qemu.hw.mainkeys vold.has_adoptable; do
     put_back "$k"
 done
@@ -893,6 +926,10 @@ fi
 # guest_prepare.sh re-made /dev/block/loop50-150 and /dev/loop50-150 with mknod:
 # their SELinux label is gone (One UI's apexd and vold need loop_device).
 restorecon /dev/block/loop* /dev/loop* 2>/dev/null
+# Guest crashes routed through host tombstoned can leave host /data/tombstones
+# entries with mismatched SELinux labels; relabel before One UI boots (never
+# delete tombstones: the log collector reads them).
+restorecon -RF /data/tombstones 2>/dev/null || true
 # A guest vold killed in its idle maintenance leaves f2fs in urgent GC.
 [ -f "$BASE/gc_urgent" ] && while read -r f v; do
     [ "$(cat "$f" 2>/dev/null)" = "$v" ] && continue
@@ -962,6 +999,14 @@ for s in $AHAL; do setprop ctl.stop $s; done
 [ -n "$AHAL" ] && sleep 1
 for s in $AHAL; do setprop ctl.start $s; done
 rm -f $S/host_audio_hal_svcs
+# NFC: restart vendor NFC HAL (e.g. sec.android.hardware.nfc@1.2-service) so
+# One UI's SecNfc gets a clean HAL state after the guest's NfcService exits.
+NHAL=$(cat $S/host_nfc_hal_svcs 2>/dev/null)
+for s in $NHAL; do setprop ctl.stop $s 2>/dev/null || true; done
+[ -n "$NHAL" ] && sleep 0.5
+for s in $NHAL; do setprop ctl.start $s 2>/dev/null || true; done
+rm -f $S/host_nfc_hal_svcs
+[ -n "$NHAL" ] && say "NFC HAL services restarted for One UI: $NHAL"
 setprop ctl.start audioserver
 wait_found media.audio_policy 20 || failsafe "One UI's audioserver did not register"
 # The camera HALs first (0.4.38): the guest's Samsung Camera drove them for the
@@ -979,7 +1024,7 @@ setprop ctl.restart wificond
 [ "$(base_prop init.svc.gnss_service)" = running ] && setprop ctl.restart gnss_service
 # One UI's init.zygote64.rc also restarts these two (read on the phone, run 44):
 # Samsung's perf daemon and, when it runs, the tuner service.
-for svc in perfmond media.tuner; do
+for svc in perfmond media.tuner vendor.samsung.hardware.hyper-default vendor.samsung.power-default perfsdkserver; do
     [ "$(base_prop init.svc.$svc)" = running ] && setprop ctl.restart $svc
 done
 # The switch stopped the phone updater; init does not start it again by itself.

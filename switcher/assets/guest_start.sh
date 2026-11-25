@@ -88,13 +88,109 @@ echo "[Pivoted Root] Setting up /data/media and emulated storage..."
 mkdir -p /data/media/0/Android /data/media/0/Pictures/Screenshots /data/media/0/Download /data/media/0/DCIM /data/media/0/Documents
 chown -R 1023:1023 /data/media 2>/dev/null || true
 chmod -R 777 /data/media 2>/dev/null || true
+# Safe microSD exposure (DualOS 2.0.0, ONEOS_GUEST_SDCARD=ro|rw|off, default ro).
+# Runs inside the guest's detached rprivate mount namespace so mounts vanish on
+# exit and never touch One UI's /mnt/media_rw/<UUID>. Strictly kernel-backed
+# mounts only (never fuse/fuseblk/sdcardfs); raw ciphertext (.MetaEcfsFile on a
+# non-ecryptfs mount) is refused, and .MetaEcfsFile on ecryptfs forces ro even
+# if rw was requested. Fails closed (unmounts) if remount,bind,ro fails.
+SD_MODE=ro
+if [ -L /data/oneos_sdcard_mode ]; then
+    SD_MODE=off
+    echo "[Pivoted Root] microSD: /data/oneos_sdcard_mode is a symlink; disabled for safety"
+elif [ -f /data/oneos_sdcard_mode ]; then
+    read -r SD_MODE < /data/oneos_sdcard_mode 2>/dev/null || SD_MODE=ro
+    case "$SD_MODE" in ro|rw|off) ;; *) SD_MODE=ro ;; esac
+fi
+if [ "$SD_MODE" = off ]; then
+    [ -d /data/media/0/ExternalSD ] && [ ! -L /data/media/0/ExternalSD ] && rmdir /data/media/0/ExternalSD 2>/dev/null || true
+    echo "[Pivoted Root] microSD: disabled (ONEOS_GUEST_SDCARD=off)"
+elif [ -L /data/media/0/ExternalSD ]; then
+    echo "[Pivoted Root] microSD: /data/media/0/ExternalSD is a symlink; refused"
+else
+    # Keep the topmost (last) mount per /mnt/media_rw/<UUID> so Samsung's
+    # stacked ecryptfs layer over sdfat/exfat is seen as ecryptfs.
+    _sd_list=$(awk '
+        $2 ~ /^\/mnt\/media_rw\/[^\/]+$/ {
+            u = substr($2, 15)
+            if (u == "emulated" || u == "self" || u == "primary" || u == "obb" || u == "secure") next
+            if (!(u in seen)) { order[++n] = u; seen[u] = 1 }
+            fs[u] = $3
+            mp[u] = $2
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                u = order[i]
+                print u " " fs[u] " " mp[u]
+            }
+        }
+    ' /proc/mounts 2>/dev/null)
+    _sd_total=$(printf '%s\n' "$_sd_list" | awk 'NF == 3 { c++ } END { print c + 0 }')
+    _sd_mounted=0
+    if [ "$_sd_total" -gt 0 ]; then
+        printf '%s\n' "$_sd_list" | while read -r _su _sfs _smp; do
+            case "$_su" in ''|.|..|*/*) continue ;; esac
+            [ -n "$_sfs" ] && [ -d "$_smp" ] || continue
+            case "$_sfs" in
+                exfat|sdfat|vfat|ecryptfs|ext4|f2fs) ;;
+                *)
+                    echo "[Pivoted Root] microSD: skipped $_smp (non-kernel fstype $_sfs)"
+                    continue ;;
+            esac
+            _eff="$SD_MODE"
+            if [ -e "$_smp/.MetaEcfsFile" ]; then
+                if [ "$_sfs" != ecryptfs ]; then
+                    echo "[Pivoted Root] microSD: refused $_smp ($_sfs): .MetaEcfsFile present on non-ecryptfs mount (raw encrypted ciphertext)"
+                    continue
+                fi
+                if [ "$_eff" = rw ]; then
+                    echo "[Pivoted Root] microSD: $_smp has .MetaEcfsFile (One UI encrypted SD); downgrading rw -> ro for safety"
+                    _eff=ro
+                fi
+            fi
+            if [ "$_sd_total" -eq 1 ]; then
+                _sd_dst=/data/media/0/ExternalSD
+            else
+                _sd_dst="/data/media/0/ExternalSD/$_su"
+            fi
+            if [ -L "$_sd_dst" ]; then
+                echo "[Pivoted Root] microSD: $_sd_dst is a symlink; skipped"
+                continue
+            fi
+            mkdir -p "$_sd_dst" 2>/dev/null || continue
+            chown 1023:1023 "$_sd_dst" 2>/dev/null || true
+            chmod 755 "$_sd_dst" 2>/dev/null || true
+            if $BB mount --bind "$_smp" "$_sd_dst"; then
+                if ! $BB mount --make-private "$_sd_dst" 2>/dev/null; then
+                    echo "[Pivoted Root] microSD: WARNING: could not make $_sd_dst private; unmounting for safety"
+                    $BB umount -l "$_sd_dst" 2>/dev/null || true
+                    continue
+                fi
+                if [ "$_eff" = ro ]; then
+                    if ! $BB mount -o remount,bind,ro "$_smp" "$_sd_dst" 2>/dev/null &&
+                       ! $BB mount -o remount,ro,bind "$_sd_dst" 2>/dev/null; then
+                        echo "[Pivoted Root] microSD: WARNING: could not remount $_sd_dst read-only; unmounting for safety"
+                        $BB umount -l "$_sd_dst" 2>/dev/null || true
+                        continue
+                    fi
+                fi
+                echo "[Pivoted Root] microSD: mounted $_smp ($_sfs) -> $_sd_dst ($_eff)"
+            else
+                echo "[Pivoted Root] microSD: could not bind $_smp -> $_sd_dst"
+            fi
+        done
+    else
+        [ -d /data/media/0/ExternalSD ] && [ ! -L /data/media/0/ExternalSD ] && rmdir /data/media/0/ExternalSD 2>/dev/null || true
+        echo "[Pivoted Root] microSD: no host /mnt/media_rw/<UUID> mount active (mode=$SD_MODE)"
+    fi
+fi
 $BB mount -t tmpfs tmpfs /storage 2>/dev/null || true
 mkdir -p /storage/emulated/0
-$BB mount --bind /data/media/0 /storage/emulated/0 2>/dev/null || true
+$BB mount --rbind /data/media/0 /storage/emulated/0 2>/dev/null && $BB mount --make-rprivate /storage/emulated/0 2>/dev/null || true
 mkdir -p /mnt/user/0
 $BB mount -t tmpfs tmpfs /mnt/user/0 2>/dev/null || true
 mkdir -p /mnt/user/0/emulated
-$BB mount --bind /data/media/0 /mnt/user/0/emulated 2>/dev/null || true
+$BB mount --rbind /data/media/0 /mnt/user/0/emulated 2>/dev/null && $BB mount --make-rprivate /mnt/user/0/emulated 2>/dev/null || true
 
 echo "[Pivoted Root] Rootfs successfully activated as /"
 # oneos_switch.sh's TMPDIR ($STAGE/tmp) is not a path of the pivoted
@@ -320,6 +416,12 @@ CD=/data/oneos_composer_before_sf.log
 # each session: a stutter the first time each blur, animation or window shape
 # is drawn. This is the guest's own /data (the stage).
 mkdir -p /data/misc/surfaceflinger && chown 1000:1000 /data/misc/surfaceflinger && chmod 0700 /data/misc/surfaceflinger
+chcon u:object_r:surfaceflinger_data_file:s0 /data/misc/surfaceflinger 2>/dev/null ||
+    chcon u:object_r:system_data_file:s0 /data/misc/surfaceflinger 2>/dev/null || true
+setprop service.sf.cache_dir_available 1 2>/dev/null || true
+if [ -w /dev/cpuset/sf/cpus ]; then
+    echo 0-7 > /dev/cpuset/sf/cpus 2>/dev/null && echo "[Pivoted Root] cpuset /dev/cpuset/sf/cpus -> $(cat /dev/cpuset/sf/cpus 2>/dev/null)" || true
+fi
 echo "[Pivoted Root] Starting guest SurfaceFlinger..."
 # sf.log used to grow without bound: the guest's RenderEngine dumps LLVM IR for
 # every shader it compiles ("Global Value @fullLiteral...") and got to 300+ MB in
@@ -1092,6 +1194,9 @@ if [ -f /data/guest_audio.flag ]; then
             done' oneos_a2dp_watch "$BB" >> /data/oneos_a2dp.log 2>&1 &
         echo "[Pivoted Root] A2DP: Bluetooth stream watch on (the HAL has a bluetooth module; /data/oneos_a2dp.log)"
     fi
+    for cg in /sys/fs/cgroup/cgroup.procs /dev/cpuctl/cgroup.procs /dev/cpuset/cgroup.procs /dev/stune/cgroup.procs; do
+        [ -w "$cg" ] && echo $$ > "$cg" 2>/dev/null || true
+    done
     /system/bin/audioserver > /dev/null 2>&1 &
     AS_PID=$!
     echo "[Pivoted Root] guest audioserver PID: $AS_PID (registers once the guest framework is up)"
@@ -1125,6 +1230,9 @@ if [ -f /data/guest_audio.flag ]; then
             if ! kill -0 $as 2>/dev/null; then
                 [ $d -lt 3 ] || break
                 d=$((d + 1)); sleep 2; t=$((t + 2))
+                for cg in /sys/fs/cgroup/cgroup.procs /dev/cpuctl/cgroup.procs /dev/cpuset/cgroup.procs /dev/stune/cgroup.procs; do
+                    [ -w "$cg" ] && echo $$ > "$cg" 2>/dev/null || true
+                done
                 /system/bin/audioserver > /dev/null 2>&1 & as=$!
                 echo "$(date +%T) guest audioserver died before it registered (${t}s); started again as $as ($d of 3)"
                 continue
@@ -1202,6 +1310,9 @@ if [ -f /data/guest_audio.flag ]; then
                 sleep 1
                 echo "$(date +%T) audio HAL services restarted for the new audioserver: $hs"
             fi
+            for cg in /sys/fs/cgroup/cgroup.procs /dev/cpuctl/cgroup.procs /dev/cpuset/cgroup.procs /dev/stune/cgroup.procs; do
+                [ -w "$cg" ] && echo $$ > "$cg" 2>/dev/null || true
+            done
             /system/bin/audioserver > /dev/null 2>&1 & as=$!; miss=0; r=$((r + 1))
             echo "$(date +%T) guest audioserver $why, restarted as $as"
             ( n=0; while [ $n -lt 30 ] && [ "$(owner)" != "$as" ]; do sleep 2; n=$((n + 1)); done; unsusp ) &
@@ -2113,7 +2224,8 @@ if [ "$DT2W" = 1 ] && command -v getevent >/dev/null 2>&1 && { [ -w /sys/class/s
                 for t in $IDS; do
                     eval s=\$ON_$t
                     [ "$s" = 1 ] && [ ! -f /data/oneos_dt2w_armed.$t ] || continue
-                    [ "$(cat /sys/class/sec/$t/enabled 2>/dev/null)" = 0 ] || { eval HO_$t=; continue; }
+                    en=""; [ -r "/sys/class/sec/$t/enabled" ] && read -r en < "/sys/class/sec/$t/enabled" 2>/dev/null
+                    [ "$en" = 0 ] || { eval HO_$t=; continue; }
                     tsp_on /sys/class/sec/$t
                     tsp_read $t
                     eval ho=\$HO_$t
@@ -2251,15 +2363,104 @@ if [ "$ONEOS_GUEST_ODREFRESH" = 1 ] && [ "$ONEOS_GUEST_JIT_ZYGOTE" != 1 ] && [ -
     JARS=$(for j in $(printf '%s:%s:%s' "${BOOTCLASSPATH:-}" "${SYSTEMSERVERCLASSPATH:-}" "${STANDALONE_SYSTEMSERVER_JARS:-}" | tr ':' ' '); do
                ls -lnL "$j" 2>/dev/null | awk '{ print $5, $6, $7, $NF }'
            done | cksum 2>/dev/null | awk '{ print $1 "-" $2 }')
+    PROFMAN=/apex/com.android.art/bin/profman
+    PROF_DIR="$ADC/oneos_prof"
+    ORIG_JARS=/data/.oneos_orig_jars
+    PROF_STAMP="v1:$JARS"
+    PROF_BCP=$(printf '%s' "${BOOTCLASSPATH:-${DEX2OATBOOTCLASSPATH:-}}" | tr ':' ' ')
+    ODR_EXTRA=""
+    PROF_STAT=none
+    : > /data/oneos_profman.log 2>/dev/null || true
+    mkdir -p "$PROF_DIR"
+    remap_art_prof() {
+        _rp_src="$1" _rp_dst="$2" _rp_ptype="$3" _rp_jars="$4"
+        [ -x "$PROFMAN" ] && [ -f "$_rp_src" ] || return 1
+        _rp_txt="/data/oneos_prof_$$.txt"
+        _rp_out="$PROF_DIR/.${_rp_dst##*/}.tmp"
+        set --
+        for _rp_j in $_rp_jars; do
+            _rp_apk="$ORIG_JARS/${_rp_j##*/}"
+            [ -s "$_rp_apk" ] || _rp_apk="$_rp_j"
+            [ -s "$_rp_apk" ] && set -- "$@" "--apk=$_rp_apk" "--dex-location=$_rp_j"
+        done
+        [ $# -gt 0 ] || return 1
+        if ! "$PROFMAN" --profile-file="$_rp_src" --dump-classes-and-methods "$@" > "$_rp_txt" 2>> /data/oneos_profman.log \
+                || [ ! -s "$_rp_txt" ]; then
+            echo "remap $_rp_src: dump failed (size=$(wc -c < "$_rp_txt" 2>/dev/null || echo 0))" >> /data/oneos_profman.log
+            rm -f "$_rp_txt"
+            return 1
+        fi
+        set --
+        for _rp_j in $_rp_jars; do
+            [ -s "$_rp_j" ] && set -- "$@" "--apk=$_rp_j" "--dex-location=$_rp_j"
+        done
+        : > "$_rp_out"
+        if "$PROFMAN" --create-profile-from="$_rp_txt" --reference-profile-file="$_rp_out" --output-profile-type="$_rp_ptype" "$@" >> /data/oneos_profman.log 2>&1 \
+                && [ -s "$_rp_out" ]; then
+            chown 0:0 "$_rp_out" 2>/dev/null || true
+            chmod 644 "$_rp_out" 2>/dev/null || true
+            chcon u:object_r:system_file:s0 "$_rp_out" 2>/dev/null || true
+            mv -f "$_rp_out" "$_rp_dst"
+            rm -f "$_rp_txt"
+            echo "remap $_rp_src -> $_rp_dst ($(wc -c < "$_rp_dst" 2>/dev/null || echo 0) B)" >> /data/oneos_profman.log
+            return 0
+        fi
+        echo "remap $_rp_src: create-profile-from failed" >> /data/oneos_profman.log
+        rm -f "$_rp_txt" "$_rp_out"
+        return 1
+    }
+    if [ -s "$ORIG_JARS/framework.jar" ] || { [ -d "$ORIG_JARS" ] && [ ! -s "$PROF_DIR/boot-image.prof" ]; }; then
+        remap_art_prof /system/etc/boot-image.prof "$PROF_DIR/boot-image.prof" boot "$PROF_BCP" && PROF_STAT=boot || PROF_STAT=boot_fail
+    elif [ -s "$PROF_DIR/boot-image.prof" ]; then
+        PROF_STAT=cached
+    fi
+    if [ -s "$ORIG_JARS/services.jar" ] && [ -s /system/framework/services.jar.prof ]; then
+        remap_art_prof /system/framework/services.jar.prof "$PROF_DIR/services.jar.prof" app /system/framework/services.jar && PROF_STAT="${PROF_STAT}+svc" || PROF_STAT="${PROF_STAT}+svc_fail"
+    elif [ -s "$PROF_DIR/services.jar.prof" ]; then
+        PROF_STAT="${PROF_STAT}+svc_cached"
+    fi
+    rm -rf "$ORIG_JARS" 2>/dev/null || true
+    case "$PROF_STAT" in
+        *fail*)
+            head -n 10 /data/oneos_profman.log 2>/dev/null | sed 's/^/[Pivoted Root] profman: /'
+            ;;
+    esac
+    if [ -s "$PROF_DIR/boot-image.prof" ] && [ -f /system/etc/boot-image.prof ]; then
+        chown 0:0 "$PROF_DIR/boot-image.prof" 2>/dev/null || true
+        chmod 644 "$PROF_DIR/boot-image.prof" 2>/dev/null || true
+        chcon u:object_r:system_file:s0 "$PROF_DIR/boot-image.prof" 2>/dev/null || true
+        $BB umount -l /system/etc/boot-image.prof 2>/dev/null || true
+        $BB mount --bind "$PROF_DIR/boot-image.prof" /system/etc/boot-image.prof 2>/dev/null || true
+    fi
+    if [ -s "$PROF_DIR/services.jar.prof" ] && [ -f /system/framework/services.jar.prof ]; then
+        chown 0:0 "$PROF_DIR/services.jar.prof" 2>/dev/null || true
+        chmod 644 "$PROF_DIR/services.jar.prof" 2>/dev/null || true
+        chcon u:object_r:system_file:s0 "$PROF_DIR/services.jar.prof" 2>/dev/null || true
+        $BB umount -l /system/framework/services.jar.prof 2>/dev/null || true
+        $BB mount --bind "$PROF_DIR/services.jar.prof" /system/framework/services.jar.prof 2>/dev/null || true
+    else
+        ODR_EXTRA="--system-server-compiler-filter=speed"
+    fi
+    if [ -s "$PROF_DIR/boot-image.prof" ] && [ "$(cat "$ADC/oneos_prof_applied" 2>/dev/null)" != "$PROF_STAMP" ]; then
+        rm -rf "$ADC/dalvik-cache" "$ADC/cache-info.xml"
+    fi
     t0=$(date +%s)
-    timeout 300 "$ODR" --compile > /data/odrefresh.log 2>&1; rc=$?
+    _ODR_RAN_FORCE=0
+    if [ ! -f "$ADC/dalvik-cache/arm64/boot.art" ]; then
+        _ODR_RAN_FORCE=1
+        timeout 300 "$ODR" $ODR_EXTRA --force-compile > /data/odrefresh.log 2>&1; rc=$?
+    else
+        timeout 300 "$ODR" $ODR_EXTRA --compile > /data/odrefresh.log 2>&1; rc=$?
+    fi
     # odrefresh takes the image's own primary boot image as usable and compiles only
     # the mainline extension on top of it, which dex2oat cannot load (OneOS's
     # framework.jar), and aborts in no time (thirteenth run: 0 files). Without a boot
     # image of the guest's own yet: all of it, once.
     if [ ! -f "$ADC/dalvik-cache/arm64/boot.art" ]; then
-        echo "--- no boot image of the guest's own after --compile (exit $rc): --force-compile" >> /data/odrefresh.log
-        timeout 300 "$ODR" --force-compile >> /data/odrefresh.log 2>&1; rc=$?
+        if [ "$_ODR_RAN_FORCE" = 0 ]; then
+            echo "--- no boot image of the guest's own after --compile (exit $rc): --force-compile" >> /data/odrefresh.log
+            timeout 300 "$ODR" $ODR_EXTRA --force-compile >> /data/odrefresh.log 2>&1; rc=$?
+        fi
     else
         # odrefresh died instead of answering (ColorOS 17 trial, 11-10: exit 134,
         # "assertion hasLastUpdateMillis() failed" on a module list entry;
@@ -2271,22 +2472,31 @@ if [ "$ONEOS_GUEST_ODREFRESH" = 1 ] && [ "$ONEOS_GUEST_JIT_ZYGOTE" != 1 ] && [ -
             0|79|80|81|82|124) ;;
             *) if [ -n "$JARS" ] && [ "$(cat "$ADC/oneos_jars" 2>/dev/null)" != "$JARS" ]; then
                    echo "--- --compile ended with exit $rc and the jars are not the ones the artifacts were made from: --force-compile" >> /data/odrefresh.log
-                   timeout 300 "$ODR" --force-compile >> /data/odrefresh.log 2>&1; rc=$?
+                   timeout 300 "$ODR" $ODR_EXTRA --force-compile >> /data/odrefresh.log 2>&1; rc=$?
                else
                    echo "--- --compile ended with exit $rc; the jars are the ones the artifacts were made from: kept" >> /data/odrefresh.log
                fi ;;
         esac
     fi
     case "$rc" in
-        0|80) [ -n "$JARS" ] && [ -f "$ADC/dalvik-cache/arm64/boot.art" ] && echo "$JARS" > "$ADC/oneos_jars" ;;
+        0|80)
+            [ -n "$JARS" ] && [ -f "$ADC/dalvik-cache/arm64/boot.art" ] && echo "$JARS" > "$ADC/oneos_jars"
+            [ -s "$PROF_DIR/boot-image.prof" ] && [ -f "$ADC/dalvik-cache/arm64/boot.oat" ] && echo "$PROF_STAMP" > "$ADC/oneos_prof_applied"
+            ;;
     esac
     CCHAVE=$(boot_cc)
     # Once more only while the whole step stays near the 300 s the zygote waits for.
     if [ -n "$CCHAVE" ] && [ "$CCHAVE" != "$CCWANT" ] && [ $(( $(date +%s) - t0 )) -lt 120 ]; then
         echo "--- boot image concurrent-copying $CCHAVE, the zygote's $CCWANT: removed, --force-compile once more" >> /data/odrefresh.log
         rm -rf "$ADC/dalvik-cache" "$ADC/cache-info.xml"
-        timeout 240 "$ODR" --force-compile >> /data/odrefresh.log 2>&1; rc=$?
+        timeout 240 "$ODR" $ODR_EXTRA --force-compile >> /data/odrefresh.log 2>&1; rc=$?
         CCHAVE=$(boot_cc)
+        case "$rc" in
+            0|80)
+                [ -n "$JARS" ] && [ -f "$ADC/dalvik-cache/arm64/boot.art" ] && echo "$JARS" > "$ADC/oneos_jars"
+                [ -s "$PROF_DIR/boot-image.prof" ] && [ -f "$ADC/dalvik-cache/arm64/boot.oat" ] && echo "$PROF_STAMP" > "$ADC/oneos_prof_applied"
+                ;;
+        esac
     fi
     if [ -n "$CCHAVE" ] && [ "$CCHAVE" != "$CCWANT" ]; then
         # Never leave the zygote a boot image it refuses (it then builds one in memory
@@ -2299,7 +2509,12 @@ if [ "$ONEOS_GUEST_ODREFRESH" = 1 ] && [ "$ONEOS_GUEST_JIT_ZYGOTE" != 1 ] && [ -
     # ART's odrefresh exit codes (exit_code.h): 0 okay, 79 compilation required,
     # 80 compiled, 81 compilation failed, 82 cleanup failed.
     case "$rc" in 0) w="current" ;; 79) w="compilation needed" ;; 80) w="compiled" ;; 81) w="compilation failed" ;; 82) w="cleanup failed" ;; 124) w="timed out" ;; *) w="exit $rc" ;; esac
-    echo "[Pivoted Root] odrefresh: $w in $(( $(date +%s) - t0 )) s ($(ls "$ADC/dalvik-cache/arm64" 2>/dev/null | wc -l) files in $ADC/dalvik-cache/arm64, concurrent-copying ${CCHAVE:-none}, the zygote's $CCWANT; /data/odrefresh.log)"
+    BOOT_OAT_SZ=$(wc -c < "$ADC/dalvik-cache/arm64/boot.oat" 2>/dev/null || echo 0)
+    SVC_ODEX_SZ=0
+    for _so in "$ADC"/dalvik-cache/arm64/*@services.jar@*.odex; do
+        [ -f "$_so" ] && { SVC_ODEX_SZ=$(wc -c < "$_so" 2>/dev/null || echo 0); break; }
+    done
+    echo "[Pivoted Root] odrefresh: $w in $(( $(date +%s) - t0 )) s ($(ls "$ADC/dalvik-cache/arm64" 2>/dev/null | wc -l) files in $ADC/dalvik-cache/arm64, boot.oat=${BOOT_OAT_SZ}B, services.odex=${SVC_ODEX_SZ}B, prof=${PROF_STAT}, concurrent-copying ${CCHAVE:-none}, the zygote's $CCWANT; /data/odrefresh.log)"
 else
     echo "[Pivoted Root] odrefresh: not run (ONEOS_GUEST_ODREFRESH=$ONEOS_GUEST_ODREFRESH, JIT zygote $ONEOS_GUEST_JIT_ZYGOTE)"
 fi

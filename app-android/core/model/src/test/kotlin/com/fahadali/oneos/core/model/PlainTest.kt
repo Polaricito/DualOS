@@ -14,9 +14,9 @@ import org.junit.Test
  */
 class PlainTest {
     /** A system that is not in the table yet, to show `{system}` is the table's. */
-    private val pixel = Images.FIND_N6.copy(id = "pixel-test", name = "Pixel 11 Fold", variant = null, shortName = "Pixel")
+    private val custom = Images.LINEAGE23.copy(id = "custom-test", name = "Custom System", variant = null, shortName = "Custom")
 
-    private val images: List<ImageRef?> = Images.ALL + pixel + null
+    private val images: List<ImageRef?> = Images.ALL + custom + null
     private val phones: List<PhoneProfile?> = Profiles.BUILT_IN + null
 
     /** Every (id, reason, level) a gate or rule can produce (BLOCK and WARN, plus the INFO the Switch dialog shows). */
@@ -101,15 +101,15 @@ class PlainTest {
 
     @Test
     fun theActionsFitTheProblem() {
-        fun of(id: String, reason: String, image: ImageRef? = Images.FIND_N6, pf: PlainFacts = PlainFacts()) =
-            Plain.of(Finding(id, Level.BLOCK, "", "", reason), image, Profiles.F8U, pf)
+        fun of(id: String, reason: String, image: ImageRef? = Images.LINEAGE23, pf: PlainFacts = PlainFacts()) =
+            Plain.of(Finding(id, Level.BLOCK, "", "", reason), image, Profiles.A53, pf)
         assertEquals(FixAction.OPEN_LOCK_SETTINGS, of(SwitchGates.ID_SCREEN_LOCK, ScreenLockRule.R_SET).action)
         assertEquals("Turn off your screen lock", of(SwitchGates.ID_SCREEN_LOCK, ScreenLockRule.R_SET).title)
         assertEquals(FixAction.RESTORE, of(SwitchGates.ID_STAGE, SwitchGates.R_STAGE_UNFINISHED).action)
         assertEquals(FixAction.NONE, of(SwitchGates.ID_STAGE, SwitchGates.R_STAGE_MOUNTED).action)
         assertEquals(FixAction.OPEN_OLD_SWITCHER_INFO, of(SwitchGates.ID_OLD_SWITCHER, SwitchGates.R_OLD_SWITCHER_INSTALLED).action)
         assertEquals(FixAction.UPDATE, of(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_OTHER_VERSION).action)
-        assertEquals("Finish updating ColorOS 17", of(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_OTHER_VERSION).title)
+        assertEquals("Finish updating LineageOS 23", of(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_OTHER_VERSION).title)
         assertTrue(of(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_OTHER_VERSION).line.contains("No download"))
         assertFalse(of(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_OTHER_VERSION, pf = PlainFacts(installedReusable = false)).line.contains("No download"))
         assertEquals(FixAction.REPAIR, of(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_FILES_CHANGED).action)
@@ -124,56 +124,53 @@ class PlainTest {
         assertEquals(FixAction.TRY_AGAIN, of(SwitchGates.ID_ROOT, SwitchGates.R_ROOT_DENIED).action)
         // KernelSU hides su from apps it has not allowed: with a root app found, no su is a grant to give.
         assertEquals("Allow root access", of(SwitchGates.ID_ROOT, SwitchGates.R_ROOT_NO_SU, pf = PlainFacts(rootApp = "KernelSU")).title)
-        assertEquals("OneOS needs a rooted phone", of(SwitchGates.ID_ROOT, SwitchGates.R_ROOT_NO_SU).title)
+        assertEquals("DualOS needs a rooted phone", of(SwitchGates.ID_ROOT, SwitchGates.R_ROOT_NO_SU).title)
         // Space: what is missing, from the facts.
         val space = of(SwitchGates.ID_SPACE, SwitchGates.R_SPACE_SETUP, pf = PlainFacts(freeBytes = 15_000_000_000, needBytes = 22_100_000_000))
-        assertEquals("Free up 7.1 GB to set up ColorOS 17", space.title)
+        assertEquals("Free up 7.1 GB to set up LineageOS 23", space.title)
         assertEquals("It needs about 22.1 GB; you have 15.0 GB.", space.line)
         assertEquals(FixAction.FREE_UP_SPACE, space.action)
-        // The phone list comes from the profiles: every name while they fit one line (0.4.28),
-        // the families once they do not (0.4.29, with the A57 and Z Flip5).
         assertEquals(
-            "OneOS works on 55 Galaxy phones so far: Z Fold, S, Z Flip, A, F and M models; the README lists them.",
+            "DualOS works on the Galaxy A53 5G.",
             of(SwitchGates.ID_PROFILE, SwitchGates.R_PROFILE_NONE).line,
         )
-        assertEquals("the Galaxy Z Fold (F8U), S26 Ultra and S25", Plain.phoneList(listOf(Profiles.F8U, Profiles.S_ULTRA_8850, Profiles.S_8750)))
-        assertEquals("the Galaxy S26", Plain.phoneList(listOf(Profiles.S_8850, Profiles.S_8850_JP)))
+        assertEquals("the Galaxy A53 5G", Plain.phoneList(listOf(Profiles.A53)))
         // Ticks: the same text as the gate's (part of the tick's key).
-        val calls = Plain.of(Finding(SwitchGates.ID_CARRIER, Level.WARN, "", "", CarrierRules.R_VOLTE_ONLY), pixel, Profiles.F8U)
+        val calls = Plain.of(Finding(SwitchGates.ID_CARRIER, Level.WARN, "", "", CarrierRules.R_VOLTE_ONLY), custom, Profiles.A53)
         assertEquals(FixAction.ACKNOWLEDGE, calls.action)
-        assertEquals(CarrierRules.noCallsAck("Pixel 11 Fold"), calls.line)
+        assertEquals(CarrierRules.noCallsAck("Custom System"), calls.line)
     }
 
-    /** The gates themselves, on the four phones and every way they can refuse: each BLOCK and WARN has a reason Plain knows. */
+    /** The gates themselves, on the A53 and every way they can refuse: each BLOCK and WARN has a reason Plain knows. */
     @Test
     fun everyRealGateRefusalHasAReason() {
         val reports = mutableListOf<GateReport>()
-        for (phone in Bundles.ALL) {
-            val profile = Profiles.resolve(phone.facts).profile!!
-            for (c in profile.choices) {
-                val image = Images.byId(c.imageId)!!
-                val gz = ImageFileCheck(image.gzName, image.gzBytes, image.gzSha256, image.gzBytes)
-                val marker = StageMarker(4, profile.id, image.id, c.packageSetId, 1)
-                val good = GateInput(
-                    facts = phone.facts, screenLockSet = false, oldSwitcherInstalled = false, installd = phone.installd,
-                    stage = StageState(emptyList(), emptyList(), false, marker, true), imageFile = gz, appVersionCode = 4,
-                )
-                val bad = listOf(
-                    good,
-                    good.copy(screenLockSet = true, oldSwitcherInstalled = true),
-                    good.copy(screenLockSet = null, oldSwitcherInstalled = null, installd = null, stage = null, freeBytes = null, carrier = null),
-                    good.copy(facts = phone.facts.copy(battery = BatteryInfo(10, false, 30f), root = RootSignals()), freeBytes = 1),
-                    good.copy(facts = phone.facts.copy(battery = BatteryInfo(90, true, 45f), sdk = 36, form = phone.facts.form.copy(form = FormFactor.FLIP))),
-                    good.copy(stage = StageState(listOf("/x"), emptyList(), true, marker, false)),
-                    good.copy(stage = StageState(emptyList(), listOf("/data/app"), false, marker, false, unfinishedSession = true)),
-                    good.copy(stage = StageState(emptyList(), emptyList(), false, null, false), imageFile = gz.copy(sha256 = null)),
-                    good.copy(stage = StageState(emptyList(), emptyList(), false, marker.copy(versionCode = 3), true), imageFile = gz.copy(sha256 = "0".repeat(64))),
-                    good.copy(stage = StageState(emptyList(), emptyList(), false, marker.copy(setId = "x9u-in-sultra"), true), imageFile = ImageFileCheck("a", 7)),
-                    good.copy(stage = StageState(emptyList(), emptyList(), false, marker.copy(profileId = "other"), true), imageFile = null),
-                    good.copy(stage = StageState(emptyList(), emptyList(), false, marker, false), uncollectedLogs = true),
-                )
-                for (i in bad) for (phase in GatePhase.entries) reports += SwitchGates.evaluate(phase, i)
-            }
+        val facts = Fixtures.a53()
+        val installd = Fixtures.A53_INSTALLD
+        val profile = Profiles.resolve(facts).profile!!
+        for (c in profile.choices) {
+            val image = Images.byId(c.imageId)!!
+            val gz = ImageFileCheck(image.gzName, image.gzBytes, image.gzSha256, image.gzBytes)
+            val marker = StageMarker(4, profile.id, image.id, c.packageSetId, 1)
+            val good = GateInput(
+                facts = facts, screenLockSet = false, oldSwitcherInstalled = false, installd = installd,
+                stage = StageState(emptyList(), emptyList(), false, marker, true), imageFile = gz, appVersionCode = 4,
+            )
+            val bad = listOf(
+                good,
+                good.copy(screenLockSet = true, oldSwitcherInstalled = true),
+                good.copy(screenLockSet = null, oldSwitcherInstalled = null, installd = null, stage = null, freeBytes = null, carrier = null),
+                good.copy(facts = facts.copy(battery = BatteryInfo(10, false, 30f), root = RootSignals()), freeBytes = 1),
+                good.copy(facts = facts.copy(battery = BatteryInfo(90, true, 45f), sdk = 35, form = facts.form.copy(form = FormFactor.FLIP))),
+                good.copy(stage = StageState(listOf("/x"), emptyList(), true, marker, false)),
+                good.copy(stage = StageState(emptyList(), listOf("/data/app"), false, marker, false, unfinishedSession = true)),
+                good.copy(stage = StageState(emptyList(), emptyList(), false, null, false), imageFile = gz.copy(sha256 = null)),
+                good.copy(stage = StageState(emptyList(), emptyList(), false, marker.copy(versionCode = 3), true), imageFile = gz.copy(sha256 = "0".repeat(64))),
+                good.copy(stage = StageState(emptyList(), emptyList(), false, marker.copy(setId = "other-set"), true), imageFile = ImageFileCheck("a", 7)),
+                good.copy(stage = StageState(emptyList(), emptyList(), false, marker.copy(profileId = "other"), true), imageFile = null),
+                good.copy(stage = StageState(emptyList(), emptyList(), false, marker, false), uncollectedLogs = true),
+            )
+            for (i in bad) for (phase in GatePhase.entries) reports += SwitchGates.evaluate(phase, i)
         }
         reports += SwitchGates.evaluate(GatePhase.SWITCH, GateInput(Fixtures.facts(model = "SM-X000"), false, false, null, null))
         var seen = 0
@@ -188,70 +185,69 @@ class PlainTest {
                 check(Plain.of(f, r, null), r.image, what)
             }
         }
-        assertTrue(seen > 100)
+        assertTrue(seen > 20)
     }
 
     @Test
     fun rootRefusalsAtSwitchTime() {
-        fun r(p: String) = Plain.switchRefused(p, Images.FIND_N6, Profiles.F8U)
+        fun r(p: String) = Plain.switchRefused(p, Images.LINEAGE23, Profiles.A53)
         assertEquals("Your root app is missing a tool", r("no busybox at the root manager's paths").title)
         assertEquals("Your root app is missing a tool", r("no resetprop at the root manager's paths").title)
-        assertEquals("OneOS can't read the volume keys", r("no Volume Up key found (getevent)").title)
+        assertEquals("DualOS can't read the volume keys", r("no Volume Up key found (getevent)").title)
         assertEquals(FixAction.FREE_UP_SPACE, r("less than 11 GiB free on /data").action)
         assertEquals("Charge your phone", r("battery at 12% and not charging").title)
         assertEquals("Let your phone cool down", r("battery too warm").title)
         assertEquals(FixAction.OPEN_OLD_SWITCHER_INFO, r("the old switcher (com.wewaffles.onelineage) is installed: uninstall it").action)
         assertEquals(FixAction.RESTORE, r("the last session never returned: restore One UI's settings first (Last session)").action)
         assertEquals(FixAction.UPDATE, r("prepared by app build 8, this is build 9: prepare again").action)
-        // The started switch's own refusal, passed on by root since 0.4.96.
         val full = "One UI's property space is nearly full (4 KB left in u:object_r:system_prop:s0): the sessions since the phone last " +
             "restarted used it up. Restart the phone, then switch again"
         assertEquals("Restart your phone first", r(full).title)
         assertTrue(r(full).line, "ran out of room" in r(full).line)
-        check(r(full), Images.FIND_N6, full)
+        check(r(full), Images.LINEAGE23, full)
         assertTrue("still running" in r("a session of this stage is still running").line)
         val thermal = "One UI's thermal HAL is not running (thermal service: HAL Ready: false) and a root module that turns thermal " +
             "control off is on: some_module. The other system's framework would wait for that HAL and stop after a minute, and One " +
             "UI's own after the return too. Turn the module off in your root manager, restart the phone, then switch again"
         assertEquals("Turn off the thermal module first", r(thermal).title)
         assertTrue(r(thermal).line, "Turn it off" in r(thermal).line)
-        check(r(thermal), Images.FIND_N6, thermal)
+        check(r(thermal), Images.LINEAGE23, thermal)
         val mounted = "mounted under the stage (/data/local/tmp/oneos/root ): a session is running or never returned; return to One UI (reboot) first"
         assertEquals("Restart your phone first", r(mounted).title)
         assertEquals(FixAction.NONE, r(mounted).action)
         assertEquals(FixAction.RESTORE, r("the last session never returned: restore One UI's settings first (Last session)").action)
         val timer = "the app com.roottimer.app runs a kernel tool (libtimer.so, pid 16066) that crashed the kernel of S24 phones during " +
-            "OneOS sessions. It starts again after every restart, so restarting does not help: uninstall com.roottimer.app (Settings, " +
+            "DualOS sessions. It starts again after every restart, so restarting does not help: uninstall com.roottimer.app (Settings, " +
             "Apps; the phone may restart once while its tool closes), then switch again"
         assertEquals("Turn off an app first", r(timer).title)
         assertEquals(FixAction.TURN_OFF_TOOL_APP, r(timer).action)
         assertTrue(r(timer).line, r(timer).line.startsWith("com.roottimer.app "))
-        check(r(timer), Images.FIND_N6, timer)
-        check(r("the app com.example.a.very.long.package.name.that.goes.on runs its kernel tool (libtimer.so, pid 1)"), Images.FIND_N6, "long")
+        check(r(timer), Images.LINEAGE23, timer)
+        check(r("the app com.example.a.very.long.package.name.that.goes.on runs its kernel tool (libtimer.so, pid 1)"), Images.LINEAGE23, "long")
         val other = r("pm does not answer")
         assertEquals("Couldn't switch", other.title)
         assertEquals(FixAction.SEND_REPORT, other.action)
         for (p in listOf("no busybox", "no Volume Up key", "less than 11 GiB free on /data", "battery too warm", "x", "pm does not answer")) {
-            check(r(p), Images.FIND_N6, p)
+            check(r(p), Images.LINEAGE23, p)
         }
     }
 
     @Test
     fun setupFailures() {
-        fun s(m: String, stopped: Boolean = false) = Plain.setupFailed(m, stopped, pixel)
+        fun s(m: String, stopped: Boolean = false) = Plain.setupFailed(m, stopped, custom)
         assertEquals("Setup stopped", s("Stopped.", stopped = true).title)
-        assertEquals("Pixel 11 Fold isn't ready. Set it up again whenever you like.", s("x", stopped = true).line)
+        assertEquals("Custom System isn't ready. Set it up again whenever you like.", s("x", stopped = true).line)
         assertEquals("The download is damaged", s("The image: the .gz SHA-256 differs").title)
         assertEquals("The download is damaged", s("The image: unpacked to 5 bytes, not 10").title)
-        assertEquals("This copy of OneOS is damaged", s("art_payload.img in the app is damaged").title)
+        assertEquals("This copy of DualOS is damaged", s("art_payload.img in the app is damaged").title)
         assertEquals("One UI changed during setup", s("installd table: host_installd.table: services.jar is not the jar the table was derived from (One UI updated?)").title)
         assertEquals("Couldn't read the download", s("IOException: cannot open the picked file").title)
         val other = s("Stage folder: exit 3: something")
         assertEquals("Setup didn't finish", other.title)
         assertEquals(FixAction.SEND_REPORT, other.action)
         for (m in listOf("x", "the .gz SHA-256 differs", "in the app is damaged", "services.jar is not the jar", "IOException")) {
-            check(s(m), pixel, m)
-            check(s(m, stopped = true), pixel, m)
+            check(s(m), custom, m)
+            check(s(m, stopped = true), custom, m)
         }
         assertNull(Plain.defaultLabel(FixAction.NONE))
     }

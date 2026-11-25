@@ -3,4 +3,6 @@
     <!-- Pixel SystemUI's own doze service, and AOD offered (Settings, Lock screen). -->
     <string name="config_dozeComponent" translatable="false">com.android.systemui/com.android.systemui.doze.DozeService</string>
     <bool name="config_dozeAlwaysOnDisplayAvailable">true</bool>
+    <!-- Grant configurator-level permissions (WRITE_DEVICE_CONFIG) to GmsCore on VANILLA GSIs so PlatformConfigurator stops throwing SecurityException loops. -->
+    <string name="config_deviceConfiguratorPackageName" translatable="false">com.google.android.gms</string>
 </resources>

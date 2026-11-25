@@ -49,8 +49,10 @@ object BringApps {
      */
     val PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
 
-    /** OneOS's own packages and the known root managers: never offered, never brought. */
+    /** OneOS/DualOS own packages and the known root managers: never offered, never brought. */
     val NEVER = setOf(
+        "com.dualos.a53",
+        "com.dualos.a53.probe",
         "com.fahadali.oneos",
         "com.fahadali.oneos.guest",
         "com.fahadali.oneos.probe",

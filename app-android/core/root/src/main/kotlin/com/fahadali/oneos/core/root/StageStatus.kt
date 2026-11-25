@@ -22,44 +22,24 @@ data class StageEntry(val type: Char, val uid: Int, val mode: String, val size: 
 enum class GuestData {
     NONE,
     EMPTY,
-    COLOROS,
     LINEAGEOS,
 
-    /** Pixel's launcher, com.google.android.apps.nexuslauncher (the Pixel image's system_ext/priv-app), and no ColorOS package (0.3.7). */
-    PIXEL,
-
-    /**
-     * Infinity-X's updater, com.infinity.updater (0.4.27): its data also has
-     * OPPO's (com.oplus., com.coloros.) and LineageOS's packages, so this
-     * word goes first.
-     */
+    /** Infinity-X packages (com.infinity.*): its data also has LineageOS's packages, so check first. */
     INFINITYX,
-    /** Xiaomi's com.miui. packages (HyperOS), and no ColorOS or Pixel package. */
-    HYPEROS,
 
-    /**
-     * OnePlus's membership app, com.oneplus.membership (OxygenOS 16, 0.4.67): its data also has
-     * OPPO's packages (com.oplus.), so this word goes before ColorOS's. Android 16 data: never kept
-     * for an Android 17 ColorOS image, and ColorOS 17's never for it.
-     */
-    OXYGENOS,
-    /**
-     * vivo's launcher, com.bbk.launcher2 (OriginOS 7, 0.4.73): vivo's data, never kept for another family's
-     * image nor another family's for it.
-     */
-    ORIGINOS,
+    /** Evolution X's updater/packages. */
+    EVOX,
+
+    /** Any other or legacy unsupported ROM family in `$STAGE/data`. */
     OTHER,
     ;
 
-    /** The system that made the data, when its packages tell; null for none, an empty folder, LineageOS's or unknown data. */
+    /** The system that made the data, when its packages tell; null for none, empty or unknown data. */
     val family: SystemFamily?
         get() = when (this) {
-            COLOROS -> SystemFamily.COLOROS
-            PIXEL -> SystemFamily.PIXEL
+            LINEAGEOS -> SystemFamily.LINEAGE
             INFINITYX -> SystemFamily.INFINITYX
-            HYPEROS -> SystemFamily.HYPEROS
-            OXYGENOS -> SystemFamily.OXYGENOS
-            ORIGINOS -> SystemFamily.ORIGINOS
+            EVOX -> SystemFamily.EVOX
             else -> null
         }
 
@@ -154,10 +134,9 @@ data class StageStatus(
             otherImageData(imageId) != null -> listOf(RootScript.BeginMode.ASIDE)
             image != null && guest.otherSystemThan(image) -> listOf(RootScript.BeginMode.ASIDE)
             ours -> listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
-            partial && guest != GuestData.LINEAGEOS -> listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
-            guest == GuestData.COLOROS || guest == GuestData.PIXEL || guest == GuestData.INFINITYX || guest == GuestData.HYPEROS ||
-                guest == GuestData.OXYGENOS || guest == GuestData.ORIGINOS ->
+            partial && (guest == GuestData.NONE || guest == GuestData.EMPTY || guest.family != null) ->
                 listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
+            safe && guest.family != null -> listOf(RootScript.BeginMode.KEEP, RootScript.BeginMode.ASIDE)
             else -> listOf(RootScript.BeginMode.ASIDE)
         }
     }
@@ -374,12 +353,11 @@ data class StageStatus(
             val guest = when {
                 statuses["stage.guest"] != ProbeStatus.OK -> GuestData.NONE
                 guestLines.any { it == "packages $INFINITYX_WORD" } -> GuestData.INFINITYX
-                guestLines.any { it == "packages $OXYGENOS_WORD" } -> GuestData.OXYGENOS
-                guestLines.any { it == "packages $ORIGINOS_WORD" } -> GuestData.ORIGINOS
+                // Legacy/other OEM or non-LineageOS systems are treated as foreign data (OTHER), never silently kept.
+                guestLines.any { it == "packages $OXYGENOS_WORD" || it == "packages $ORIGINOS_WORD" ||
+                    it == "packages com.oplus." || it == "packages com.coloros." ||
+                    it == "packages $PIXEL_WORD" || it == "packages $HYPEROS_WORD" } -> GuestData.OTHER
                 guestLines.any { it == "packages org.lineageos." } -> GuestData.LINEAGEOS
-                guestLines.any { it == "packages com.oplus." || it == "packages com.coloros." } -> GuestData.COLOROS
-                guestLines.any { it == "packages $PIXEL_WORD" } -> GuestData.PIXEL
-                guestLines.any { it == "packages $HYPEROS_WORD" } -> GuestData.HYPEROS
                 guestLines.any { it == "packages none" } -> GuestData.EMPTY
                 else -> GuestData.OTHER
             }
@@ -425,8 +403,8 @@ data class StageStatus(
         const val PIXEL_WORD = "com.google.android.apps.nexuslauncher"
         const val HYPEROS_WORD = "com.miui."
 
-        /** Infinity-X's updater (its system_ext/priv-app/Updater). */
-        const val INFINITYX_WORD = "com.infinity.updater"
+        /** Infinity-X package prefix (e.g. com.infinity.updater, com.infinity.udfps.animations). */
+        const val INFINITYX_WORD = "com.infinity."
 
         /** OnePlus's membership app (OxygenOS 16's my_stock/app/OPMemberShip). */
         const val OXYGENOS_WORD = "com.oneplus.membership"

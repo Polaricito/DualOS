@@ -83,32 +83,10 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
         StageCheck.state.busy || PrepareJob.state.busy || LaunchJob.state.busy || LogJob.state.busy ||
             OldStagesJob.state.busy || RemoveJob.state.busy
 
-    /** Reads update.json unless it was read in the last hours ([force]: now). */
+    /** Upstream self-update check disabled in DualOS (local A53 builds are independent of upstream OneOS). */
     fun check(ctx: Context, force: Boolean = false) {
-        if (state.busy) return
-        val app = ctx.applicationContext
-        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        if (!force && state.phase != Phase.IDLE && now - prefs.getLong("checked", 0) < CHECK_EVERY_MS) return
-        update(state.copy(phase = Phase.CHECKING, message = null))
-        executor.execute {
-            val testUrl = AppUpdate.testUrl(testCode(app))
-            val test = testUrl != null
-            val r = runCatching { AppUpdate.parse(fetchText(testUrl ?: AppUpdate.URL), test).getOrThrow() }
-            prefs.edit().putLong("checked", now).apply()
-            val u = r.getOrNull()
-            update(
-                when {
-                    u == null -> State(Phase.FAILED, message = "Could not check for an update: ${r.exceptionOrNull()?.message ?: "no answer"}")
-                    u.newerThan(BuildConfig.VERSION_CODE) -> State(Phase.AVAILABLE, u)
-                    else -> State(Phase.CURRENT, u)
-                },
-            )
-            // The APK an earlier update installed stayed in files/oneos-update (0.4.44): only the
-            // update on offer is kept (its part, to resume, or its download, checked again before use).
-            val keep = u?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }?.let { setOf("OneOS-${it.versionCode}.part", APK) }.orEmpty()
-            dir(app).listFiles()?.filter { it.name !in keep }?.forEach { it.delete() }
-        }
+        if (!force && state.phase == Phase.CURRENT) return
+        update(State(Phase.CURRENT))
     }
 
     fun canInstall(): Boolean =
@@ -126,7 +104,7 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
         val u = state.update ?: return
         if (state.busy || !u.newerThan(BuildConfig.VERSION_CODE)) return
         if (othersBusy()) {
-            update(State(Phase.FAILED, u, message = "OneOS is busy: update when the setup or check has finished."))
+            update(State(Phase.FAILED, u, message = "DualOS is busy: update when the setup or check has finished."))
             return
         }
         val app = ctx.applicationContext
@@ -135,17 +113,17 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
         executor.execute {
             val r = runCatching {
                 val apk = File(dir(app), APK)
-                val part = File(dir(app), "OneOS-${u.versionCode}.part")
+                val part = File(dir(app), "DualOS-${u.versionCode}.part")
                 // The download an earlier try checked is used again (0.4.45): Try again downloaded it each time.
-                val have = apk.length() == u.bytes && runCatching { SetDownloader.verify(apk, u.bytes, u.sha256, "OneOS ${u.versionName}") }.isSuccess
+                val have = apk.length() == u.bytes && runCatching { SetDownloader.verify(apk, u.bytes, u.sha256, "DualOS ${u.versionName}") }.isSuccess
                 if (!have) {
                     dir(app).listFiles()?.filter { it != part }?.forEach { it.delete() }
                     if (part.length() > u.bytes) part.delete()
-                    SetDownloader.download(part, u.apk, u.bytes, "OneOS ${u.versionName}", { cancelled }) { done ->
+                    SetDownloader.download(part, u.apk, u.bytes, "DualOS ${u.versionName}", { cancelled }) { done ->
                         val pct = (done * 100 / u.bytes).toInt()
                         if (pct != state.percent) update(State(Phase.DOWNLOADING, u, pct))
                     }
-                    SetDownloader.verify(part, u.bytes, u.sha256, "OneOS ${u.versionName}")
+                    SetDownloader.verify(part, u.bytes, u.sha256, "DualOS ${u.versionName}")
                     if (!part.renameTo(apk)) throw IOException("could not keep the update")
                 }
                 apk.setReadable(true, false)
@@ -166,7 +144,7 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
                 r.isFailure -> update(State(Phase.FAILED, u, message = "The update was not installed: ${r.exceptionOrNull()?.message ?: "unknown error"}"))
                 // Android's installer may have answered already ([onInstallerResult]).
                 r.getOrNull() == true -> if (state.phase == Phase.INSTALLING) update(State(Phase.CONFIRM, u, 100, NO_ROOT))
-                else -> update(State(Phase.INSTALLING, u, 100, "Installed: OneOS opens again as ${u.versionName}."))
+                else -> update(State(Phase.INSTALLING, u, 100, "Installed: DualOS opens again as ${u.versionName}."))
             }
         }
     }
@@ -220,7 +198,7 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
                 // Opens while OneOS is in front; else the Update line opens it ([confirm]).
                 runCatching { ctx.startActivity(confirm) }
             }
-            PackageInstaller.STATUS_SUCCESS -> update(State(Phase.INSTALLING, u, 100, "Installed: open OneOS again."))
+            PackageInstaller.STATUS_SUCCESS -> update(State(Phase.INSTALLING, u, 100, "Installed: open DualOS again."))
             PackageInstaller.STATUS_FAILURE_ABORTED -> {
                 confirmIntent = null
                 update(State(Phase.FAILED, u, message = "The update was not installed: you cancelled it in Android's installer."))
@@ -242,13 +220,13 @@ object AppUpdater : BackgroundJob<AppUpdater.State>(State(), "oneos-update") {
         val pm = ctx.packageManager
         val flags = PackageManager.GET_SIGNING_CERTIFICATES
         val info = pm.getPackageArchiveInfo(apk.path, flags) ?: throw IOException("the download is not an app")
-        if (info.packageName != ctx.packageName) throw IOException("the download is ${info.packageName}, not OneOS")
+        if (info.packageName != ctx.packageName) throw IOException("the download is ${info.packageName}, not DualOS")
         if (info.longVersionCode != u.versionCode.toLong()) throw IOException("the download is build ${info.longVersionCode}, update.json says ${u.versionCode}")
-        if (info.longVersionCode <= BuildConfig.VERSION_CODE) throw IOException("the download is not newer than this OneOS")
+        if (info.longVersionCode <= BuildConfig.VERSION_CODE) throw IOException("the download is not newer than this DualOS")
         val mine = pm.getPackageInfo(ctx.packageName, flags).signingInfo?.apkContentsSigners?.toSet().orEmpty()
         val theirs = info.signingInfo?.apkContentsSigners?.toSet().orEmpty()
         if (mine.isEmpty() || mine != theirs) {
-            throw IOException("the download is signed with another key than this OneOS (a test build? install the release by hand)")
+            throw IOException("the download is signed with another key than this DualOS (a test build? install the release by hand)")
         }
     }
 

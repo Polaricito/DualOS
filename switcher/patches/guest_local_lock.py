@@ -56,8 +56,12 @@ Apps therefore see a secure, lockable device (KeyguardManager), but nothing that
 keystore's idea of the user's credential: keys bound to user authentication cannot be made, as
 in every guest so far.
 
-The patch needs the framework shape it was written for (ColorOS 17 on Android 17: the method
-names above, Duration-based VerifyCredentialResponse, the gatekeeper guard in place). Any other
+The patch supports both Android 17 (Duration-based VerifyCredentialResponse and
+LockSettingsService.invalidateCredentialTypeCaches(I)V) and Android 16 QPR0
+(VerifyCredentialResponse.ERROR + fromTimeout(I) and
+LockPatternUtils.invalidateCredentialTypeCache()V), with the gatekeeper guard in
+place; when LockSettingsService.removeKeystoreProfileKey(I)V is present it is also
+guarded at entry so shared keystore2 profile keys are never touched. Any other
 shape is left alone: a note on stderr, nothing on stdout, exit 0, so make-overlays.sh (set -e)
 still builds that image without the lock. A tree that already has the lock is left alone the
 same way; one that has parts of it is an error. Calls into OneOSGuestLock sit in try/catch
@@ -82,6 +86,7 @@ LSS = "Lcom/android/server/locksettings/LockSettingsService;"
 AUTH = "Lcom/android/server/locksettings/LockSettingsStrongAuth;"
 HELPER = "Lcom/android/server/locksettings/OneOSGuestLock;"
 CRED = "Lcom/android/internal/widget/LockscreenCredential;"
+LPU = "Lcom/android/internal/widget/LockPatternUtils;"
 VCR = "Lcom/android/internal/widget/VerifyCredentialResponse;"
 BUILDER = "Lcom/android/internal/widget/VerifyCredentialResponse$Builder;"
 CALLBACK = "Lcom/android/internal/widget/ICheckCredentialProgressCallback;"
@@ -100,9 +105,18 @@ FRAMEWORK_REFS = [
     CRED + "->getCredential()[B",
     CALLBACK + "->onCredentialVerified()V",
     VCR + "->OK:" + VCR,
+]
+# Android 17 (SDK 37) Duration-based VerifyCredentialResponse timeout API.
+DURATION_VCR_REFS = [
     VCR + "->credIncorrect(" + DURATION + ")" + VCR,
     VCR + "->fromTimeout(" + DURATION + ")" + VCR,
 ]
+# Android 16 QPR0 (SDK 36) int-ms VerifyCredentialResponse timeout API.
+INT_VCR_REFS = [
+    VCR + "->ERROR:" + VCR,
+    VCR + "->fromTimeout(I)" + VCR,
+]
+LPU_INVALIDATE = LPU + "->invalidateCredentialTypeCache()V"
 
 
 class Skip(Exception):
@@ -262,6 +276,12 @@ FRP_HOOK = """\
     return-void
 """.split("\n")
 
+PROFILE_KEY_HOOK = """\
+    # OneOS: never touch profile keys in the phone's shared keystore2 from the guest
+    # (patches/guest_local_lock.py).
+    return-void
+""".split("\n")
+
 KEYSTORE_HOOK = f"""\
     # OneOS: the guest's lock state is the guest's (patches/guest_local_lock.py). A "locked"
     # report would make the phone's keystore daemon drop user 0's unlocked-device-required
@@ -279,8 +299,91 @@ KEYSTORE_HOOK = f"""\
     :oneos_gl_unlocked""".split("\n")
 
 
-def added_methods(invalidate, listeners, strong):
-    """oneosGuestLockSet and oneosGuestLockVerify, with this image's kinds of invoke."""
+def failed_verify_block(vcr_mode):
+    """Build the wrong-guess / lockout-wait VerifyCredentialResponse block for A17 or A16."""
+    if vcr_mode == "duration":
+        return f"""\
+    :oneos_gl_failed
+    if-lez v4, :oneos_gl_waiting
+
+    # A wrong guess: result - 1 ms to wait before the next one (may be none).
+    const-wide/16 v2, 0x1
+
+    sub-long/2addr v0, v2
+
+    invoke-static {{v0, v1}}, {DURATION}->ofMillis(J){DURATION}
+
+    move-result-object v5
+
+    invoke-static {{v5}}, {VCR}->credIncorrect({DURATION}){VCR}
+
+    move-result-object v7
+
+    goto :oneos_gl_reported
+
+    :oneos_gl_waiting
+    # Not looked at, a wait is running: -result - 2 ms are left.
+    neg-long v0, v0
+
+    const-wide/16 v2, 0x2
+
+    sub-long/2addr v0, v2
+
+    invoke-static {{v0, v1}}, {DURATION}->ofMillis(J){DURATION}
+
+    move-result-object v5
+
+    invoke-static {{v5}}, {VCR}->fromTimeout({DURATION}){VCR}
+
+    move-result-object v7"""
+    return f"""\
+    :oneos_gl_failed
+    if-lez v4, :oneos_gl_waiting
+
+    # A wrong guess: result - 1 ms to wait before the next one (may be none).
+    const-wide/16 v2, 0x1
+
+    sub-long/2addr v0, v2
+
+    const-wide/16 v2, 0x0
+
+    cmp-long v4, v0, v2
+
+    if-gtz v4, :oneos_gl_timeout
+
+    sget-object v7, {VCR}->ERROR:{VCR}
+
+    goto :oneos_gl_reported
+
+    :oneos_gl_waiting
+    # Not looked at, a wait is running: -result - 2 ms are left.
+    neg-long v0, v0
+
+    const-wide/16 v2, 0x2
+
+    sub-long/2addr v0, v2
+
+    :oneos_gl_timeout
+    # Android 16's VerifyCredentialResponse.fromTimeout(I) takes int ms; clamp to Integer.MAX_VALUE.
+    const-wide/32 v2, 0x7fffffff
+
+    cmp-long v4, v0, v2
+
+    if-lez v4, :oneos_gl_fit
+
+    move-wide v0, v2
+
+    :oneos_gl_fit
+    long-to-int v5, v0
+
+    invoke-static {{v5}}, {VCR}->fromTimeout(I){VCR}
+
+    move-result-object v7"""
+
+
+def added_methods(inv_stmt, listeners, strong, vcr_mode):
+    """oneosGuestLockSet and oneosGuestLockVerify, with this image's API shape and invoke kinds."""
+    failed_block = failed_verify_block(vcr_mode)
     return f"""\
 
 # OneOS: sets, changes or removes the guest's own screen lock (OneOSGuestLock) for user 0.
@@ -352,7 +455,7 @@ def added_methods(invalidate, listeners, strong):
 
     if-ne v7, v0, :oneos_gl_done
 
-    {invalidate} {{p0, p3}}, {LSS}->invalidateCredentialTypeCaches(I)V
+{inv_stmt}
 
     const-string v0, "LockSettingsService"
 
@@ -462,39 +565,7 @@ def added_methods(invalidate, listeners, strong):
 
     return-object v7
 
-    :oneos_gl_failed
-    if-lez v4, :oneos_gl_waiting
-
-    # A wrong guess: result - 1 ms to wait before the next one (may be none).
-    const-wide/16 v2, 0x1
-
-    sub-long/2addr v0, v2
-
-    invoke-static {{v0, v1}}, {DURATION}->ofMillis(J){DURATION}
-
-    move-result-object v5
-
-    invoke-static {{v5}}, {VCR}->credIncorrect({DURATION}){VCR}
-
-    move-result-object v7
-
-    goto :oneos_gl_reported
-
-    :oneos_gl_waiting
-    # Not looked at, a wait is running: -result - 2 ms are left.
-    neg-long v0, v0
-
-    const-wide/16 v2, 0x2
-
-    sub-long/2addr v0, v2
-
-    invoke-static {{v0, v1}}, {DURATION}->ofMillis(J){DURATION}
-
-    move-result-object v5
-
-    invoke-static {{v5}}, {VCR}->fromTimeout({DURATION}){VCR}
-
-    move-result-object v7
+{failed_block}
 
     :oneos_gl_reported
     const-wide/16 v2, 0x0
@@ -541,6 +612,12 @@ def patch_lss(lines, rel, pkg_text):
     for ref in FRAMEWORK_REFS:
         if ref not in pkg_text:
             raise Skip(f"the lock service does not use {ref}")
+    if all(ref in pkg_text for ref in DURATION_VCR_REFS):
+        vcr_mode = "duration"
+    elif all(ref in pkg_text for ref in INT_VCR_REFS):
+        vcr_mode = "int"
+    else:
+        raise Skip("the lock service has neither Duration nor int VerifyCredentialResponse timeout API")
     if not any(re.fullmatch(r"\.field (?:[a-z]+ )*mStrongAuth:" + re.escape(AUTH), l) for l in lines):
         raise Skip(f"{rel}: no field mStrongAuth")
 
@@ -549,14 +626,20 @@ def patch_lss(lines, rel, pkg_text):
     t_i, t_end, t_locals = method(lines, "getCredentialType", "(I)I", rel)
     g_i, _, g_locals = method(lines, "verifyGatekeeperPasswordHandle", f"(JJI){VCR}", rel)
     f_i, f_end, _ = method(lines, "enforceFrpNotActive", "()V", rel)
-    inv_i, _, _ = method(lines, "invalidateCredentialTypeCaches", "(I)V", rel)
+    try:
+        inv_i, _, _ = method(lines, "invalidateCredentialTypeCaches", "(I)V", rel)
+        inv_stmt = f"    {invoke_kind(lines, inv_i)} {{p0, p3}}, {LSS}->invalidateCredentialTypeCaches(I)V"
+    except Skip:
+        if LPU_INVALIDATE not in pkg_text:
+            raise Skip(f"{rel}: neither invalidateCredentialTypeCaches(I)V nor {LPU_INVALIDATE}")
+        inv_stmt = f"    invoke-static {{}}, {LPU_INVALIDATE}"
     lis_i, _, _ = method(lines, "notifyLockSettingsStateListeners", "(ZI)V", rel)
     req_i, _, _ = method(lines, "requireStrongAuth", "(II)V", rel)
     if " private " in lines[req_i]:
         raise Skip(f"{rel}: requireStrongAuth is private")
     if s_locals < 1 or v_locals < 1:
         raise Skip(f"{rel}: no free register at the entry of the set or verify method")
-    tail = added_methods(invoke_kind(lines, inv_i), invoke_kind(lines, lis_i), "invoke-virtual")
+    tail = added_methods(inv_stmt, invoke_kind(lines, lis_i), "invoke-virtual", vcr_mode)
 
     # 1. The set hook goes in front of the gatekeeper guard (v0 is free at the entry).
     s_at = entry(lines, s_i)
@@ -599,6 +682,16 @@ def patch_lss(lines, rel, pkg_text):
         (g_i + 1, g_i + 2, [f"    .locals {max(g_locals, 2)}"]),
         (g_at, g_at, GK_HOOK),
     ]
+    # Optional defense-in-depth (Android 16 setLockCredential -> setSeparateProfileChallengeEnabledLocked):
+    # never query or delete profile_key_name_* entries from the phone's shared keystore2.
+    try:
+        pk_i, _, _ = method(lines, "removeKeystoreProfileKey", "(I)V", rel)
+    except Skip:
+        pk_i = None
+    if pk_i is not None:
+        pk_at = entry(lines, pk_i)
+        edits.append((pk_at, pk_at, PROFILE_KEY_HOOK))
+
     for first, last, new in sorted(edits, reverse=True):
         lines[first:last] = new
     while lines and lines[-1] == "":

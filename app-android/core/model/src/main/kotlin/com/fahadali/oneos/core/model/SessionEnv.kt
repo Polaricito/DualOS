@@ -47,7 +47,7 @@ object SessionEnv {
     const val MAX_BYTES = 4096
 
     /** The app's gap splash; root starts it with `am start -n` (not exported). */
-    const val SPLASH_COMPONENT = "com.fahadali.oneos/.ui.GapSplashActivity"
+    const val SPLASH_COMPONENT = "com.dualos.a53/com.fahadali.oneos.ui.GapSplashActivity"
 
     /** 1: hide Play services, the Play Store and their helpers in the guest for this session (guest_prepare.sh). */
     const val HIDE_GMS = "ONEOS_GUEST_HIDE_GMS"
@@ -61,6 +61,12 @@ object SessionEnv {
     const val VERBOSE_BOOT = "ONEOS_VERBOSE_BOOT"
     /** 1: the session's whole logcat capture (oneos_switch.sh, up to 800 MiB); 0: only the short logs (Advanced / Settings, Full session logs). */
     const val FULL_LOGS = "ONEOS_FULL_LOGS"
+    /** 1: safe NFC HAL handover into the guest (default 1); 0: leave NFC disabled in guest. */
+    const val GUEST_NFC = "ONEOS_GUEST_NFC"
+    /** Guest microSD access mode: ro (safe read-only bind, default), rw (safe RW if unencrypted), off. */
+    const val GUEST_SDCARD = "ONEOS_GUEST_SDCARD"
+    /** 1: Exynos Mali-G68 optimized Kawase2 background blurs (default 1); 0: blurs off. */
+    const val GUEST_BLUR = "ONEOS_GUEST_BLUR"
 
     /** How the return brings One UI back: always in place, with the reboot as its failsafe (return_to_oneui.sh). */
     const val RETURN_MODE = "ONEOS_RETURN_MODE"
@@ -86,6 +92,9 @@ object SessionEnv {
         EDM_STUB to Regex("[01]"),
         VERBOSE_BOOT to Regex("[01]"),
         FULL_LOGS to Regex("[01]"),
+        GUEST_NFC to Regex("[01]"),
+        GUEST_SDCARD to Regex("ro|rw|off"),
+        GUEST_BLUR to Regex("[01]"),
         RETURN_MODE to Regex("inplace"),
     )
 
@@ -153,6 +162,9 @@ object SessionEnv {
         out[EDM_STUB] = "0"
         out[VERBOSE_BOOT] = "0"
         out[FULL_LOGS] = "1"
+        out[GUEST_NFC] = "1"
+        out[GUEST_SDCARD] = "ro"
+        out[GUEST_BLUR] = "1"
         out[RETURN_MODE] = "inplace"
         return out
     }
@@ -207,7 +219,8 @@ object SessionEnv {
                     // Either value is the launch's own choice (the pattern allows only 0 or 1).
                     k == HEAT_CAP -> Unit
                     k == SEC_IMS -> {} // 0 or 1, a launch's choice on any phone and image
-                    k == EDM_STUB || k == VERBOSE_BOOT || k == FULL_LOGS -> {} // 0 or 1, a launch's choice on any phone and image
+                    k == EDM_STUB || k == VERBOSE_BOOT || k == FULL_LOGS ||
+                        k == GUEST_NFC || k == GUEST_SDCARD || k == GUEST_BLUR -> {} // launch choices on any phone and image
                     k != HIDE_GMS -> if (got != v) p += "$k=$got does not match profile $id ($v)"
                     got == "1" && image?.gmsHideable != true -> p += if (image?.googleServices == true) {
                         "$HIDE_GMS=1, but the ${image.shortName} image's sessions present Google services, which cannot be hidden"

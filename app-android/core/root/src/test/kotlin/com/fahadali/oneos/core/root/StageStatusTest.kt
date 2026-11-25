@@ -21,9 +21,9 @@ import org.junit.Test
 
 class StageStatusTest {
     private val s = RootScript.STAGE
-    private val profile = Profiles.S_ULTRA_8850
-    private val image = Images.FIND_X9U_IN_1105
-    private val set = PackageSets.X9U_IN_1105_SULTRA
+    private val profile = Profiles.A53
+    private val image = Images.LINEAGE23
+    private val set = PackageSets.LINEAGE23
 
     private fun status(out: Map<String, String>, missing: Set<String> = emptySet(), failed: Set<String> = emptySet()): StageStatus {
         val statuses = StageStatus.OUTPUTS.keys.associateWith { id ->
@@ -39,7 +39,6 @@ class StageStatusTest {
     private val names = RootScript.SCRIPTS + set.names
     private val shas = names.associateWith { Hashes.sha256(it) }
 
-    /** [profile]'s stage prepared with [image] and [set] (by default the S Ultra's, with the Find X9 Ultra IN November build). */
     private fun prepared(
         extra: Map<String, String> = emptyMap(),
         image: ImageRef = this.image,
@@ -54,7 +53,7 @@ class StageStatusTest {
             "stage.dir" to "dir 0 0 755\n",
             "stage.list" to (names.map { "f 0 644 10 $it" } + listOf("f 0 644 ${image.rawBytes} system.raw", "d 0 755 4096 data", "d 0 755 4096 bin", "f 0 755 30000 bin/oneos_root.sh"))
                 .joinToString("\n", postfix = "\n"),
-            "stage.marker" to StageMarker(4, profile.id, image.id, set.id, 1_792_000_000).toJson(),
+            "stage.marker" to StageMarker(148, profile.id, image.id, set.id, 1_792_000_000).toJson(),
             "stage.sums" to ShaList.render(shas),
             "stage.hashes" to (shas.entries.joinToString("") { "${it.value}  $s/${it.key}\n" } + "${"c".repeat(64)}  $s/bin/oneos_root.sh\n"),
             "stage.raw" to "now ${image.rawBytes} 64773:1234:${image.rawBytes}:1792000000\nid ${image.rawBytes} ${image.rawSha256} 64773:1234:${image.rawBytes}:1792000000\n",
@@ -64,7 +63,7 @@ class StageStatusTest {
             "stage.bridges" to "",
             "stage.loops" to "",
             "stage.session" to "boot=11111111-2222\n",
-            "stage.guest" to "packages com.oplus.\n",
+            "stage.guest" to "packages org.lineageos.\n",
             "stage.old" to "",
             "stage.tools" to "/data/adb/ksu/bin/busybox\n/data/adb/ksu/bin/resetprop\n",
             "stage.props" to "ro.csc.sales_code=ATT\nro.boot.sales_code=ATT\nro.csc.countryiso_code=US\ngsm.sim.operator.iso-country=us\n",
@@ -76,7 +75,7 @@ class StageStatusTest {
         val st = status(prepared())
         assertTrue(st.complete)
         assertTrue(st.ours)
-        assertEquals(GuestData.COLOROS, st.guest)
+        assertEquals(GuestData.LINEAGEOS, st.guest)
         assertEquals("c".repeat(64), st.rootScriptSha)
         assertEquals(emptyList<String>(), st.verify(profile, image, set))
         val gate = st.stageState(profile)!!
@@ -86,7 +85,6 @@ class StageStatusTest {
         assertEquals(true, com.fahadali.oneos.core.model.CarrierRules.voLteOnly(st.carrier))
     }
 
-    /** status.list reads a 0.3.6 stage at its old path until the root script renames it: the same status. */
     @Test
     fun aStageAtItsOldPathReadsTheSame() {
         val old = prepared().mapValues { (k, v) -> if (k == "stage.hashes" || k == "stage.table") v.replace("$s/", "${RootScript.LEGACY_STAGE}/") else v }
@@ -94,7 +92,6 @@ class StageStatusTest {
         val st = status(old)
         assertEquals("c".repeat(64), st.rootScriptSha)
         assertEquals(emptyList<String>(), st.verify(profile, image, set))
-        // Another folder's hash lines are never taken for the stage's.
         val other = status(prepared(mapOf("stage.hashes" to prepared().getValue("stage.hashes").replace("$s/", "/data/local/tmp/oneos_x/"))))
         assertTrue(other.hashes.isEmpty())
     }
@@ -104,35 +101,31 @@ class StageStatusTest {
         fun problems(extra: Map<String, String>) = status(prepared(extra)).verify(profile, image, set)
         val changed = prepared()["stage.hashes"]!!.replaceFirst(shas.getValue("art_payload.img"), "e".repeat(64))
         assertTrue(problems(mapOf("stage.hashes" to changed)).contains("art_payload.img changed since it was prepared"))
-        // Another system's jar (the IN set has its own framework_patched.jar).
-        val leftover = prepared()["stage.list"] + "f 0 644 10 oneos-telephony.jar\n"
-        assertTrue(problems(mapOf("stage.list" to leftover)).any { it.startsWith("oneos-telephony.jar") })
+        val leftover = prepared()["stage.list"] + "f 0 644 10 oplus-services_patched.jar\n"
+        assertTrue(problems(mapOf("stage.list" to leftover)).any { it.startsWith("oplus-services_patched.jar") })
         val moved = "now ${image.rawBytes} 64773:9999:${image.rawBytes}:1792000001\nid ${image.rawBytes} ${image.rawSha256} 64773:1234:${image.rawBytes}:1792000000\n"
         assertTrue(problems(mapOf("stage.raw" to moved)).contains("system.raw changed since it was verified"))
-        val n6 = "now 1 x\nid ${Images.FIND_N6.rawBytes} ${Images.FIND_N6.rawSha256} x\n"
-        assertTrue(problems(mapOf("stage.raw" to n6)).contains("system.raw is not the Find X9 Ultra IN (Nov) image"))
+        val wrongRaw = "now 1 x\nid 123 ${"0".repeat(64)} x\n"
+        assertTrue(problems(mapOf("stage.raw" to wrongRaw)).contains("system.raw is not the Galaxy A53 5G image"))
         val env = SessionEnv.generate(profile) + "ONEOS_RETURN_MAX=0\n"
         assertTrue(problems(mapOf("stage.env" to env)).any { it.contains("forbidden key ONEOS_RETURN_MAX") })
     }
 
     @Test
     fun foreignAndUnsafeStages() {
-        // OneLineage's stage on the S26 Ultra: drwxrwxrwx, no marker.
-        val s26 = status(prepared(mapOf("stage.dir" to "dir 2000 2000 777\n", "stage.guest" to "packages org.lineageos.\n")), missing = setOf("stage.marker"))
-        assertFalse(s26.safe)
-        assertTrue(s26.foreign)
-        assertEquals(GuestData.LINEAGEOS, s26.guest)
-        // Its persist_session.active never counts as a session (it is moved aside unread).
+        val unsafe = status(prepared(mapOf("stage.dir" to "dir 2000 2000 777\n", "stage.guest" to "packages org.lineageos.\n")), missing = setOf("stage.marker"))
+        assertFalse(unsafe.safe)
+        assertTrue(unsafe.foreign)
+        assertEquals(GuestData.LINEAGEOS, unsafe.guest)
         val withSession = status(
             prepared(mapOf("stage.dir" to "dir 0 0 777\n", "stage.session" to "boot=b\nactive\nformat=1\n")),
             missing = setOf("stage.marker"),
         )
         assertFalse(withSession.sessionActive)
-        // A root-owned 0755 stage without a marker (deploy-phone.sh on the owner's Fold): safe, still foreign.
-        val fold = status(prepared(), missing = setOf("stage.marker"))
-        assertTrue(fold.safe)
-        assertFalse(fold.ours)
-        assertNull(fold.stageState(profile)!!.marker)
+        val foreignSafe = status(prepared(), missing = setOf("stage.marker"))
+        assertTrue(foreignSafe.safe)
+        assertFalse(foreignSafe.ours)
+        assertNull(foreignSafe.stageState(profile)!!.marker)
     }
 
     @Test
@@ -143,7 +136,6 @@ class StageStatusTest {
         assertEquals(listOf(k, a), status(prepared(), missing = setOf("stage.marker")).beginModes(null))
         assertEquals(listOf(a), status(prepared(mapOf("stage.dir" to "dir 2000 2000 777\n", "stage.guest" to "packages org.lineageos.\n")), missing = setOf("stage.marker")).beginModes(null))
         assertEquals(listOf(a), status(prepared(mapOf("stage.guest" to "packages none\n", "stage.list" to "f 0 644 1 x.log\n")), missing = setOf("stage.marker")).beginModes(null))
-        // A preparation of OneOS's that stopped half way (bin/oneos_root.sh, no marker, no guest data yet): keep it.
         val half = status(prepared(mapOf("stage.guest" to "packages none\n")), missing = setOf("stage.marker"))
         assertTrue(half.partial)
         assertEquals(listOf(k, a), half.beginModes(null))
@@ -152,133 +144,46 @@ class StageStatusTest {
         assertEquals(listOf(RootScript.BeginMode.NEW), fresh.beginModes(null))
     }
 
-    /**
-     * 0.3.3: guest data stays with the image that made it; another image's data is only moved aside (root refuses
-     * to keep it). 0.3.7: the Fold's two systems, ColorOS (Find N6) and Pixel.
-     */
     @Test
     fun anotherImagesGuestDataIsOnlyMovedAside() {
         val k = RootScript.BeginMode.KEEP
         val a = RootScript.BeginMode.ASIDE
-        val fold = Profiles.F8U
-        val n6 = Images.FIND_N6
-        val pixelId = Images.ID_PIXEL_YOGI
-        // The Fold's stage of the Find N6 global build with its ColorOS data.
-        val st = status(prepared(image = n6, set = PackageSets.N6_F8U, profile = fold))
-        assertEquals(listOf(k, a), st.beginModes(n6.id))
-        assertNull(st.otherImageData(n6.id))
-        assertEquals(listOf(a), st.beginModes(pixelId))
-        assertEquals(n6.id, st.otherImageData(pixelId))
-        // The other way round (a Pixel guest's packages are none of the ColorOS or LineageOS words), and a data
-        // folder ColorOS never filled: the same.
-        val pixelStage = status(prepared(mapOf("stage.guest" to ""), image = Images.PIXEL_YOGI, set = PackageSets.PIXEL_F8U, profile = fold))
-        assertEquals(GuestData.OTHER, pixelStage.guest)
-        assertEquals(listOf(k, a), pixelStage.beginModes(pixelId))
-        assertEquals(listOf(a), pixelStage.beginModes(n6.id))
-        assertEquals(pixelId, pixelStage.otherImageData(n6.id))
-        assertEquals(listOf(a), status(prepared(mapOf("stage.guest" to "packages none\n"), image = n6, set = PackageSets.N6_F8U, profile = fold)).beginModes(pixelId))
-        // Prepared but never switched (no guest data): kept for either image.
-        val noData = status(prepared(image = n6, set = PackageSets.N6_F8U, profile = fold), missing = setOf("stage.guest"))
+        val otherId = "infinityx-a53"
+        val st = status(prepared())
+        assertEquals(listOf(k, a), st.beginModes(image.id))
+        assertNull(st.otherImageData(image.id))
+        assertEquals(listOf(a), st.beginModes(otherId))
+        assertEquals(image.id, st.otherImageData(otherId))
+
+        assertEquals(listOf(a), status(prepared(mapOf("stage.guest" to "packages none\n"))).beginModes(otherId))
+        val noData = status(prepared(), missing = setOf("stage.guest"))
         assertEquals(GuestData.NONE, noData.guest)
-        assertEquals(listOf(k, a), noData.beginModes(pixelId))
-        assertNull(noData.otherImageData(pixelId))
-        // A 0.3.2 stage (oneos.stage/1) names its image too.
-        val v1 = StageMarker(6, fold.id, n6.id, null, 1_792_000_000).toJson()
-        assertEquals(listOf(a), status(prepared(mapOf("stage.marker" to v1), image = n6, set = PackageSets.N6_F8U, profile = fold)).beginModes(pixelId))
-        // Not identified yet: as before (Prepare is blocked until it is).
+        assertEquals(listOf(k, a), noData.beginModes(otherId))
+        assertNull(noData.otherImageData(otherId))
+
+        val v1 = StageMarker(6, profile.id, image.id, null, 1_792_000_000).toJson()
+        assertEquals(listOf(a), status(prepared(mapOf("stage.marker" to v1))).beginModes(otherId))
         assertEquals(listOf(k, a), st.beginModes(null))
     }
 
-    /**
-     * 0.5.10: the first Find X9 Ultra IN build is retired for the 1105 build; a stage with its ColorOS data may keep
-     * it for that build (Images.DATA_UPGRADES), for no other image, and never the other way round.
-     */
     @Test
-    fun retiredFindX9UInDataIsKeptForTheNewerBuildOnly() {
-        val k = RootScript.BeginMode.KEEP
-        val a = RootScript.BeginMode.ASIDE
-        val old = Images.FIND_X9U_IN
-        val newer = Images.FIND_X9U_IN_1105
-        val st = status(prepared(image = old, set = PackageSets.X9U_IN_SULTRA))
-        assertEquals(GuestData.COLOROS, st.guest)
-        assertEquals(listOf(k, a), st.beginModes(newer.id))
-        assertNull(st.otherImageData(newer.id))
-        assertEquals(listOf(k, a), st.beginModes(old.id))
-        for (other in listOf(Images.ID_PIXEL_YOGI, Images.ID_FIND_N6, Images.ID_LINEAGE)) {
-            assertEquals(other, listOf(a), st.beginModes(other))
-            assertEquals(other, old.id, st.otherImageData(other))
-        }
-        // The reverse: data of the 1105 build is not kept for the retired build.
-        val newerStage = status(prepared(image = newer, set = PackageSets.X9U_IN_1105_SULTRA))
-        assertEquals(listOf(k, a), newerStage.beginModes(newer.id))
-        assertEquals(listOf(a), newerStage.beginModes(old.id))
-        assertEquals(newer.id, newerStage.otherImageData(old.id))
-    }
+    fun guestDataParsesLineageInfinityXAndLegacyOther() {
+        assertEquals(GuestData.LINEAGEOS, status(prepared(mapOf("stage.guest" to "packages org.lineageos.\n"))).guest)
+        assertEquals(GuestData.INFINITYX, status(prepared(mapOf("stage.guest" to "packages ${StageStatus.INFINITYX_WORD}\n"))).guest)
+        assertEquals(GuestData.OTHER, status(prepared(mapOf("stage.guest" to "packages ${StageStatus.PIXEL_WORD}\n"))).guest)
+        assertEquals(GuestData.OTHER, status(prepared(mapOf("stage.guest" to "packages com.oplus.\n"))).guest)
+        assertEquals(GuestData.OTHER, status(prepared(mapOf("stage.guest" to ""))).guest)
 
-    /**
-     * 0.3.7: status.list names Pixel's launcher, so a Pixel guest's data reads as Pixel data, and data stays with its
-     * own system: ColorOS data is never offered "keep" for the Pixel image, nor Pixel data for a ColorOS image, also
-     * on a stage OneOS did not prepare (scripts/deploy-phone.sh, no marker) or one whose preparation stopped.
-     */
-    @Test
-    fun guestDataStaysWithItsOwnSystem() {
-        val k = RootScript.BeginMode.KEEP
-        val a = RootScript.BeginMode.ASIDE
-        val fold = Profiles.F8U
-        val n6 = Images.FIND_N6
-        val pixel = Images.PIXEL_YOGI
-        val pixelLine = "packages ${StageStatus.PIXEL_WORD}\n"
-        assertEquals("com.google.android.apps.nexuslauncher", StageStatus.PIXEL_WORD)
-        fun pixelStage(missing: Set<String> = emptySet(), extra: Map<String, String> = emptyMap()) =
-            status(prepared(mapOf("stage.guest" to pixelLine) + extra, image = pixel, set = PackageSets.PIXEL_F8U, profile = fold), missing = missing)
-        fun n6Stage(missing: Set<String> = emptySet(), extra: Map<String, String> = emptyMap()) =
-            status(prepared(extra, image = n6, set = PackageSets.N6_F8U, profile = fold), missing = missing)
+        assertEquals(SystemFamily.LINEAGE, GuestData.LINEAGEOS.family)
+        assertEquals(SystemFamily.INFINITYX, GuestData.INFINITYX.family)
+        assertEquals(SystemFamily.EVOX, GuestData.EVOX.family)
+        for (g in listOf(GuestData.NONE, GuestData.EMPTY, GuestData.OTHER)) assertNull(g.family)
 
-        // Parsing: Pixel's launcher alone is Pixel data; with a ColorOS package it is ColorOS data (as root decides).
-        assertEquals(GuestData.PIXEL, pixelStage().guest)
-        assertEquals(GuestData.COLOROS, status(prepared(mapOf("stage.guest" to "packages com.oplus.\n$pixelLine"))).guest)
-        assertEquals(GuestData.LINEAGEOS, status(prepared(mapOf("stage.guest" to "packages org.lineageos.\n$pixelLine"))).guest)
-        assertEquals(SystemFamily.PIXEL, GuestData.PIXEL.family)
-        assertEquals(SystemFamily.COLOROS, GuestData.COLOROS.family)
-        for (g in listOf(GuestData.NONE, GuestData.EMPTY, GuestData.LINEAGEOS, GuestData.OTHER)) {
-            assertNull(g.family)
-            assertFalse(g.otherSystemThan(pixel))
-            assertFalse(g.otherSystemThan(n6))
-        }
-        assertTrue(GuestData.COLOROS.otherSystemThan(pixel))
-        assertTrue(GuestData.PIXEL.otherSystemThan(n6))
-        assertFalse(GuestData.PIXEL.otherSystemThan(pixel))
-
-        // OneOS's own stages: as before (the marker's image decides).
-        assertEquals(listOf(k, a), pixelStage().beginModes(pixel.id))
-        assertEquals(listOf(a), pixelStage().beginModes(n6.id))
-        // A stage OneOS did not prepare (deploy-phone.sh: no marker, no root script in bin).
-        val noBin = mapOf("stage.list" to "f 0 644 10 system.raw\nd 0 755 4096 data\n")
-        val foreignN6 = n6Stage(setOf("stage.marker"), noBin)
-        assertTrue(foreignN6.foreign)
-        assertEquals(listOf(k, a), foreignN6.beginModes(null))
-        assertEquals(listOf(k, a), foreignN6.beginModes(n6.id))
-        assertEquals(listOf(a), foreignN6.beginModes(pixel.id))
-        val foreignPixel = pixelStage(setOf("stage.marker"), noBin)
-        assertTrue(foreignPixel.foreign)
-        assertEquals(listOf(k, a), foreignPixel.beginModes(null))
-        assertEquals(listOf(k, a), foreignPixel.beginModes(pixel.id))
-        assertEquals(listOf(a), foreignPixel.beginModes(n6.id))
-        // A preparation that stopped (no marker, OneOS's root script in bin).
-        val partialPixel = pixelStage(setOf("stage.marker"))
-        assertTrue(partialPixel.partial)
-        assertEquals(listOf(k, a), partialPixel.beginModes(pixel.id))
-        assertEquals(listOf(a), partialPixel.beginModes(n6.id))
-        val partialN6 = n6Stage(setOf("stage.marker"))
-        assertTrue(partialN6.partial)
-        assertEquals(listOf(k, a), partialN6.beginModes(n6.id))
-        assertEquals(listOf(a), partialN6.beginModes(pixel.id))
-        // A marker that names another image than its data's system (deploy-phone.sh over an app stage without --fresh).
-        val lying = n6Stage(extra = mapOf("stage.guest" to pixelLine))
-        assertTrue(lying.ours)
-        assertEquals(listOf(a), lying.beginModes(n6.id))
-        // An image no build knows (a retired one): no family to compare, the marker still decides.
-        assertEquals(listOf(k, a), foreignPixel.beginModes("coloros16-findx8u"))
+        val inf = image.copy(id = "infinityx", family = SystemFamily.INFINITYX)
+        assertFalse(GuestData.LINEAGEOS.otherSystemThan(image))
+        assertTrue(GuestData.LINEAGEOS.otherSystemThan(inf))
+        assertTrue(GuestData.INFINITYX.otherSystemThan(image))
+        assertFalse(GuestData.INFINITYX.otherSystemThan(inf))
     }
 
     @Test
@@ -303,53 +208,32 @@ class StageStatusTest {
         assertTrue(absent.empty)
     }
 
-    /** 0.3.7: the Pixel image on the Fold, with its own set; the marker names both, and only that pair verifies. */
     @Test
     fun theMarkersImageAndSetDecide() {
-        val fold = Profiles.F8U
-        val pixel = Images.PIXEL_YOGI
-        val pixelSet = PackageSets.PIXEL_F8U
-        val st = status(prepared(image = pixel, set = pixelSet, profile = fold))
-        assertEquals(pixel to pixelSet, st.staged(fold))
-        assertEquals(emptyList<String>(), st.verify(fold, pixel, pixelSet))
-        assertTrue(st.stageState(fold)!!.filesVerified)
-        // Another pair against this stage, or this stage for another phone.
-        assertTrue(st.verify(fold, Images.FIND_N6, PackageSets.N6_F8U).any { it.startsWith("the marker names pixel11fold-yogi with pixel-f8u for f8u") })
-        assertTrue(st.verify(fold, pixel, PackageSets.N6_F8U).any { it.contains("n6-f8u is not the Pixel 11 Fold set for f8u") })
-        assertNull(st.staged(Profiles.S_ULTRA_8850))
-        assertFalse(st.stageState(Profiles.S_ULTRA_8850)!!.filesVerified)
-        // A marker naming a set that is not the image's on this phone: never verified.
-        val wrongSet = status(prepared(mapOf("stage.marker" to StageMarker(4, fold.id, pixel.id, PackageSets.ID_N6_F8U, 1).toJson()), image = pixel, set = pixelSet, profile = fold))
+        val st = status(prepared())
+        assertEquals(image to set, st.staged(profile))
+        assertEquals(emptyList<String>(), st.verify(profile, image, set))
+        assertTrue(st.stageState(profile)!!.filesVerified)
+
+        val wrongSet = status(prepared(mapOf("stage.marker" to StageMarker(148, profile.id, image.id, "other-set", 1).toJson())))
         assertTrue(wrongSet.ours)
-        assertNull(wrongSet.staged(fold))
-        assertFalse(wrongSet.stageState(fold)!!.filesVerified)
+        assertNull(wrongSet.staged(profile))
+        assertFalse(wrongSet.stageState(profile)!!.filesVerified)
+        assertTrue(wrongSet.verify(profile, image, set).any { it.contains("the marker names ${image.id} with other-set for ${profile.id}") })
     }
 
-    /**
-     * Files of one set left in a stage prepared with another: what the session scripts would bind or read is
-     * flagged (root's check_files refuses them at launch; finish moves them to the attic).
-     */
     @Test
     fun anotherSetsFilesAreLeftovers() {
-        val fold = Profiles.F8U
-        fun problems(image: ImageRef, set: PackageSet, extra: String) =
-            status(prepared(mapOf("stage.list" to preparedFor(image, set, fold).getValue("stage.list") + extra), image = image, set = set, profile = fold))
-                .verify(fold, image, set)
-        // The Pixel set's files in a ColorOS stage.
-        for (n in listOf("OneOSPixelStatusBar.apk", "OneOSPhoneInjection.apk", "oneos-telephony.jar", "oneos-telephony.sha256", "gmssystem_payload.img")) {
-            assertTrue(n, problems(Images.FIND_N6, PackageSets.N6_F8U, "f 0 644 10 $n\n").contains("$n is in the stage but was not prepared"))
+        fun problems(extra: String) =
+            status(prepared(mapOf("stage.list" to preparedFor(image, set, profile).getValue("stage.list") + extra)))
+                .verify(profile, image, set)
+        for (n in listOf("OneOSWallpapersFoldGrid.apk", "gmssystem_payload.img", "surfaceflinger_patched", "oplus-services_patched.jar")) {
+            assertTrue(n, problems("f 0 644 10 $n\n").contains("$n is in the stage but was not prepared"))
         }
-        // The session's own watchdog feeder is not another set's file.
-        assertFalse(problems(Images.FIND_N6, PackageSets.N6_F8U, "f 0 700 10 oneos_wdog_feeder.sh\n").any { "oneos_wdog_feeder.sh" in it })
-        // ColorOS's files in the Pixel stage.
-        for (n in listOf("surfaceflinger_patched", "oplus-services_patched.jar", "OneOSWallpapersFoldGrid.apk")) {
-            assertTrue(n, problems(Images.PIXEL_YOGI, PackageSets.PIXEL_F8U, "f 0 644 10 $n\n").contains("$n is in the stage but was not prepared"))
-        }
-        // The sessions' own state files are not leftovers.
-        assertEquals(emptyList<String>(), problems(Images.PIXEL_YOGI, PackageSets.PIXEL_F8U, "f 0 644 10 takeover_app.log\nf 0 644 10 payload_loops\n"))
+        assertFalse(problems("f 0 700 10 oneos_wdog_feeder.sh\n").any { "oneos_wdog_feeder.sh" in it })
+        assertEquals(emptyList<String>(), problems("f 0 644 10 takeover_app.log\nf 0 644 10 payload_loops\n"))
     }
 
-    /** A 0.3.0-0.3.2 stage (oneos.stage/1, no set): still OneOS's (keep, restore), never verified for a switch. */
     @Test
     fun anOlderStageStaysOursButDoesNotSwitch() {
         val v1 = StageMarker(6, profile.id, image.id, null, 1_792_000_000).toJson()
@@ -362,26 +246,18 @@ class StageStatusTest {
         assertTrue(st.verify(profile, image, set).any { it.contains("with no file set") })
     }
 
-    /**
-     * Google services may be hidden only where a session can hide them (a launch writes the 1): never on a CN
-     * build (none), nor on the Pixel image, whose sessions present them (oneos_switch.sh refuses).
-     */
     @Test
     fun hiddenGoogleServicesOnlyWhereASessionCanHideThem() {
-        // A CN build without Google services: HyperOS since 0.4.51 (the CN Find X9 Ultra build retired).
         val hidden = SessionEnv.generate(profile).replace("ONEOS_GUEST_HIDE_GMS=0", "ONEOS_GUEST_HIDE_GMS=1")
-        val hyper = Images.HYPEROS_LHASA
-        val hyperSet = PackageSets.HYPER_F8U
-        assertTrue(status(prepared(mapOf("stage.env" to hidden), image = hyper, set = hyperSet)).verify(profile, hyper, hyperSet).any { it.contains("has no Google services") })
-        val fold = Profiles.F8U
-        val pixel = Images.PIXEL_YOGI
-        val pixelSet = PackageSets.PIXEL_F8U
-        val foldHidden = SessionEnv.generate(fold).replace("ONEOS_GUEST_HIDE_GMS=0", "ONEOS_GUEST_HIDE_GMS=1")
-        assertTrue(status(prepared(mapOf("stage.env" to foldHidden), image = pixel, set = pixelSet, profile = fold)).verify(fold, pixel, pixelSet).any { it.contains("cannot be hidden") })
-        assertEquals(emptyList<String>(), status(prepared(image = pixel, set = pixelSet, profile = fold)).verify(fold, pixel, pixelSet))
+        assertEquals(emptyList<String>(), status(prepared(mapOf("stage.env" to hidden))).verify(profile, image, set))
+
+        val noGms = image.copy(googleServices = false, presentsGms = false)
+        assertTrue(status(prepared(mapOf("stage.env" to hidden))).verify(profile, noGms, set).any { it.contains("has no Google services") })
+
+        val presentGms = image.copy(googleServices = true, presentsGms = true)
+        assertTrue(status(prepared(mapOf("stage.env" to hidden))).verify(profile, presentGms, set).any { it.contains("cannot be hidden") })
     }
 
-    /** "Use the image already on this phone": the hash root recorded counts only while the file is unchanged. */
     @Test
     fun rawVerifiedOnlyWhileUnchanged() {
         val st = status(prepared())

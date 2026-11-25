@@ -31,11 +31,15 @@
 // looks for the factory, so the session also declares the instance in the
 // device manifest (oneos_switch.sh, ONEOS_GUEST_BT_AUDIO_BRIDGE).
 //
-// Usage: oneos_btaudio            serve (until killed)
+// Usage: oneos_btaudio            serve (until killed; AIDL or HIDL @2.0)
+//        oneos_btaudio --hidl     serve using Samsung HIDL @2.0 backend
+//        oneos_btaudio --hidl-probe  read-only probe of Samsung HIDL @2.0 BT audio HAL
 //        oneos_btaudio --declared NAME   print 1 if servicemanager has NAME declared
 //        oneos_btaudio --check     print what this phone has
 //        oneos_btaudio --loop      a test bridge from Android's factory to itself (.../oneostest)
 //        oneos_btaudio --client NAME   the first calls a guest's stack makes, against NAME
+//        oneos_btaudio --suppress-host-svcs STAGE [TAG]   suppress host services without fork/execve
+//        oneos_btaudio --suppress-host-svcs-check STAGE   dry-run check of init.svc.* & property wait
 #include <android/binder_ibinder.h>
 #include <android/binder_parcel.h>
 #include <android/binder_status.h>
@@ -44,11 +48,15 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/system_properties.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <memory>
 #include <mutex>
 #include <vector>
+
+#include "oneos_btaudio_hidl.h"
 
 namespace {
 
@@ -120,8 +128,11 @@ AIBinder_Class* gAospPortCls;  // client side: the guest's port
 AIBinder_Class* gSehFactoryCls;  // client side
 AIBinder_Class* gSehProviderCls;  // client side
 AIBinder_Class* gSehPortCls;
+AIBinder_Class* gHidlFactoryCls;
+AIBinder_Class* gHidlProviderCls;
 
 AIBinder* gSehFactory;
+bool gForceHidl = false;
 
 // The configuration of a session, as Samsung's parcel (for sehGetAudioConfiguration).
 struct Session {
@@ -149,6 +160,20 @@ binder_status_t writeOkStatus(AParcel* out) {
     AStatus* ok = AStatus_newOk();
     binder_status_t st = AParcel_writeStatusHeader(out, ok);
     AStatus_delete(ok);
+    return st;
+}
+
+binder_status_t writeExceptionStatus(AParcel* out, binder_exception_t ex) {
+    AStatus* err = AStatus_fromExceptionCode(ex);
+    binder_status_t st = AParcel_writeStatusHeader(out, err);
+    AStatus_delete(err);
+    return st;
+}
+
+binder_status_t writeServiceErrorStatus(AParcel* out, int32_t errCode) {
+    AStatus* err = AStatus_fromServiceSpecificError(errCode);
+    binder_status_t st = AParcel_writeStatusHeader(out, err);
+    AStatus_delete(err);
     return st;
 }
 
@@ -508,6 +533,438 @@ binder_status_t factoryTransact(AIBinder*, transaction_code_t code, const AParce
     return STATUS_UNKNOWN_TRANSACTION;
 }
 
+// ---- Samsung HIDL @2.0 -> AIDL v2 backend (for Galaxy A53 and older HIDL HALs) ----
+
+struct HidlProviderData {
+    uint32_t handle = 0;
+    int32_t sessionType = 0;
+    bool isV21 = false;
+    std::mutex m;
+    std::shared_ptr<hidl_bridge::HwBinderBridge::PortEntry> activePort;
+};
+
+void hidlProviderDestroy(void* d) {
+    auto* pd = static_cast<HidlProviderData*>(d);
+    std::shared_ptr<hidl_bridge::HwBinderBridge::PortEntry> port;
+    {
+        std::lock_guard<std::mutex> l(pd->m);
+        port = std::move(pd->activePort);
+    }
+    if (port) hidl_bridge::HwBinderBridge::instance().deactivatePort(port);
+    if (pd->handle) hidl_bridge::HwBinderBridge::instance().releaseHandle(pd->handle);
+    delete pd;
+}
+
+binder_status_t backfillSize(AParcel* p, int32_t sizePos) {
+    int32_t end = AParcel_getDataPosition(p);
+    binder_status_t st = AParcel_setDataPosition(p, sizePos);
+    if (st == STATUS_OK) st = AParcel_writeInt32(p, end - sizePos);
+    if (st == STATUS_OK) st = AParcel_setDataPosition(p, end);
+    return st;
+}
+
+bool readAidlPcmConfig(const AParcel* in, hidl_bridge::HidlPcmParameters* outPcm, int32_t* outRateHz = nullptr,
+                       int8_t* outCh = nullptr, int8_t* outBps = nullptr) {
+    int32_t unionNonNull = 0, tag = -1, memNonNull = 0, memSize = 0;
+    int32_t sampleRateHz = 0, dataIntervalUs = 0;
+    int8_t channelMode = 0, bitsPerSample = 0;
+    if (AParcel_readInt32(in, &unionNonNull) != STATUS_OK || unionNonNull == 0 ||
+        AParcel_readInt32(in, &tag) != STATUS_OK || tag != 0 ||
+        AParcel_readInt32(in, &memNonNull) != STATUS_OK || memNonNull == 0 ||
+        AParcel_readInt32(in, &memSize) != STATUS_OK || memSize < 16 ||
+        AParcel_readInt32(in, &sampleRateHz) != STATUS_OK ||
+        AParcel_readByte(in, &channelMode) != STATUS_OK ||
+        AParcel_readByte(in, &bitsPerSample) != STATUS_OK ||
+        AParcel_readInt32(in, &dataIntervalUs) != STATUS_OK) {
+        return false;
+    }
+    uint32_t rateMask = hidl_bridge::HwBinderBridge::sampleRateToMask(sampleRateHz);
+    uint8_t bpsMask = hidl_bridge::HwBinderBridge::aidlBitsToMask(bitsPerSample);
+    if (rateMask == 0 || (channelMode != 1 && channelMode != 2) || bpsMask == 0) {
+        logf("HIDL PCM cfg unsupported: rate=%d ch=%d bps=%d",
+             sampleRateHz, static_cast<int>(channelMode), static_cast<int>(bitsPerSample));
+        return false;
+    }
+    *outPcm = {
+        rateMask,
+        static_cast<uint8_t>(channelMode),
+        bpsMask,
+        0,
+        dataIntervalUs > 0 ? static_cast<uint32_t>(dataIntervalUs) : 0,
+    };
+    if (outRateHz) *outRateHz = sampleRateHz;
+    if (outCh) *outCh = channelMode;
+    if (outBps) *outBps = bitsPerSample;
+    return true;
+}
+
+binder_status_t hidlProviderTransact(AIBinder* self, transaction_code_t code, const AParcel* in, AParcel* out) {
+    auto* pd = static_cast<HidlProviderData*>(AIBinder_getUserData(self));
+    if (code == kGetInterfaceVersion || code == kGetInterfaceHash)
+        return answerMeta(code, out, kAospVersion, kAospHash);
+
+    auto& br = hidl_bridge::HwBinderBridge::instance();
+    switch (code - FIRST_CALL_TRANSACTION) {
+        case 0: {  // endSession()
+            logf("HIDL endSession (sessionType=%d)", pd->sessionType);
+            std::shared_ptr<hidl_bridge::HwBinderBridge::PortEntry> port;
+            {
+                std::lock_guard<std::mutex> l(pd->m);
+                port = std::move(pd->activePort);
+            }
+            if (port) br.deactivatePort(port);
+            hidl_bridge::HidlParcel req;
+            req.writeInterfaceToken(hidl_bridge::kSehHidlProviderFqName);
+            binder_transaction_data rep{};
+            if (br.transact(pd->handle, hidl_bridge::kProviderSehEndSession, req, &rep, true)) {
+                br.freeBuffer(rep.data.ptr.buffer);
+            }
+            return writeOkStatus(out);
+        }
+        case 1: {  // startSession(port, AudioConfiguration, LatencyMode[])
+            AIBinder* guestPort = nullptr;
+            binder_status_t st = AParcel_readStrongBinder(in, &guestPort);
+            if (st != STATUS_OK || !guestPort) return st != STATUS_OK ? st : STATUS_UNEXPECTED_NULL;
+            if (!AIBinder_associateClass(guestPort, gAospPortCls)) {
+                AIBinder_decStrong(guestPort);
+                return STATUS_BAD_TYPE;
+            }
+            hidl_bridge::HidlPcmParameters pcm{};
+            int32_t sampleRateHz = 0;
+            int8_t channelMode = 0, bitsPerSample = 0;
+            if (!readAidlPcmConfig(in, &pcm, &sampleRateHz, &channelMode, &bitsPerSample)) {
+                AIBinder_decStrong(guestPort);
+                return writeExceptionStatus(out, EX_ILLEGAL_ARGUMENT);
+            }
+
+            auto portEntry = br.registerPort(guestPort);
+            AIBinder_decStrong(guestPort);  // portEntry owns the strong ref now
+            {
+                std::shared_ptr<hidl_bridge::HwBinderBridge::PortEntry> prev;
+                {
+                    std::lock_guard<std::mutex> l(pd->m);
+                    prev = std::move(pd->activePort);
+                    pd->activePort = portEntry;
+                }
+                if (prev) br.deactivatePort(prev);
+            }
+
+            hidl_bridge::HidlAudioConfiguration21 cfg21{};
+            cfg21.discriminator = 0;  // pcmConfig
+            cfg21.pcm = pcm;
+            br.setPortAudioConfig(portEntry->cookie, cfg21);
+
+            hidl_bridge::HidlAudioConfiguration20 cfg20{};
+            cfg20.discriminator = 0;  // pcmConfig
+            cfg20.pcm = pcm;
+
+            binder_transaction_data hrep{};
+            bool okTx = false;
+            bool usedV21 = false;
+            if (pd->isV21) {
+                hidl_bridge::HidlParcel hreq21;
+                hreq21.writeInterfaceToken(hidl_bridge::kSehHidlProviderFqName21);
+                hreq21.writeLocalBinder(reinterpret_cast<void*>(portEntry->cookie));
+                hreq21.writeBuffer(&cfg21, sizeof(cfg21));
+                if (br.transact(pd->handle, hidl_bridge::kProviderSehStartSession21, hreq21, &hrep, true)) {
+                    hidl_bridge::HidlReader checkR(hrep, br.mmapBase(), br.mmapSize());
+                    int32_t hstCheck = -1;
+                    if (checkR.readInt32(&hstCheck) && hstCheck == 0) {
+                        okTx = true;
+                        usedV21 = true;
+                    } else {
+                        br.freeBuffer(hrep.data.ptr.buffer);
+                        hrep = {};
+                    }
+                }
+            }
+            if (!okTx) {
+                hidl_bridge::HidlParcel hreq;
+                hreq.writeInterfaceToken(hidl_bridge::kSehHidlProviderFqName);
+                hreq.writeLocalBinder(reinterpret_cast<void*>(portEntry->cookie));
+                hreq.writeBuffer(&cfg20, sizeof(cfg20));
+                okTx = br.transact(pd->handle, hidl_bridge::kProviderSehStartSession, hreq, &hrep, true);
+            }
+            if (!okTx) {
+                logf("HIDL startSession: binder transact failed");
+                br.deactivatePort(portEntry);
+                return writeServiceErrorStatus(out, -1);
+            }
+
+            hidl_bridge::HidlReader r(hrep, br.mmapBase(), br.mmapSize());
+            int32_t hst = -1;
+            uint8_t sehSt = 2;
+            const void* mqRaw = nullptr;
+            hidl_bridge::HidlMQDescriptor mq{};
+            const hidl_bridge::HidlNativeHandle* nh = nullptr;
+            std::vector<int> fds;
+            std::vector<int32_t> ints;
+            std::vector<hidl_bridge::HidlGrantorDescriptor> grantors;
+
+            bool parsed = r.readInt32(&hst) && hst == 0 && r.readUint8(&sehSt) &&
+                          r.readBuffer(sizeof(hidl_bridge::HidlMQDescriptor), &mqRaw) && mqRaw != nullptr;
+            if (parsed) {
+                memcpy(&mq, mqRaw, sizeof(mq));
+                nh = r.findEmbeddedNativeHandle(mq.handlePtr);
+                if (nh) {
+                    for (int32_t i = 0; i < nh->numFds; i++) fds.push_back(nh->data[i]);
+                    for (int32_t i = 0; i < nh->numInts; i++) ints.push_back(nh->data[nh->numFds + i]);
+                }
+                if (mq.grantors.size > 0) {
+                    if (mq.grantors.size <= 32 &&
+                        r.inMmap(mq.grantors.ptr, mq.grantors.size * sizeof(hidl_bridge::HidlGrantorDescriptor))) {
+                        const auto* gp = reinterpret_cast<const hidl_bridge::HidlGrantorDescriptor*>(mq.grantors.ptr);
+                        grantors.assign(gp, gp + mq.grantors.size);
+                    } else {
+                        parsed = false;
+                    }
+                }
+            }
+
+            auto closeFdsAndFree = [&]() {
+                for (int fd : fds) {
+                    if (fd >= 0) close(fd);
+                }
+                br.freeBuffer(hrep.data.ptr.buffer);
+            };
+
+            if (!parsed || sehSt != 0) {
+                logf("HIDL startSession refused: parsed=%d hst=%d sehStatus=%u", parsed ? 1 : 0, hst, sehSt);
+                closeFdsAndFree();
+                br.deactivatePort(portEntry);
+                if (sehSt == 1) return writeExceptionStatus(out, EX_ILLEGAL_ARGUMENT);
+                return writeServiceErrorStatus(out, parsed ? static_cast<int32_t>(sehSt) : -1);
+            }
+
+            // Serialize AIDL MQDescriptor<byte, SynchronizedReadWrite>
+            st = writeOkStatus(out);
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, 1);  // non-null MQDescriptor
+            int32_t mqStart = AParcel_getDataPosition(out);
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, 0);  // size placeholder
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(grantors.size()));
+            for (const auto& g : grantors) {
+                if (st != STATUS_OK) break;
+                st = AParcel_writeInt32(out, 1);  // non-null GrantorDescriptor
+                int32_t gStart = AParcel_getDataPosition(out);
+                if (st == STATUS_OK) st = AParcel_writeInt32(out, 0);
+                if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(g.fdIndex));
+                if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(g.offset));
+                if (st == STATUS_OK) st = AParcel_writeInt64(out, static_cast<int64_t>(g.extent));
+                if (st == STATUS_OK) st = backfillSize(out, gStart);
+            }
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, nh ? 1 : 0);
+            if (st == STATUS_OK && nh) {
+                int32_t hStart = AParcel_getDataPosition(out);
+                st = AParcel_writeInt32(out, 0);
+                if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(fds.size()));
+                for (int fd : fds) {
+                    if (st != STATUS_OK) break;
+                    st = AParcel_writeParcelFileDescriptor(out, fd);
+                }
+                if (st == STATUS_OK)
+                    st = AParcel_writeInt32Array(out, ints.empty() ? nullptr : ints.data(),
+                                                 static_cast<int32_t>(ints.size()));
+                if (st == STATUS_OK) st = backfillSize(out, hStart);
+            }
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(mq.quantum));
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(mq.flags));
+            if (st == STATUS_OK) st = backfillSize(out, mqStart);
+
+            logf("HIDL startSession@2.%d OK (sessionType=%d rate=%d ch=%d bps=%d grantors=%zu fds=%zu st=%d)",
+                 usedV21 ? 1 : 0, pd->sessionType, sampleRateHz, static_cast<int>(channelMode),
+                 static_cast<int>(bitsPerSample), grantors.size(), fds.size(), st);
+            closeFdsAndFree();
+            return st;
+        }
+        case 2:    // streamStarted(BluetoothAudioStatus)
+        case 3: {  // streamSuspended(BluetoothAudioStatus)
+            int32_t aidlStatus = 0;
+            binder_status_t st = AParcel_readInt32(in, &aidlStatus);
+            if (st != STATUS_OK) return st;
+            uint32_t hcode = (code - FIRST_CALL_TRANSACTION == 2) ? hidl_bridge::kProviderSehStreamStarted
+                                                                  : hidl_bridge::kProviderSehStreamSuspended;
+            hidl_bridge::HidlParcel req;
+            req.writeInterfaceToken(hidl_bridge::kSehHidlProviderFqName);
+            req.writeUint8(hidl_bridge::HwBinderBridge::aidlStatusToHidl(aidlStatus));
+            binder_transaction_data rep{};
+            if (br.transact(pd->handle, hcode, req, &rep, true)) {
+                br.freeBuffer(rep.data.ptr.buffer);
+            }
+            return writeOkStatus(out);
+        }
+        case 4: {  // updateAudioConfiguration
+            hidl_bridge::HidlPcmParameters pcm{};
+            if (readAidlPcmConfig(in, &pcm)) {
+                hidl_bridge::HidlAudioConfiguration21 cfg21{};
+                cfg21.discriminator = 0;
+                cfg21.pcm = pcm;
+                std::shared_ptr<hidl_bridge::HwBinderBridge::PortEntry> port;
+                {
+                    std::lock_guard<std::mutex> l(pd->m);
+                    port = pd->activePort;
+                }
+                if (port) br.setPortAudioConfig(port->cookie, cfg21);
+                if (pd->isV21) {
+                    hidl_bridge::HidlParcel req;
+                    req.writeInterfaceToken(hidl_bridge::kSehHidlProviderFqName21);
+                    req.writeBuffer(&cfg21, sizeof(cfg21));
+                    binder_transaction_data rep{};
+                    if (br.transact(pd->handle, hidl_bridge::kProviderSehUpdateAudioConfiguration21, req, &rep, true)) {
+                        br.freeBuffer(rep.data.ptr.buffer);
+                    }
+                }
+            }
+            return writeOkStatus(out);
+        }
+        case 5:  // setLowLatencyModeAllowed
+            return writeOkStatus(out);
+        default:
+            return STATUS_UNKNOWN_TRANSACTION;
+    }
+}
+
+binder_status_t hidlFactoryTransact(AIBinder*, transaction_code_t code, const AParcel* in, AParcel* out) {
+    if (code == kGetInterfaceVersion || code == kGetInterfaceHash)
+        return answerMeta(code, out, kAospVersion, kAospHash);
+
+    auto& br = hidl_bridge::HwBinderBridge::instance();
+    bool facV21 = false;
+    uint32_t fac = br.getFactoryHandle(&facV21);
+    if (!fac) return STATUS_FAILED_TRANSACTION;
+
+    if (code == FIRST_CALL_TRANSACTION) {  // getProviderCapabilities(SessionType)
+        int32_t sessionType = -1;
+        if (AParcel_readInt32(in, &sessionType) != STATUS_OK) return STATUS_BAD_VALUE;
+        if (sessionType != hidl_bridge::kSessionA2dpSw && sessionType != hidl_bridge::kSessionHearingAidSw) {
+            binder_status_t st = writeOkStatus(out);
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, 0);
+            return st;
+        }
+        hidl_bridge::HidlParcel req;
+        req.writeInterfaceToken(hidl_bridge::kSehHidlFactoryFqName);
+        req.writeUint8(static_cast<uint8_t>(sessionType));
+        binder_transaction_data rep{};
+        if (!br.transact(fac, hidl_bridge::kFactorySehGetCapabilities, req, &rep, true)) return STATUS_FAILED_TRANSACTION;
+
+        hidl_bridge::HidlReader r(rep, br.mmapBase(), br.mmapSize());
+        int32_t hst = -1;
+        const void* vecPtr = nullptr;
+        const void* elemPtr = nullptr;
+        hidl_bridge::HidlVec hv{};
+        std::vector<hidl_bridge::HidlPcmParameters> pcms;
+        bool ok = r.readInt32(&hst) && hst == 0 && r.readBuffer(sizeof(hv), &vecPtr) && vecPtr != nullptr;
+        if (ok) {
+            memcpy(&hv, vecPtr, sizeof(hv));
+            if (hv.size > 0 && hv.size <= 32) {
+                if (r.readEmbeddedBuffer(hv.size * sizeof(hidl_bridge::HidlAudioCapabilities20), &elemPtr) && elemPtr) {
+                    const auto* elems = static_cast<const hidl_bridge::HidlAudioCapabilities20*>(elemPtr);
+                    for (uint32_t i = 0; i < hv.size; i++) {
+                        if (elems[i].discriminator == 0) pcms.push_back(elems[i].pcm);
+                    }
+                } else {
+                    ok = false;
+                }
+            }
+        }
+        br.freeBuffer(rep.data.ptr.buffer);
+        if (!ok) return STATUS_FAILED_TRANSACTION;
+
+        logf("HIDL getProviderCapabilities(sessionType=%d): %zu PCM entries", sessionType, pcms.size());
+
+        binder_status_t st = writeOkStatus(out);
+        if (st == STATUS_OK) st = AParcel_writeInt32(out, static_cast<int32_t>(pcms.size()));
+        for (const auto& p : pcms) {
+            if (st != STATUS_OK) break;
+            auto rates = hidl_bridge::HwBinderBridge::maskToSampleRates(p.sampleRateMask);
+            auto chans = hidl_bridge::HwBinderBridge::maskToChannelModes(p.channelModeMask);
+            auto bits = hidl_bridge::HwBinderBridge::maskToBitsPerSample(p.bitsPerSampleMask);
+            st = AParcel_writeInt32(out, 1);  // non-null AudioCapabilities union
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, 0);  // tag pcmCapabilities
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, 1);  // non-null PcmCapabilities
+            int32_t pStart = AParcel_getDataPosition(out);
+            if (st == STATUS_OK) st = AParcel_writeInt32(out, 0);
+            if (st == STATUS_OK)
+                st = AParcel_writeInt32Array(out, rates.empty() ? nullptr : rates.data(),
+                                             static_cast<int32_t>(rates.size()));
+            if (st == STATUS_OK)
+                st = AParcel_writeByteArray(out, chans.empty() ? nullptr : chans.data(),
+                                            static_cast<int32_t>(chans.size()));
+            if (st == STATUS_OK)
+                st = AParcel_writeByteArray(out, bits.empty() ? nullptr : bits.data(),
+                                            static_cast<int32_t>(bits.size()));
+            if (st == STATUS_OK) st = AParcel_writeInt32Array(out, nullptr, 0);  // dataIntervalUs
+            if (st == STATUS_OK) st = backfillSize(out, pStart);
+        }
+        return st;
+    }
+
+    if (code == FIRST_CALL_TRANSACTION + 1) {  // openProvider(SessionType)
+        int32_t sessionType = -1;
+        if (AParcel_readInt32(in, &sessionType) != STATUS_OK) return STATUS_BAD_VALUE;
+        if (sessionType != hidl_bridge::kSessionA2dpSw && sessionType != hidl_bridge::kSessionHearingAidSw) {
+            logf("HIDL openProvider(session type %d): software-only HAL refused offload/LE type", sessionType);
+            return writeExceptionStatus(out, EX_ILLEGAL_ARGUMENT);
+        }
+        int32_t hst = -1;
+        uint8_t sehSt = 2;
+        uint32_t provHandle = 0;
+        bool isNull = true;
+        bool ok = false;
+        bool provV21 = false;
+        if (facV21) {
+            hidl_bridge::HidlParcel req21;
+            req21.writeInterfaceToken(hidl_bridge::kSehHidlFactoryFqName21);
+            req21.writeUint8(static_cast<uint8_t>(sessionType));
+            binder_transaction_data rep21{};
+            if (br.transact(fac, hidl_bridge::kFactorySehOpenProvider21, req21, &rep21, true)) {
+                hidl_bridge::HidlReader r21(rep21, br.mmapBase(), br.mmapSize());
+                int32_t h21 = -1;
+                uint8_t s21 = 2;
+                uint32_t ph21 = 0;
+                bool n21 = true;
+                if (r21.readInt32(&h21) && h21 == 0 && r21.readUint8(&s21) && r21.readStrongBinder(&ph21, &n21)) {
+                    if (s21 == 0 && !n21 && ph21 != 0) br.acquireHandle(ph21);
+                    hst = h21;
+                    sehSt = s21;
+                    provHandle = ph21;
+                    isNull = n21;
+                    ok = true;
+                    provV21 = true;
+                }
+                br.freeBuffer(rep21.data.ptr.buffer);
+            }
+        }
+        if (!ok) {
+            hidl_bridge::HidlParcel req;
+            req.writeInterfaceToken(hidl_bridge::kSehHidlFactoryFqName);
+            req.writeUint8(static_cast<uint8_t>(sessionType));
+            binder_transaction_data rep{};
+            if (!br.transact(fac, hidl_bridge::kFactorySehOpenProvider, req, &rep, true))
+                return STATUS_FAILED_TRANSACTION;
+
+            hidl_bridge::HidlReader r(rep, br.mmapBase(), br.mmapSize());
+            ok = r.readInt32(&hst) && hst == 0 && r.readUint8(&sehSt) && r.readStrongBinder(&provHandle, &isNull);
+            if (ok && sehSt == 0 && !isNull && provHandle != 0) {
+                br.acquireHandle(provHandle);
+            }
+            br.freeBuffer(rep.data.ptr.buffer);
+        }
+        if (!ok) return STATUS_FAILED_TRANSACTION;
+        if (sehSt != 0 || isNull || provHandle == 0) {
+            logf("HIDL openProvider(session type %d): Samsung HIDL factory refused (%u)", sessionType, sehSt);
+            return sehSt == 1 ? writeExceptionStatus(out, EX_ILLEGAL_ARGUMENT)
+                              : writeServiceErrorStatus(out, static_cast<int32_t>(sehSt));
+        }
+        logf("HIDL openProvider(session type %d): wrapped @2.%d handle %u", sessionType, provV21 ? 1 : 0, provHandle);
+        AIBinder* mine = AIBinder_new(gHidlProviderCls, new HidlProviderData{provHandle, sessionType, provV21, {}, nullptr});
+        binder_status_t st = writeOkStatus(out);
+        if (st == STATUS_OK) st = AParcel_writeStrongBinder(out, mine);
+        if (mine) AIBinder_decStrong(mine);
+        return st;
+    }
+    return STATUS_UNKNOWN_TRANSACTION;
+}
+
 void defineClasses() {
     gAospFactoryCls = AIBinder_Class_define(kAospFactory, onCreatePass, onDestroyNothing, factoryTransact);
     gAospProviderCls = AIBinder_Class_define(kAospProvider, onCreatePass, providerDestroy, providerTransact);
@@ -515,6 +972,8 @@ void defineClasses() {
     gSehFactoryCls = AIBinder_Class_define(gLoop ? kAospFactory : kSehFactory, onCreatePass, onDestroyNothing, onTransactNone);
     gSehProviderCls = AIBinder_Class_define(gLoop ? kAospProvider : kSehProvider, onCreatePass, onDestroyNothing, onTransactNone);
     gSehPortCls = AIBinder_Class_define(gLoop ? kAospPort : kSehPort, onCreatePass, portDestroy, portTransact);
+    gHidlFactoryCls = AIBinder_Class_define(kAospFactory, onCreatePass, onDestroyNothing, hidlFactoryTransact);
+    gHidlProviderCls = AIBinder_Class_define(kAospProvider, onCreatePass, hidlProviderDestroy, hidlProviderTransact);
 }
 
 // --client NAME: what a guest's stack does first, against NAME.
@@ -584,9 +1043,92 @@ int client(const char* name) {
     return 0;
 }
 
+int suppressHostSvcs(const char* stage, bool dryOnce) {
+    char sfFrozenPath[512];
+    char guestAudioPath[512];
+    if (snprintf(sfFrozenPath, sizeof(sfFrozenPath), "%s/data/oneos_host_sf_frozen", stage) >=
+            static_cast<int>(sizeof(sfFrozenPath)) ||
+        snprintf(guestAudioPath, sizeof(guestAudioPath), "%s/data/guest_audio.flag", stage) >=
+            static_cast<int>(sizeof(guestAudioPath))) {
+        fprintf(stderr, "suppressHostSvcs: stage path too long\n");
+        return 1;
+    }
+
+    static const char* const kAlways[] = {
+        "zygote", "zygote_secondary", "bootanim",
+        "dumpstate", "dumpstatez", "bugreport", "bugreportd",
+    };
+
+    auto checkSvc = [dryOnce](const char* name) -> int {
+        char prop[64];
+        char val[PROP_VALUE_MAX] = {};
+        snprintf(prop, sizeof(prop), "init.svc.%s", name);
+        __system_property_get(prop, val);
+        if (dryOnce) {
+            printf("%s=%s\n", prop, val);
+            return 0;
+        }
+        if (strcmp(val, "running") == 0) {
+            __system_property_set("ctl.stop", name);
+            return 1;
+        }
+        return 0;
+    };
+
+    auto checkOnce = [&]() -> int {
+        int stopped = 0;
+        for (const char* name : kAlways) stopped += checkSvc(name);
+        if (access(sfFrozenPath, F_OK) != 0) stopped += checkSvc("surfaceflinger");
+        if (access(guestAudioPath, F_OK) == 0) stopped += checkSvc("audioserver");
+        return stopped;
+    };
+
+    if (dryOnce) {
+        uint32_t s0 = __system_property_area_serial();
+        checkOnce();
+        uint32_t s1 = s0;
+        struct timespec ts{0, 50 * 1000 * 1000};
+        bool changed = __system_property_wait(nullptr, s0, &s1, &ts);
+        printf("serial=%u->%u changed=%d\n", s0, s1, changed ? 1 : 0);
+        return 0;
+    }
+
+    auto monoMs = []() -> int64_t {
+        struct timespec ts{};
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+    };
+
+    uint32_t serial = __system_property_area_serial();
+    int64_t lastWakeMs = monoMs();
+    while (true) {
+        int stopped = checkOnce();
+        uint32_t cur = __system_property_area_serial();
+        int64_t nowMs = monoMs();
+        if (stopped == 0 && (nowMs - lastWakeMs) < 50) {
+            usleep(50 * 1000);
+        }
+        lastWakeMs = monoMs();
+        if (cur != serial) {
+            serial = cur;
+            continue;
+        }
+        uint32_t nextSerial = serial;
+        struct timespec ts{0, 200 * 1000 * 1000};
+        if (__system_property_wait(nullptr, serial, &nextSerial, &ts)) {
+            serial = nextSerial;
+        }
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+    if (argc >= 3 && !strcmp(argv[1], "--suppress-host-svcs"))
+        return suppressHostSvcs(argv[2], false);
+    if (argc >= 3 && !strcmp(argv[1], "--suppress-host-svcs-check"))
+        return suppressHostSvcs(argv[2], true);
     if (!P.load()) {
         logf("libbinder_ndk.so lacks the service manager calls");
         return 2;
@@ -601,11 +1143,23 @@ int main(int argc, char** argv) {
         kSehFactoryName = kAospFactoryName;
         kAospFactoryName = kLoopName;
     }
-    if (argc == 2 && !strcmp(argv[1], "--check")) {
+    if (argc == 2 && !strcmp(argv[1], "--hidl")) {
+        gForceHidl = true;
+    } else if (argc == 2 && !strcmp(argv[1], "--hidl-probe")) {
+        auto& br = hidl_bridge::HwBinderBridge::instance();
+        br.setLog(logf);
+        if (!br.ensureOpen()) {
+            logf("hidl-probe: could not open /dev/hwbinder: %s", strerror(errno));
+            return 1;
+        }
+        br.startLooperPool();
+        return br.runProbe();
+    } else if (argc == 2 && !strcmp(argv[1], "--check")) {
         AIBinder* s = P.checkService(kSehFactoryName);
+        bool sh = hidl_bridge::HwBinderBridge::instance().factoryExists();
         AIBinder* a = P.checkService(kAospFactoryName);
-        printf("samsung_factory=%d android_factory=%d android_declared=%d\n", s != nullptr, a != nullptr,
-               P.isDeclared(kAospFactoryName) ? 1 : 0);
+        printf("samsung_factory=%d samsung_hidl_factory=%d android_factory=%d android_declared=%d\n",
+               s != nullptr, sh ? 1 : 0, a != nullptr, P.isDeclared(kAospFactoryName) ? 1 : 0);
         if (s) AIBinder_decStrong(s);
         if (a) AIBinder_decStrong(a);
         return 0;
@@ -613,25 +1167,45 @@ int main(int argc, char** argv) {
     defineClasses();
     P.setThreads(4);
     P.startPool();
-    for (int i = 0; i < 100 && !gSehFactory; i++) {
-        gSehFactory = P.checkService(kSehFactoryName);
+    auto& br = hidl_bridge::HwBinderBridge::instance();
+    br.setLog(logf);
+
+    bool useHidl = false;
+    for (int i = 0; i < 100 && !gSehFactory && !useHidl; i++) {
+        if (!gForceHidl) gSehFactory = P.checkService(kSehFactoryName);
+        if (!gSehFactory && !gLoop && br.factoryExists()) {
+            useHidl = true;
+            break;
+        }
         if (!gSehFactory) usleep(100 * 1000);
     }
-    if (!gSehFactory) {
-        logf("no %s: nothing to bridge", kSehFactoryName);
+    if (!gSehFactory && !useHidl) {
+        logf("no %s (AIDL or HIDL @2.0): nothing to bridge", kSehFactoryName);
         return 1;
     }
-    if (!AIBinder_associateClass(gSehFactory, gSehFactoryCls)) {
-        logf("%s is not Samsung's factory", kSehFactoryName);
-        return 1;
+    AIBinder* factory = nullptr;
+    bool facV21 = false;
+    if (useHidl) {
+        br.startLooperPool();
+        if (!br.getFactoryHandle(&facV21)) {
+            logf("could not open Samsung HIDL factory on /dev/hwbinder");
+            return 1;
+        }
+        factory = AIBinder_new(gHidlFactoryCls, nullptr);
+    } else {
+        if (!AIBinder_associateClass(gSehFactory, gSehFactoryCls)) {
+            logf("%s is not Samsung's factory", kSehFactoryName);
+            return 1;
+        }
+        factory = AIBinder_new(gAospFactoryCls, nullptr);
     }
-    AIBinder* factory = AIBinder_new(gAospFactoryCls, nullptr);
     binder_exception_t ex = P.addService(factory, kAospFactoryName);
     if (ex != EX_NONE) {
         logf("could not register %s: exception %d", kAospFactoryName, ex);
         return 1;
     }
-    logf("serving %s for Samsung's factory (declared: %d)", kAospFactoryName, P.isDeclared(kAospFactoryName) ? 1 : 0);
+    logf("serving %s for Samsung's %sfactory (declared: %d)", kAospFactoryName,
+         useHidl ? (facV21 ? "HIDL @2.1 " : "HIDL @2.0 ") : "", P.isDeclared(kAospFactoryName) ? 1 : 0);
     // Keep the name. Samsung's audio HAL also carries Qualcomm's provider for
     // Android's factory and registers it under the same name once the guest's
     // Bluetooth opens (it can, now that the session declares the name). That

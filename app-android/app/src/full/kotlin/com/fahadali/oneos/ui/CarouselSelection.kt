@@ -8,6 +8,6 @@ internal object CarouselSelection {
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("oneos_navigation", Context.MODE_PRIVATE)
     fun family(ctx: Context): SystemFamily = runCatching {
         SystemFamily.valueOf(prefs(ctx).getString("last_card_family", null).orEmpty())
-    }.getOrDefault(SystemFamily.COLOROS)
+    }.getOrDefault(SystemFamily.LINEAGE)
     fun remember(ctx: Context, image: ImageRef) { prefs(ctx).edit().putString("last_card_family", image.family.name).apply() }
 }

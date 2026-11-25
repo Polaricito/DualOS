@@ -14,7 +14,7 @@ class FindingsBundleTest {
     val tmp = TemporaryFolder()
 
     private val fixture = File(System.getProperty("oneos.installdFixture") ?: "../../../switcher/patches/host_installd.txt")
-    private val fp = "samsung/q8qxxx/q8q:17/CP2A.260605.016/F976BXXS3AZIJ:user/release-keys"
+    private val fp = "samsung/a53x/a53x:16/BP2A.250605.031.A3/A536EXXS:user/release-keys"
 
     private val secrets = listOf(
         "R5CX21ABCDE", "490154203237518", "a4:c3:f0:85:ac:2d", "Alex-Home-5G", "8996601234567890123",
@@ -28,7 +28,7 @@ class FindingsBundleTest {
             "props/getprop.txt",
             """
             [ro.build.fingerprint]: [$fp]
-            [ro.product.model]: [SM-F976B]
+            [ro.product.model]: [SM-A536E]
             [ro.serialno]: [R5CX21ABCDE]
             [ril.imei]: [490154203237518]
             [ro.boot.wifimacaddr]: [a4:c3:f0:85:ac:2d]
@@ -39,7 +39,7 @@ class FindingsBundleTest {
             [ro.boot.em.did]: [2041A3B5C7D9E1F3]
             """.trimIndent(),
         )
-        put("props/key.txt", "ro.build.fingerprint=$fp\nro.build.version.oneui=90000\n")
+        put("props/key.txt", "ro.build.fingerprint=$fp\nro.build.version.oneui=80000\n")
         put("cpu/cpuinfo.txt", Fixtures.NO_SVE_CPUINFO)
         put("cpu/uname.txt", "Linux localhost 6.12.23-android16 #1 SMP PREEMPT aarch64\n")
         put("selinux/types.txt", ProbeFindings.GENERIC_APP_TYPES.joinToString("\n") { "(type $it" } + "\n(typealias foo\n")
@@ -81,10 +81,10 @@ class FindingsBundleTest {
         val (results, dex) = capture(cap)
         val methods = InstalldTableFormat.parseLegacy(fixture.readText())
         val input = FindingsInput(
-            app = AppInfo("com.fahadali.oneos", "0.2.0-probe", 2, "OneOS"),
+            app = AppInfo("com.dualos.a53", "1.0.0", 148, "DualOS"),
             generatedAt = "2026-10-22T15:10:31+03:00",
             date = "2026-10-22",
-            facts = Fixtures.facts(cpu = null, root = RootSignals(listOf("me.weishu.kernelsu"), probe = SuProbeResult(SuState.GRANTED, 0, "u:r:su:s0", "uid=0"))),
+            facts = Fixtures.a53(cpu = null, root = RootSignals(listOf("me.weishu.kernelsu"), probe = SuProbeResult(SuState.GRANTED, 0, "u:r:su:s0", "uid=0"))),
             commands = ProbeCommandList.parse(
                 "#== G\n#: a\nrun build.getprop 30 props/getprop.txt 'getprop'\n#: b\nrun cpu.cpuinfo 10 cpu/cpuinfo.txt 'cat /proc/cpuinfo'\n" +
                     "#: c\nfiles installd.dex 300 installd 'true'\n#: d\nrun storage.stage 10 storage/s.txt 'true'\n" +
@@ -101,8 +101,8 @@ class FindingsBundleTest {
         val out = tmp.newFolder("findings")
         val r = FindingsBuilder(Redactor("bundle".toByteArray())).build(input, cap, out)
 
-        assertEquals("findings-SM-F976B-2026-10-22", r.name)
-        assertEquals(File(out, "findings-SM-F976B-2026-10-22.zip"), r.zip)
+        assertEquals("findings-SM-A536E-2026-10-22", r.name)
+        assertEquals(File(out, "findings-SM-A536E-2026-10-22.zip"), r.zip)
         assertTrue(r.zip.isFile)
 
         ZipFile(r.zip).use { z ->
@@ -111,14 +111,14 @@ class FindingsBundleTest {
                 "report.json", "summary.txt", "redaction.txt", "props/getprop.txt", "props/key.txt", "cpu/cpuinfo.txt",
                 "installd/table.txt", "installd/host_installd.txt", "installd/system_framework_services.jar/classes.dex",
                 "input/getevent.txt",
-            ).map { "findings-SM-F976B-2026-10-22/$it" }
+            ).map { "findings-SM-A536E-2026-10-22/$it" }
             assertTrue(names.toString(), names.containsAll(expected))
-            assertEquals("findings-SM-F976B-2026-10-22/report.json", names.first())
+            assertEquals("findings-SM-A536E-2026-10-22/report.json", names.first())
             for (e in z.entries()) {
                 val text = z.getInputStream(e).readBytes().toString(Charsets.ISO_8859_1)
                 for (s in secrets) assertFalse("${e.name} leaks $s", text.contains(s))
             }
-            val dexEntry = z.getEntry("findings-SM-F976B-2026-10-22/installd/system_framework_services.jar/classes.dex")
+            val dexEntry = z.getEntry("findings-SM-A536E-2026-10-22/installd/system_framework_services.jar/classes.dex")
             assertTrue(dex.contentEquals(z.getInputStream(dexEntry).readBytes()))
         }
 
@@ -129,24 +129,21 @@ class FindingsBundleTest {
             assertTrue(report.contains("\"sha256\": \"${f.sha256}\""))
         }
         assertTrue(report.contains("\"schema\": \"oneos.findings/1\""))
-        assertTrue(report.contains("\"verdict\": \"WARN\""))
-        assertTrue(report.contains("\"version\": \"0.2.0-probe\""))
-        assertTrue(report.contains("\"versionCode\": 2"))
-        assertTrue(report.contains("\"id\": \"${CpuRules.ID_APP_FEATURES}\""))
+        assertTrue(report.contains("\"verdict\": \"OK\""))
+        assertTrue(report.contains("\"version\": \"1.0.0\""))
+        assertTrue(report.contains("\"versionCode\": 148"))
+        assertTrue(report.contains("\"id\": \"${CpuRules.ID_OK}\""))
         assertTrue(report.contains("\"status\": \"timed out\""))
         assertTrue(report.contains("\"status\": \"not run\""))
 
-        // Verdict: the CPU from the root capture (the app could not read it) lacks SVE2/SME.
-        assertEquals(Level.WARN, r.report.find(CpuRules.ID_APP_FEATURES)?.level)
+        assertEquals(Level.OK, r.report.find(CpuRules.ID_OK)?.level)
         assertEquals(Level.OK, r.report.find("installd-table")?.level)
         assertEquals(Level.OK, r.report.find("selinux-types")?.level)
         assertEquals(Level.INFO, r.report.find("probes-incomplete")?.level)
         assertEquals(null, r.report.find("stage-present"))
 
         val summary = File(r.folder, "summary.txt").readText()
-        assertTrue(summary.contains("Verdict:  Warning"))
-        // The Fold's first image (0.4.38: the Find N6 global build) needs no SVE2 or SME itself, only some apps.
-        assertTrue(summary.contains("Some app and media features may crash"))
+        assertTrue(summary.contains("Verdict:  Compatible"))
         assertTrue(summary.contains("installd: 85 methods from /system/framework/services.jar!classes.dex"))
         assertTrue(summary.contains("timed out"))
 
@@ -155,7 +152,7 @@ class FindingsBundleTest {
 
         assertTrue(r.redaction.total >= 10)
         assertTrue(File(r.folder, "redaction.txt").readText().contains("ro.serialno"))
-        assertTrue(File(r.folder, "props/getprop.txt").readText().contains("[ro.product.model]: [SM-F976B]"))
+        assertTrue(File(r.folder, "props/getprop.txt").readText().contains("[ro.product.model]: [SM-A536E]"))
     }
 
     @Test
@@ -163,7 +160,7 @@ class FindingsBundleTest {
         val cap = tmp.newFolder("capture")
         val (results, _) = capture(cap)
         val input = FindingsInput(
-            app = AppInfo("com.fahadali.oneos", "0.2.0-probe", 2, "OneOS"),
+            app = AppInfo("com.dualos.a53", "1.0.0", 148, "DualOS"),
             generatedAt = "2026-10-22T15:10:31+03:00",
             date = "2026-10-22",
             facts = null,
@@ -186,16 +183,16 @@ class FindingsBundleTest {
         assertTrue(second.summary.contains("not derived on the phone"))
     }
 
-    /** The bundle's root finding names the app that ran the tests (OneOS Probe has its own root grant). */
+    /** The bundle's root finding names the app that ran the tests (DualOS Probe has its own root grant). */
     @Test
     fun theRootFindingNamesTheAppThatRan() {
         val cap = tmp.newFolder("capture")
         val (results, _) = capture(cap)
         val input = FindingsInput(
-            app = AppInfo("com.fahadali.oneos.probe", "0.3.4-probe", 8, "OneOS Probe"),
+            app = AppInfo("com.dualos.a53.probe", "1.0.0-probe", 148, "DualOS Probe"),
             generatedAt = "2026-10-23T15:10:31+03:00",
             date = "2026-10-23",
-            facts = Fixtures.facts(root = RootSignals(listOf("me.weishu.kernelsu"), probe = SuProbeResult(SuState.TIMEOUT, null, null, ""))),
+            facts = Fixtures.a53(root = RootSignals(listOf("me.weishu.kernelsu"), probe = SuProbeResult(SuState.TIMEOUT, null, null, ""))),
             commands = emptyList(),
             runnerSha256 = "1".repeat(64),
             commandsSha256 = "2".repeat(64),
@@ -203,6 +200,6 @@ class FindingsBundleTest {
             installd = InstalldDerivation.failed("IInstalld\$Stub not found"),
         )
         val r = FindingsBuilder(Redactor.forBundle()).build(input, cap, tmp.newFolder("findings"))
-        assertEquals("Allow OneOS Probe in your root manager, then check root again.", r.report.find("root-timeout")?.detail)
+        assertEquals("Allow DualOS Probe in your root manager, then check root again.", r.report.find("root-timeout")?.detail)
     }
 }

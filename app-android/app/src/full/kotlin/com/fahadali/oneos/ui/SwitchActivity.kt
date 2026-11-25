@@ -1,9 +1,34 @@
 package com.fahadali.oneos.ui
 
 import android.os.Bundle
-import android.widget.LinearLayout
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
-import androidx.fragment.app.Fragment
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ExitToApp
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.model.GatePhase
 import com.fahadali.oneos.core.model.Images
@@ -11,34 +36,32 @@ import com.fahadali.oneos.core.model.Level
 import com.fahadali.oneos.session.LaunchJob
 import com.fahadali.oneos.session.SessionPrefs
 import com.fahadali.oneos.session.StageCheck
-import dev.oneuiproject.oneui.R as OuiIcons
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
+import com.fahadali.oneos.shared.ExpressiveSwitchItem
+import com.fahadali.oneos.shared.LocalDualOsStatusColors
 
-/**
- * All checks and Test run (For the OneOS team; Home's Details › All checks;
- * the card look): the ways back to One UI, every Switch gate as it is (BLOCK
- * has no override; the screen lock is read again at every draw and right
- * before root is asked), the warnings to tick (an untested phone and image,
- * calls on this carrier), for an image with Google services the row that
- * hides them for this session (off by default, never saved), then Test run
- * or Switch, each behind a dialog.
- */
-class SwitchActivity : ToolbarActivity() {
-    override val screenTitle: CharSequence get() = getString(R.string.switch_title)
-
-    override fun createFragment(): Fragment = SwitchFragment()
-}
-
-class SwitchFragment : CardsFragment() {
+/** All checks and Test run: ways back, full switch gate list, warnings, hide-GMS option, dry-run/switch actions. */
+class SwitchActivity : AppCompatActivity() {
     private val subs = mutableListOf<() -> Unit>()
-    private val ticked = mutableSetOf<String>()
-
-    /** This launch only: ONEOS_GUEST_HIDE_GMS=1 (owner: Google services stay on by default). */
-    private var hideGms = false
+    private var ticked: Set<String> by mutableStateOf(emptySet())
+    private var hideGms by mutableStateOf(false)
+    private var tick by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        savedInstanceState?.getStringArrayList(KEY_TICKED)?.let(ticked::addAll)
+        savedInstanceState?.getStringArrayList(KEY_TICKED)?.let { ticked = it.toSet() }
         hideGms = savedInstanceState?.getBoolean(KEY_HIDE_GMS) == true
+        setContent {
+            DualOsTheme {
+                Screen()
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -49,14 +72,13 @@ class SwitchFragment : CardsFragment() {
 
     override fun onStart() {
         super.onStart()
-        subs += StageCheck.observe { redraw() }
-        subs += LaunchJob.observe { redraw() }
+        subs += StageCheck.observe { tick++ }
+        subs += LaunchJob.observe { tick++ }
     }
 
     override fun onResume() {
         super.onResume()
-        // Back from Settings (screen lock removed?): the gates read it again.
-        redraw()
+        tick++
     }
 
     override fun onStop() {
@@ -65,118 +87,184 @@ class SwitchFragment : CardsFragment() {
         super.onStop()
     }
 
-    override fun build(column: LinearLayout) {
-        val ctx = column.context
+    @Composable
+    private fun Screen() {
+        @Suppress("UNUSED_VARIABLE") val t = tick
         val launch = LaunchJob.state
         val check = StageCheck.state
         val r = check.result
-        val report = r?.takeIf { it.installd != null }?.let { StageCheck.gates(ctx, it, GatePhase.SWITCH) }
-        // {system}: the staged image's name ("the other system" while none is known).
+        val report = r?.takeIf { it.installd != null }?.let { StageCheck.gates(this, it, GatePhase.SWITCH) }
         val system = Images.systemName(report?.image, report?.profile)
+        val statusColors = LocalDualOsStatusColors.current
 
-        // The ways back: listed always, before anything else.
-        val back = Cards.section(column, getString(R.string.switch_cat_back), rows = true)
-        if (report?.set?.hasReturnApp == true) {
-            Cards.row(back, R.drawable.ic_home_back_app, getString(R.string.home_sheet_back_app), getString(R.string.home_sheet_back_app_line, system))
-        }
-        Cards.row(back, R.drawable.ic_home_back_keys, getString(R.string.switch_back_keys_title), getString(R.string.switch_back_keys_summary, system))
-        Cards.row(back, OuiIcons.drawable.ic_oui_time, getString(R.string.switch_back_auto_title), getString(R.string.switch_back_auto_summary, system))
-        Cards.row(back, R.drawable.ic_home_back_power, getString(R.string.switch_back_force_title), getString(R.string.switch_back_force_summary))
-        Cards.row(back, OuiIcons.drawable.ic_oui_security_outline, getString(R.string.switch_back_root_title), getString(R.string.switch_back_root_summary))
+        DualOsScaffold(
+            title = stringResource(R.string.switch_title),
+            onBack = { finish() },
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 32.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { ExpressiveSectionHeader(stringResource(R.string.switch_cat_back)) }
+                item {
+                    ExpressiveGroupedCard {
+                        var hasTop = false
+                        @Composable
+                        fun sep() { if (hasTop) ExpressiveListDivider(); hasTop = true }
+                        if (report?.set?.hasReturnApp == true) {
+                            sep(); ExpressiveListItem(title = stringResource(R.string.home_sheet_back_app), subtitle = stringResource(R.string.home_sheet_back_app_line, system), icon = Icons.AutoMirrored.Rounded.ExitToApp)
+                        }
+                        sep(); ExpressiveListItem(title = stringResource(R.string.switch_back_keys_title), subtitle = stringResource(R.string.switch_back_keys_summary, system), icon = DualOsIcons.VolumeUp)
+                        sep(); ExpressiveListItem(title = stringResource(R.string.switch_back_auto_title), subtitle = stringResource(R.string.switch_back_auto_summary, system), icon = DualOsIcons.History)
+                        sep(); ExpressiveListItem(title = stringResource(R.string.switch_back_force_title), subtitle = stringResource(R.string.switch_back_force_summary), icon = DualOsIcons.Power)
+                        sep(); ExpressiveListItem(title = stringResource(R.string.switch_back_root_title), subtitle = stringResource(R.string.switch_back_root_summary), icon = DualOsIcons.Security)
+                    }
+                }
 
-        // Every check, as it is.
-        val levels = report?.report?.sorted?.map { it.level }.orEmpty()
-        val checks = Cards.section(
-            column, getString(R.string.switch_cat_checks),
-            if (levels.isEmpty() || check.busy) null else getString(R.string.home_checks_count, levels.count { it == Level.OK }, levels.size),
-            Cards.worst(levels),
-            rows = true,
-        )
-        if (check.busy) {
-            CardRows.tint(Cards.row(checks, OuiIcons.drawable.ic_oui_refresh, check.step ?: getString(R.string.prepare_checking), null), Level.INFO)
-        } else {
-            CardRows.row(
-                checks, OuiIcons.drawable.ic_oui_refresh,
-                getString(if (r == null) R.string.prepare_check_title else R.string.prepare_check_again),
-                check.message ?: getString(R.string.switch_check_summary),
-                enabled = !launch.busy,
-            ) { if (!launch.busy) StageCheck.start(ctx, StageCheck.Mode.FULL) }
-        }
-        if (r == null) return
-        if (report == null) {
-            CardRows.status(checks, Level.BLOCK, getString(R.string.switch_need_full), null)
-            return
-        }
-        val stale = r.ageMs > StageCheck.FRESH_MS
-        for (f in report.report.sorted) CardRows.finding(checks, f)
+                item { ExpressiveSectionHeader(stringResource(R.string.switch_cat_checks)) }
+                item {
+                    ExpressiveGroupedCard {
+                        if (check.busy) {
+                            ExpressiveListItem(title = check.step ?: stringResource(R.string.prepare_checking), icon = Icons.Rounded.Refresh)
+                        } else {
+                            ExpressiveListItem(
+                                title = stringResource(if (r == null) R.string.prepare_check_title else R.string.prepare_check_again),
+                                subtitle = check.message ?: stringResource(R.string.switch_check_summary),
+                                icon = Icons.Rounded.Refresh,
+                                enabled = !launch.busy,
+                                showChevron = !launch.busy,
+                                onClick = { if (!launch.busy) StageCheck.start(this@SwitchActivity, StageCheck.Mode.FULL) },
+                            )
+                        }
+                        if (r != null && report == null) {
+                            ExpressiveListDivider()
+                            ExpressiveListItem(title = stringResource(R.string.switch_need_full), icon = levelIcon(Level.BLOCK), iconTint = levelColor(Level.BLOCK))
+                        }
+                        report?.report?.sorted?.forEach { f ->
+                            ExpressiveListDivider()
+                            ExpressiveListItem(title = f.title, subtitle = f.detail.ifEmpty { null }, icon = levelIcon(f.level), iconTint = levelColor(f.level))
+                        }
+                    }
+                }
 
-        val toTick = report.toTick
-        ticked.retainAll(toTick.mapNotNull { it.tickKey }.toSet())
-        if (toTick.isNotEmpty()) {
-            val warn = Cards.section(column, getString(R.string.switch_cat_tick), rows = true)
-            for (g in toTick) {
-                CardRows.tick(warn, g.ack!!, g.finding.title, g.tickKey in ticked) { on ->
-                    g.tickKey?.let { if (on) ticked += it else ticked -= it }
-                    redraw()
+                if (r != null && report != null) {
+                    val stale = r.ageMs > StageCheck.FRESH_MS
+                    val toTick = report.toTick
+                    val validTicked = ticked.intersect(toTick.mapNotNull { it.tickKey }.toSet())
+                    if (toTick.isNotEmpty()) {
+                        item { ExpressiveSectionHeader(stringResource(R.string.switch_cat_tick)) }
+                        item {
+                            ExpressiveGroupedCard {
+                                toTick.forEachIndexed { idx, g ->
+                                    if (idx > 0) ExpressiveListDivider()
+                                    val key = g.tickKey
+                                    val isChecked = key in validTicked
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (key != null) {
+                                                    ticked = if (isChecked) validTicked - key else validTicked + key
+                                                }
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Checkbox(
+                                            checked = isChecked,
+                                            onCheckedChange = { on ->
+                                                if (key != null) ticked = if (on) validTicked + key else validTicked - key
+                                            },
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(g.ack.orEmpty(), style = MaterialTheme.typography.titleSmall)
+                                            Text(g.finding.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item { ExpressiveSectionHeader(stringResource(R.string.switch_cat_go)) }
+                    item {
+                        val effectiveHideGms = if (report.image?.gmsHideable == true) hideGms else false
+                        val allowed = !stale && report.allows(validTicked) && !launch.busy && launch.phase != LaunchJob.Phase.LAUNCHED
+                        val why = when {
+                            stale -> stringResource(R.string.prepare_run_stale)
+                            report.blocked -> stringResource(R.string.switch_blocked)
+                            !report.allows(validTicked) -> stringResource(R.string.switch_tick_first)
+                            else -> null
+                        }
+                        val setupNote = report.image?.presentsGms == true
+                        val backApp = report.set?.hasReturnApp == true
+
+                        ExpressiveGroupedCard {
+                            var hasTop = false
+                            @Composable
+                            fun sep() { if (hasTop) ExpressiveListDivider(); hasTop = true }
+                            if (report.image?.gmsHideable == true) {
+                                sep(); ExpressiveSwitchItem(
+                                    title = stringResource(R.string.switch_hide_gms_title),
+                                    subtitle = stringResource(R.string.switch_hide_gms_summary, system),
+                                    checked = hideGms,
+                                    enabled = !launch.busy && launch.phase != LaunchJob.Phase.LAUNCHED,
+                                    onCheckedChange = { hideGms = it },
+                                )
+                            }
+                            sep(); ExpressiveListItem(
+                                title = stringResource(R.string.switch_dry_title),
+                                subtitle = why ?: stringResource(R.string.switch_dry_summary, system),
+                                icon = DualOsIcons.Science,
+                                enabled = allowed,
+                                showChevron = allowed,
+                                onClick = { if (allowed) confirm(true, system, setupNote, backApp, validTicked, effectiveHideGms) },
+                            )
+                            sep(); ExpressiveListItem(
+                                title = stringResource(R.string.switch_go_title, system),
+                                subtitle = why ?: stringResource(R.string.switch_go_summary, system),
+                                icon = DualOsIcons.Power,
+                                iconTint = if (allowed) statusColors.ok else MaterialTheme.colorScheme.onSurfaceVariant,
+                                enabled = allowed,
+                                showChevron = allowed,
+                                onClick = { if (allowed) confirm(false, system, setupNote, backApp, validTicked, effectiveHideGms) },
+                            )
+                            when (launch.phase) {
+                                LaunchJob.Phase.RUNNING -> {
+                                    sep(); ExpressiveListItem(title = launch.detail ?: stringResource(R.string.switch_starting), icon = Icons.Rounded.Refresh)
+                                }
+                                LaunchJob.Phase.LAUNCHED -> {
+                                    sep(); ExpressiveListItem(title = stringResource(R.string.switch_launched), subtitle = launch.message, icon = levelIcon(Level.OK), iconTint = levelColor(Level.OK))
+                                }
+                                LaunchJob.Phase.FAILED -> {
+                                    sep(); ExpressiveListItem(title = stringResource(R.string.switch_not_started), subtitle = launch.message, icon = levelIcon(Level.BLOCK), iconTint = levelColor(Level.BLOCK))
+                                }
+                                LaunchJob.Phase.IDLE -> Unit
+                            }
+                        }
+                    }
                 }
             }
         }
-
-        val go = Cards.section(column, getString(R.string.switch_cat_go), rows = true)
-        // Only an image whose Google services may be hidden offers this (not the
-        // Pixel image: its sessions present them); any other launch writes 0.
-        if (report.image?.gmsHideable == true) {
-            CardRows.toggle(
-                go, getString(R.string.switch_hide_gms_title), getString(R.string.switch_hide_gms_summary, system), hideGms,
-                enabled = !launch.busy && launch.phase != LaunchJob.Phase.LAUNCHED,
-            ) { on ->
-                hideGms = on
-                redraw()
-            }
-        } else {
-            hideGms = false
-        }
-        val allowed = !stale && report.allows(ticked) && !launch.busy && launch.phase != LaunchJob.Phase.LAUNCHED
-        val why = when {
-            stale -> getString(R.string.prepare_run_stale)
-            report.blocked -> getString(R.string.switch_blocked)
-            !report.allows(ticked) -> getString(R.string.switch_tick_first)
-            else -> null
-        }
-        val setupNote = report.image?.presentsGms == true
-        val backApp = report.set?.hasReturnApp == true
-        CardRows.row(go, OuiIcons.drawable.ic_oui_labs_outline, getString(R.string.switch_dry_title), why ?: getString(R.string.switch_dry_summary, system), enabled = allowed) {
-            if (allowed) confirm(dry = true, system = system, setupNote = setupNote, backApp = backApp)
-        }
-        val sw = CardRows.row(go, OuiIcons.drawable.ic_oui_power, getString(R.string.switch_go_title, system), why ?: getString(R.string.switch_go_summary, system), enabled = allowed) {
-            if (allowed) confirm(dry = false, system = system, setupNote = setupNote, backApp = backApp)
-        }
-        if (allowed) CardRows.titleColor(sw, R.color.oneos_ok_text)
-        when (launch.phase) {
-            LaunchJob.Phase.RUNNING ->
-                CardRows.tint(Cards.row(go, OuiIcons.drawable.ic_oui_refresh, launch.detail ?: getString(R.string.switch_starting), null), Level.INFO)
-            LaunchJob.Phase.LAUNCHED -> CardRows.status(go, Level.OK, getString(R.string.switch_launched), launch.message)
-            LaunchJob.Phase.FAILED -> CardRows.status(go, Level.BLOCK, getString(R.string.switch_not_started), launch.message)
-            LaunchJob.Phase.IDLE -> Unit
-        }
     }
 
-    /**
-     * [setupNote]: the image's own setup wizard runs on a new stage (Google services presented): what to skip in it.
-     * [backApp]: the set has Back to One UI, so the switch dialog names it with the keys (as the ways back above).
-     */
-    private fun confirm(dry: Boolean, system: String, setupNote: Boolean, backApp: Boolean) {
-        val hide = hideGms
+    private fun confirm(dry: Boolean, system: String, setupNote: Boolean, backApp: Boolean, validTicked: Set<String>, hide: Boolean) {
         val back = if (backApp) getString(R.string.switch_go_dialog_back_app, system) else getString(R.string.switch_go_dialog_back_keys)
         val message = (if (dry) getString(R.string.switch_dry_dialog_message, system) else getString(R.string.switch_go_dialog_message, system, back)) +
             (if (!dry && setupNote) "\n\n" + getString(R.string.confirm_setup_wizard, system) else "") +
             (if (hide) "\n\n" + getString(R.string.switch_dialog_gms_hidden) else "") +
-            if (!dry && !SessionPrefs.heatCap(requireContext())) "\n\n" + getString(R.string.confirm_heat_cap_off) else ""
-        AlertDialog.Builder(requireContext())
+            if (!dry && !SessionPrefs.heatCap(this)) "\n\n" + getString(R.string.confirm_heat_cap_off) else ""
+        AlertDialog.Builder(this)
             .setTitle(if (dry) getString(R.string.switch_dry_dialog_title) else getString(R.string.switch_go_dialog_title, system))
             .setMessage(message)
             .setPositiveButton(if (dry) getString(R.string.switch_dry_title) else getString(R.string.switch_go_title, system)) { _, _ ->
-                LaunchJob.start(requireContext(), dry, ticked.toSet(), hide, SessionPrefs.secIms(requireContext()), SessionPrefs.edmStub(requireContext()))
+                LaunchJob.start(this, dry, validTicked, hide, SessionPrefs.secIms(this), SessionPrefs.edmStub(this))
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()

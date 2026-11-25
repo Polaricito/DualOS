@@ -70,10 +70,10 @@ class EditionsTest {
         fun strings(f: File) = Regex("""<string name="(\w+)">(.*?)</string>""", RegexOption.DOT_MATCHES_ALL)
             .findAll(f.readText()).associate { it.groupValues[1] to it.groupValues[2].replace("\\'", "'") }
         val probe = strings(File(src, "main/res/values/strings.xml")) + strings(File(src, "probe/res/values/strings.xml"))
-        assertEquals("OneOS Probe", probe["app_name"])
+        assertEquals("DualOS Probe", probe["app_name"])
         for ((name, text) in probe) {
             assertFalse("$name: $text", OTHER_APP_ROOT.containsMatchIn(text))
-            // The session logs are OneOS's only (FindingsActivity shows them in OneOS).
+            // The session logs are DualOS's only (FindingsActivity shows them in DualOS).
             if (!name.startsWith("logs_")) assertFalse("$name: $text", OTHER_APP_FILES.containsMatchIn(text))
         }
         val shared = File(src, "main").walkTopDown().filter { it.isFile && (it.extension == "kt" || it.path.contains("/res/xml/")) } +
@@ -96,10 +96,10 @@ class EditionsTest {
     }
 
     private companion object {
-        /** Which app to allow: "Allow OneOS", "for OneOS", "visible to OneOS", not followed by " Probe" (app/build.gradle.kts has the same). */
-        val OTHER_APP_ROOT = Regex("""(?:[Aa]llow(?:ed for)?|for|visible to) OneOS\b(?! Probe)""")
+        /** Which app to allow: "Allow DualOS", "for DualOS", "visible to DualOS", not followed by " Probe" (app/build.gradle.kts has the same). */
+        val OTHER_APP_ROOT = Regex("""(?:[Aa]llow(?:ed for)?|for|visible to) DualOS\b(?! Probe)""")
 
         /** Which app holds the results. */
-        val OTHER_APP_FILES = Regex("""\b(?:(?:go to|stay in) OneOS\b(?! Probe)|OneOS(?:'s storage| removes| wrote))""")
+        val OTHER_APP_FILES = Regex("""\b(?:(?:go to|stay in) DualOS\b(?! Probe)|DualOS(?:'s storage| removes| wrote))""")
     }
 }

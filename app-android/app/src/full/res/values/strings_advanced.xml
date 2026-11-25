@@ -27,22 +27,22 @@
     <string name="advanced_last_none">No session yet</string>
     <string name="advanced_last_outcome">%1$s · %2$s</string>
     <string name="advanced_last_test">%1$s · test run</string>
-    <string name="advanced_logs_summary">Share them with the OneOS team. Personal info is removed first.</string>
+    <string name="advanced_logs_summary">Share them with the DualOS team. Personal info is removed first.</string>
     <string name="advanced_restore_summary">Only needed after a force restart during a session</string>
     <string name="advanced_heat_cap_title">Cool down when hot</string>
-    <string name="advanced_heat_cap_summary">One UI\'s heat control doesn\'t run in the other system. From 45 °C, OneOS slows the processor there until the phone cools down.</string>
+    <string name="advanced_heat_cap_summary">One UI\'s heat control doesn\'t run in the other system. From 45 °C, DualOS slows the processor there until the phone cools down.</string>
     <string name="advanced_full_logs_title">Full session logs</string>
     <string name="advanced_full_logs_summary">Records everything the systems do, for bug reports. Off by default: it adds heat and uses storage. Turn it on when something goes wrong, then send a report.</string>
     <string name="advanced_card_help">Help</string>
     <string name="advanced_before_summary">What can break, backups and the screen lock</string>
     <string name="advanced_about_summary">Version, safety and credits</string>
-    <string name="advanced_team_summary">Technical screens, for when the OneOS team asks</string>
-    <string name="remove_title">Remove OneOS data</string>
-    <string name="remove_summary">Remove every system, old copy and log OneOS put on this phone. To remove just one system, use its card.</string>
-    <string name="remove_running">Removing OneOS data…</string>
-    <string name="remove_busy">OneOS is busy with your phone. Try again in a moment.</string>
-    <string name="remove_confirm_title">Remove all OneOS data?</string>
-    <string name="remove_confirm_message">This deletes everything OneOS put on this phone: the system you set up, with the apps and accounts in it, every old copy, and the session logs. One UI and its apps and data are not touched. OneOS stays installed, and downloaded system files stay where you saved them. This can\'t be undone.</string>
+    <string name="advanced_team_summary">Technical screens, for when the DualOS team asks</string>
+    <string name="remove_title">Remove DualOS data</string>
+    <string name="remove_summary">Remove every system, old copy and log DualOS put on this phone. To remove just one system, use its card.</string>
+    <string name="remove_running">Removing DualOS data…</string>
+    <string name="remove_busy">DualOS is busy with your phone. Try again in a moment.</string>
+    <string name="remove_confirm_title">Remove all DualOS data?</string>
+    <string name="remove_confirm_message">This deletes everything DualOS put on this phone: the system you set up, with the apps and accounts in it, every old copy, and the session logs. One UI and its apps and data are not touched. DualOS stays installed, and downloaded system files stay where you saved them. This can\'t be undone.</string>
     <string name="remove_confirm_run">Remove</string>
     <string name="manage_start_fresh">Start fresh</string>
     <string name="manage_start_fresh_summary">Erase its apps and data; it stays set up</string>
@@ -61,7 +61,7 @@
     <string name="manage_progress_erasing">Erasing %1$s’s apps and data</string>
     <string name="manage_progress_deleting_saved">Deleting saved %1$s</string>
     <string name="manage_progress_starting">Starting…</string>
-    <string name="manage_progress_time">%1$s · keep OneOS open or come back any time</string>
+    <string name="manage_progress_time">%1$s · keep DualOS open or come back any time</string>
     <string name="manage_progress_took">Took %1$s</string>
     <string name="manage_progress_done">Done</string>
     <string name="manage_card_removing">Removing…</string>
@@ -70,25 +70,25 @@
     <string name="manage_progress_deleting_copy">Deleting %1$s</string>
     <string name="manage_progress_deleting_all">Deleting all old copies</string>
     <string name="manage_progress_hide">Hide</string>
-    <string name="tool_app_unknown">OneOS could not tell which app it is. Send a report from the system\'s page.</string>
+    <string name="tool_app_unknown">DualOS could not tell which app it is. Send a report from the system\'s page.</string>
     <string name="tool_app_off_title">Turn off %1$s?</string>
-    <string name="tool_app_off_message">%1$s runs a tool in the phone\'s kernel that crashed Galaxy S24 phones during OneOS sessions. OneOS turns the app off (it stays installed with its data) and you can turn it back on here any time. Stopping its tool may restart the phone once.</string>
+    <string name="tool_app_off_message">%1$s runs a tool in the phone\'s kernel that crashed Galaxy S24 phones during DualOS sessions. DualOS turns the app off (it stays installed with its data) and you can turn it back on here any time. Stopping its tool may restart the phone once.</string>
     <string name="tool_app_off_run">Turn off</string>
-    <string name="tool_app_off_running">Turning %1$s off. If the phone restarts, open OneOS and switch again.</string>
-    <string name="tool_app_section">Turned off for OneOS</string>
+    <string name="tool_app_off_running">Turning %1$s off. If the phone restarts, open DualOS and switch again.</string>
+    <string name="tool_app_section">Turned off for DualOS</string>
     <string name="tool_app_on_title">Turn %1$s back on</string>
     <string name="tool_app_on_summary">Its tool starts again; the next switch will ask to turn it off, and the phone may restart then</string>
     <string name="tool_app_on_confirm">Turn %1$s back on? The next switch will ask to turn it off again, and stopping its tool then may restart the phone once.</string>
     <string name="tool_app_on_run">Turn on</string>
-    <string name="manage_busy">OneOS is busy with your phone. Try again in a moment.</string>
+    <string name="manage_busy">DualOS is busy with your phone. Try again in a moment.</string>
 
     <!-- For the OneOS team -->
-    <string name="team_title">For the OneOS team</string>
-    <string name="team_note">Technical screens. Open them when the OneOS team asks you to.</string>
+    <string name="team_title">For the DualOS team</string>
+    <string name="team_note">Technical screens. Open them when the DualOS team asks you to.</string>
     <string name="team_card_checks">Checks and tests</string>
     <string name="team_switch_summary">Every check in detail, then a test run or the switch</string>
     <string name="team_phone_summary">Model, chip, software and root</string>
-    <string name="team_tests_summary">Read-only. Helps the OneOS team add support for your phone.</string>
+    <string name="team_tests_summary">Read-only. Helps the DualOS team add support for your phone.</string>
     <!-- Run tests' screen, in this edition: "Phone tests", so it is not read as the Test run (the probe keeps "Run tests"). -->
     <string name="tests_title">Phone tests</string>
     <string name="team_card_setup">Setup and files</string>
@@ -152,8 +152,8 @@
     <string name="space_choose_title">%1$s</string>
     <string name="space_choose_use">Use this system again</string>
     <string name="space_choose_delete">Delete it</string>
-    <string name="space_details_summary">Folder names, and what OneOS checks first</string>
-    <string name="space_details_rules">Root deletes only an old copy OneOS kept (a folder named oneos.old-&lt;time&gt;), and not while it\'s in use: something is still open in it, a session in it is still running or never came back, or it\'s still linked to One UI\'s folders. A restart ends that.</string>
+    <string name="space_details_summary">Folder names, and what DualOS checks first</string>
+    <string name="space_details_rules">Root deletes only an old copy DualOS kept (a folder named oneos.old-&lt;time&gt;), and not while it\'s in use: something is still open in it, a session in it is still running or never came back, or it\'s still linked to One UI\'s folders. A restart ends that.</string>
     <string name="space_details_folder">%1$s · image %2$s</string>
 
     <!-- Last session -->
@@ -171,19 +171,19 @@
     <string name="last_collecting">Collecting the logs…</string>
     <string name="last_collecting_summary">Personal info is removed as they\'re read.</string>
     <string name="last_collect_failed">Couldn\'t collect the logs</string>
-    <string name="last_collect_failed_line">Try again; if your root app asks, allow OneOS. The reason is under Details.</string>
+    <string name="last_collect_failed_line">Try again; if your root app asks, allow DualOS. The reason is under Details.</string>
     <string name="last_collected">Logs collected</string>
     <string name="last_collected_summary">Numbers, Wi-Fi names and accounts were removed.</string>
-    <string name="last_view_summary">Look at them, or send them to the OneOS team</string>
+    <string name="last_view_summary">Look at them, or send them to the DualOS team</string>
     <string name="last_privacy_summary">The switch and return logs, the other system\'s start-up logs and text reports on the phone\'s state. Lines about messages, contacts, Wi-Fi and places are dropped; numbers, IDs, emails, Wi-Fi names, accounts and file names are removed as they\'re read. Never screenshots or recordings.</string>
-    <string name="last_collect_dialog_message">OneOS only reads. Saved Wi-Fi names are read only to remove them from the logs; they\'re never saved or shared. Personal info is removed before anything is written.</string>
+    <string name="last_collect_dialog_message">DualOS only reads. Saved Wi-Fi names are read only to remove them from the logs; they\'re never saved or shared. Personal info is removed before anything is written.</string>
     <string name="last_collect_run">Collect</string>
     <string name="last_restore_summary">The last session didn\'t return normally. This puts back the settings One UI had before it.</string>
     <string name="last_restore_maybe">Only needed after a force restart during the session. If it returned normally, nothing changes.</string>
-    <string name="last_restore_dialog_message">OneOS puts back the settings One UI had when the session started, such as its language, from the copy it saved then. Only that session\'s own copy is used.</string>
+    <string name="last_restore_dialog_message">DualOS puts back the settings One UI had when the session started, such as its language, from the copy it saved then. Only that session\'s own copy is used.</string>
     <string name="last_restored">One UI\'s settings are back</string>
     <string name="last_restore_failed">Couldn\'t restore One UI\'s settings</string>
-    <string name="last_restore_failed_line">Try again, or send the logs to the OneOS team. The reason is under Details.</string>
+    <string name="last_restore_failed_line">Try again, or send the logs to the DualOS team. The reason is under Details.</string>
     <string name="last_forget_summary">Clears this summary here and on Home until your next switch. The logs stay on the phone.</string>
     <string name="last_details_summary">Session ID, how it ended in detail, what the logs said</string>
     <string name="last_details_image">Image %1$s</string>
@@ -192,9 +192,9 @@
     <string name="image_title">Use a downloaded file</string>
     <string name="image_title_team">File details and checks</string>
     <string name="image_no_profile_title">No system for this phone yet</string>
-    <string name="image_no_profile_summary">This version of OneOS has none for this phone. Phone details, in Settings › For the OneOS team, shows why.</string>
+    <string name="image_no_profile_summary">This version of DualOS has none for this phone. Phone details, in Settings › For the DualOS team, shows why.</string>
     <string name="image_cat_file">Your file</string>
-    <string name="image_pick_summary">Opens your files. OneOS reads only the file you pick.</string>
+    <string name="image_pick_summary">Opens your files. DualOS reads only the file you pick.</string>
     <string name="image_not_used">%1$s · not used: setup reuses the system already on this phone</string>
     <string name="image_file_ok">It\'s %1$s for this phone</string>
     <string name="image_check_title">Check the file</string>
@@ -203,12 +203,12 @@
     <string name="image_checking_bytes">%1$s of %2$s</string>
     <string name="image_use_gz_title">Use this file instead</string>
     <string name="image_use_gz_summary">Setup then uses this file, not the system already on this phone</string>
-    <string name="image_forget_summary">OneOS stops using it. The file stays in your files.</string>
+    <string name="image_forget_summary">DualOS stops using it. The file stays in your files.</string>
     <string name="image_cat_on_phone">Already on this phone</string>
     <string name="image_look_summary">If a system is already on this phone, setup can reuse it and skip the download. Nothing on the phone changes.</string>
     <string name="image_look_failed">That didn\'t finish. Try again; the reason is under Details.</string>
     <string name="image_look_dialog_title">Look as root?</string>
-    <string name="image_look_dialog_message">OneOS only reads what\'s in its folder. Nothing on the phone changes.</string>
+    <string name="image_look_dialog_message">DualOS only reads what\'s in its folder. Nothing on the phone changes.</string>
     <string name="image_look_run">Look</string>
     <string name="image_on_phone_ok">%1$s is on this phone</string>
     <string name="image_on_phone_none">No system on this phone yet</string>
@@ -223,30 +223,30 @@
     <string name="image_choice_sizes">%1$s download · %2$s once set up</string>
     <string name="image_details_summary">File names, sizes and what the checks found</string>
     <string name="image_details_file">%1$s\n%2$s, unpacks to %3$s. %4$s.</string>
-    <string name="image_details_check">Check the file compares the whole file\'s SHA-256 with the one built into OneOS. Look for a system on this phone reads OneOS\'s folder as root, read-only.</string>
+    <string name="image_details_check">Check the file compares the whole file\'s SHA-256 with the one built into DualOS. Look for a system on this phone reads DualOS\'s folder as root, read-only.</string>
     <string name="image_details_sha">SHA-256 of the picked file</string>
     <string name="image_details_look">The last look said</string>
 
     <!-- Repair or start fresh (PrepareActivity); "Setup details" from the OneOS team's entry -->
     <string name="prepare_title">Repair or start fresh</string>
     <string name="prepare_title_team">Setup details</string>
-    <string name="prepare_intro">Sets the system up again in OneOS\'s own folder. It takes about 15 minutes; One UI keeps working meanwhile.</string>
+    <string name="prepare_intro">Sets the system up again in DualOS\'s own folder. It takes about 15 minutes; One UI keeps working meanwhile.</string>
     <string name="prepare_intro_safe">Nothing outside that folder changes. What\'s set up now is kept, or kept as an old copy: never deleted.</string>
     <string name="prepare_check_summary">Root, free space, the screen lock and what\'s set up now. Nothing on the phone changes.</string>
     <string name="prepare_check_failed">The check didn\'t finish. Try again; the reason is under Details.</string>
     <string name="prepare_checks_ok">Everything is in place</string>
-    <string name="prepare_check_dialog_message">OneOS only reads; nothing on the phone changes.\n\nIf your root app doesn\'t ask, allow OneOS in it first.</string>
+    <string name="prepare_check_dialog_message">DualOS only reads; nothing on the phone changes.\n\nIf your root app doesn\'t ask, allow DualOS in it first.</string>
     <string name="prepare_check_run">Check</string>
     <string name="prepare_need_full">Tap Check again before setting up</string>
     <string name="prepare_on_phone_needs_keep">To reuse the system on this phone, choose Keep its apps and data</string>
     <string name="prepare_cat_stage">What\'s set up now</string>
     <string name="prepare_stage_none">Nothing set up yet</string>
-    <string name="prepare_stage_empty">OneOS\'s folder is empty</string>
+    <string name="prepare_stage_empty">DualOS\'s folder is empty</string>
     <string name="prepare_stage_ours">%1$s is set up</string>
     <string name="prepare_stage_partial">A setup that didn\'t finish</string>
-    <string name="prepare_stage_foreign">Files OneOS didn\'t put there</string>
-    <string name="prepare_stage_odd">Something else is where OneOS\'s folder goes</string>
-    <string name="prepare_stage_not_folder">It has to be removed first. Ask the OneOS team how.</string>
+    <string name="prepare_stage_foreign">Files DualOS didn\'t put there</string>
+    <string name="prepare_stage_odd">Something else is where DualOS\'s folder goes</string>
+    <string name="prepare_stage_not_folder">It has to be removed first. Ask the DualOS team how.</string>
     <string name="prepare_mode_new">Start fresh</string>
     <string name="prepare_mode_new_summary">%1$s starts with new apps and data.</string>
     <string name="prepare_mode_keep_summary">Repairs the system and keeps its apps, accounts and settings.</string>
@@ -263,7 +263,7 @@
     <string name="prepare_dialog_other_system">%2$s is set up now. This sets up %1$s instead, from the file you downloaded.</string>
     <string name="prepare_run_summary">Needs about %1$s free. You confirm first.</string>
     <string name="prepare_needs_unknown">about 22 GB</string>
-    <string name="prepare_running">Setting up… keep OneOS open</string>
+    <string name="prepare_running">Setting up… keep DualOS open</string>
     <string name="prepare_running_title">Setting up · %1$d%%</string>
     <string name="prepare_stop_summary">Stops after the current file. The system is then not set up, and the switch stays off until you set it up again.</string>
     <string name="prepare_done">Finished</string>
@@ -272,23 +272,23 @@
     <string name="prepare_delete_gz_summary">%1$s isn\'t needed now. If you set up again later, you\'ll need to download it once more.</string>
     <string name="prepare_delete_gz_message">Delete %1$s? The system set up from it stays.</string>
     <string name="prepare_dialog_title">Start setup?</string>
-    <string name="prepare_dialog_message">It takes about 15 minutes; keep OneOS open and the phone plugged in. OneOS writes only in its own folder and checks every file before it\'s used.</string>
+    <string name="prepare_dialog_message">It takes about 15 minutes; keep DualOS open and the phone plugged in. DualOS writes only in its own folder and checks every file before it\'s used.</string>
     <string name="prepare_dialog_gz">Uses the file you downloaded for %1$s.</string>
     <string name="prepare_dialog_on_phone">Reuses %1$s already on this phone; it\'s checked first (about a minute).</string>
-    <string name="prepare_dialog_team">As root, through its root script, in /data/local/tmp/oneos only: the system image, the OneOS files, the installd table and the session settings. Root checks each file\'s size and SHA-256 before it is used. A folder OneOS 0.3.6 or earlier made under its old name is renamed first; nothing in it changes.</string>
+    <string name="prepare_dialog_team">As root, through its root script, in /data/local/tmp/oneos only: the system image, the DualOS files, the installd table and the session settings. Root checks each file\'s size and SHA-256 before it is used. A folder DualOS 0.3.6 or earlier made under its old name is renamed first; nothing in it changes.</string>
     <string name="prepare_details_summary">Every check, the folder as root read it, each step</string>
-    <string name="prepare_what_summary">As root, OneOS unpacks the image into /data/local/tmp/oneos (5 to 11 GB) and puts the OneOS files and session scripts next to it, checking each one\'s SHA-256. It takes about 15 minutes.</string>
-    <string name="prepare_safe_summary">Setup writes only in OneOS\'s folder and deletes nothing outside it. What was set up before is kept as an old copy, and leftover files are moved to a folder inside OneOS\'s folder. One UI keeps running.</string>
+    <string name="prepare_what_summary">As root, DualOS unpacks the image into /data/local/tmp/oneos (5 to 11 GB) and puts the DualOS files and session scripts next to it, checking each one\'s SHA-256. It takes about 15 minutes.</string>
+    <string name="prepare_safe_summary">Setup writes only in DualOS\'s folder and deletes nothing outside it. What was set up before is kept as an old copy, and leftover files are moved to a folder inside DualOS\'s folder. One UI keeps running.</string>
 
     <!-- All checks and Test run (SwitchActivity, For the OneOS team and Home's Details) -->
     <string name="switch_title">All checks and Test run</string>
     <string name="switch_cat_back">Ways back to One UI</string>
     <string name="switch_back_keys_title">Hold Volume Up + Volume Down for 3 seconds</string>
-    <string name="switch_back_keys_summary">Works once %1$s is starting: One UI comes back, usually without a restart. While the OneOS logo still shows, use Force restart.</string>
-    <string name="switch_back_auto_title">OneOS brings you back by itself</string>
+    <string name="switch_back_keys_summary">Works once %1$s is starting: One UI comes back, usually without a restart. While the DualOS logo still shows, use Force restart.</string>
+    <string name="switch_back_auto_title">DualOS brings you back by itself</string>
     <string name="switch_back_auto_summary">If %1$s doesn\'t finish starting, stops, or the screen stays black, One UI comes back by itself after a few minutes.</string>
     <string name="switch_back_force_summary">Hold Power + Volume Down until it restarts into One UI. Afterwards, tap Restore One UI\'s settings in Settings › Last session.</string>
-    <string name="switch_back_root_summary">If root needs turning on again after a restart, do that, then open OneOS. Last session shows how it went.</string>
+    <string name="switch_back_root_summary">If root needs turning on again after a restart, do that, then open DualOS. Last session shows how it went.</string>
     <string name="switch_check_summary">Every check again: root, the set-up system, the screen lock, battery and free space. Nothing on the phone changes.</string>
     <string name="switch_need_full">Tap Check again first</string>
     <string name="switch_cat_go">Test run and switch</string>
@@ -303,14 +303,14 @@
     <string name="advanced_card_risky">Risky</string>
     <string name="advanced_card_risky_tag">Can erase the phone</string>
     <string name="advanced_allow_lock_title">Switch with a screen lock set</string>
-    <string name="advanced_allow_lock_summary">Normally OneOS will not switch while a PIN, pattern, password, fingerprint or face lock is on. Your One UI apps and photos are encrypted behind that lock: if a session leaves the phone unable to accept it, the only way back is a factory reset, which erases everything. This has happened to a tester. Turn this on only if you accept that risk.</string>
+    <string name="advanced_allow_lock_summary">Normally DualOS will not switch while a PIN, pattern, password, fingerprint or face lock is on. Your One UI apps and photos are encrypted behind that lock: if a session leaves the phone unable to accept it, the only way back is a factory reset, which erases everything. This has happened to a tester. Turn this on only if you accept that risk.</string>
     <string name="switch_hide_gms_title">Hide Google apps this time</string>
     <string name="switch_hide_gms_summary">Leaves Play services and the Play Store out of %1$s this time only. Nothing else changes.</string>
     <string name="switch_dialog_gms_hidden">Google apps are hidden this time.</string>
     <string name="switch_dry_dialog_title">Test run?</string>
-    <string name="switch_go_dialog_message">One UI closes and %1$s starts in about a minute. %2$s\n\nApps you install in %1$s can reach One UI\'s data if they get root: install only ones you trust.\n\nOneOS closes with One UI.</string>
-    <string name="switch_go_dialog_back_keys">To come back, hold Volume Up + Volume Down for 3 seconds once it\'s starting. Stuck on the OneOS logo? Hold Power + Volume Down.</string>
-    <string name="switch_go_dialog_back_app">To come back, tap Back to One UI in %1$s, or hold Volume Up + Volume Down for 3 seconds. Stuck on the OneOS logo? Hold Power + Volume Down.</string>
+    <string name="switch_go_dialog_message">One UI closes and %1$s starts in about a minute. %2$s\n\nApps you install in %1$s can reach One UI\'s data if they get root: install only ones you trust.\n\nDualOS closes with One UI.</string>
+    <string name="switch_go_dialog_back_keys">To come back, hold Volume Up + Volume Down for 3 seconds once it\'s starting. Stuck on the DualOS logo? Hold Power + Volume Down.</string>
+    <string name="switch_go_dialog_back_app">To come back, tap Back to One UI in %1$s, or hold Volume Up + Volume Down for 3 seconds. Stuck on the DualOS logo? Hold Power + Volume Down.</string>
 
     <!-- Before you start (read again from Advanced › Help) -->
     <string name="before_experimental_summary">It switches the phone into another system without flashing. Things can break.</string>
@@ -318,22 +318,22 @@
     <string name="before_apps_summary">Apps in the other system can get the same root as One UI. One that does could reach One UI\'s data: install only apps you trust, and never grant root to ones you don\'t know.</string>
 
     <!-- About OneOS and Phone details (main's texts, in plain words and naming no system, for this edition) -->
-    <string name="tested_scope">Tested on the Z Fold (F8U), S26 Ultra, S25 Ultra and S25.</string>
-    <string name="about_what_summary">Runs another Android system next to One UI on a rooted phone, and comes back to One UI, usually without a restart. Nothing is flashed.</string>
-    <string name="about_version_scope_summary">Sets up a system you downloaded in its own folder and switches to it. Back to One UI or Volume Up + Down brings you back. OneOS downloads nothing itself and deletes nothing outside its folder without asking.</string>
-    <string name="about_tested_summary">Tested on the Z Fold (F8U), S26 Ultra, S25 Ultra and S25. Other phones are untested.</string>
-    <string name="about_safety_summary">Every change OneOS makes as root is checked first, by the app and by root. Nothing outside OneOS\'s folder is ever deleted, and the other system is kept away from One UI\'s data.</string>
+    <string name="tested_scope">Tested on the Galaxy A53 5G (SM-A536).</string>
+    <string name="about_what_summary">Runs another Android system next to One UI on a rooted Galaxy A53 5G, and comes back to One UI, usually without a restart. Nothing is flashed.</string>
+    <string name="about_version_scope_summary">Sets up a system you downloaded in its own folder and switches to it. Back to One UI or Volume Up + Down brings you back. DualOS downloads nothing itself and deletes nothing outside its folder without asking.</string>
+    <string name="about_tested_summary">Tested on the Galaxy A53 5G (SM-A536). Other phones are not supported in DualOS.</string>
+    <string name="about_safety_summary">Every change DualOS makes as root is checked first, by the app and by root. Nothing outside DualOS\'s folder is ever deleted, and the other system is kept away from One UI\'s data.</string>
     <string name="report_title">Phone details</string>
     <string name="report_warning_next">Setup and the switch run their own checks and stop anything this phone can\'t run.</string>
 
     <!-- Session logs and the credits (main's texts, in plain words, for this edition) -->
-    <string name="logs_delete_summary">Removes these logs from OneOS. The phone keeps its own copy in OneOS\'s folder until your next switch.</string>
-    <string name="about_credit_oneos_summary">The app and the changes OneOS makes to each system. Its session scripts started from the project credited below.</string>
+    <string name="logs_delete_summary">Removes these logs from DualOS. The phone keeps its own copy in DualOS\'s folder until your next switch.</string>
+    <string name="about_credit_oneos_summary">Original OneOS app, framework patches, and switcher engine that DualOS is built on. The session scripts started from the project credited below.</string>
     <!-- The team's test channel for the app's own update (0.4.41, AppUpdater). -->
     <string name="team_update_test">Test updates</string>
-    <string name="team_update_test_summary">Off. Enter the team\'s test channel code to get OneOS updates before they are released</string>
-    <string name="team_update_test_on">On: OneOS updates come from the team\'s test channel</string>
-    <string name="team_update_test_dialog">The test channel code from the OneOS team. Leave it empty to go back to the released updates.</string>
+    <string name="team_update_test_summary">Off. Enter the team\'s test channel code to get DualOS updates before they are released</string>
+    <string name="team_update_test_on">On: DualOS updates come from the team\'s test channel</string>
+    <string name="team_update_test_dialog">The test channel code from the DualOS team. Leave it empty to go back to the released updates.</string>
     <string name="team_update_test_invalid">That is not a test channel code</string>
 
     <!-- Bring apps (0.4.75): take user apps, with their data and logins, from One UI into the system set up now. -->
@@ -416,7 +416,7 @@
     <string name="bring_row_installed_on">In %1$s · brought %2$s</string>
     <string name="bring_row_installed">In %1$s</string>
     <string name="bring_update_first">Update %1$s first</string>
-    <string name="bring_update_first_summary">This version of OneOS brings apps in a new way. Tap Update on %1$s\'s page, then come back.</string>
+    <string name="bring_update_first_summary">This version of DualOS brings apps in a new way. Tap Update on %1$s\'s page, then come back.</string>
     <string name="bring_working_at">Copying %1$s. Big apps can take several minutes; you can leave this screen.</string>
     <string name="bring_count_installed">%1$d in %2$s</string>
     <string name="bring_count_waiting">%1$d waiting</string>

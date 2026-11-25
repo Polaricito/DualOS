@@ -6,7 +6,7 @@
          (StringsNeutralTest reads this file). -->
 
     <!-- Hero -->
-    <string name="home_overline">OneOS</string>
+    <string name="home_overline">DualOS</string>
     <string name="home_line_ready">Ready to switch · Android %1$s</string>
     <string name="home_line_kept">Your apps and data in it are kept</string>
     <string name="home_line_setup_time">Setup takes about 15 minutes</string>
@@ -70,7 +70,7 @@
     <string name="home_welcome_logs">Logs collected. Numbers, Wi-Fi names and accounts were removed.</string>
     <string name="home_how_keys">Volume keys</string>
     <string name="home_how_app">Back to One UI</string>
-    <string name="home_how_auto">OneOS brought you back</string>
+    <string name="home_how_auto">DualOS brought you back</string>
     <string name="home_how_restart">Force restart</string>
     <string name="home_how_off">Phone turned off</string>
     <string name="home_how_none">Never left One UI</string>
@@ -83,7 +83,7 @@
     <string name="home_sheet_ways_three">Three ways back to One UI</string>
     <string name="home_sheet_ways_two">Two ways back to One UI</string>
     <string name="home_sheet_back_app">Tap Back to One UI</string>
-    <string name="home_sheet_back_app_line">In the OneOS app inside %1$s, or its Quick Settings tile</string>
+    <string name="home_sheet_back_app_line">In the DualOS app inside %1$s, or its Quick Settings tile</string>
     <string name="home_sheet_back_keys">Hold Volume Up + Volume Down</string>
     <string name="home_sheet_back_keys_line">Both together for 3 seconds</string>
     <string name="home_sheet_back_stuck">Stuck on the logo?</string>
@@ -94,27 +94,27 @@
     <string name="home_other_since">kept since %1$s</string>
     <string name="home_other_kept">with its apps and data</string>
     <string name="home_other_getting_ready">Getting %1$s ready…</string>
-    <string name="home_other_getting_ready_line">Putting it back. If its OneOS files are older, they\'re updated next.</string>
+    <string name="home_other_getting_ready_line">Putting it back. If its DualOS files are older, they\'re updated next.</string>
     <string name="home_other_confirm_title">Switch to %1$s?</string>
-    <string name="home_other_confirm_message">%1$s is put back with its apps and data, and %2$s is kept the same way, so you can come back to it from here. If its OneOS files are older than this app, OneOS updates them first (about 2 minutes). Then the switch opens as usual.</string>
+    <string name="home_other_confirm_message">%1$s is put back with its apps and data, and %2$s is kept the same way, so you can come back to it from here. If its DualOS files are older than this app, DualOS updates them first (about 2 minutes). Then the switch opens as usual.</string>
     <string name="home_other_current_unknown">the system set up now</string>
     <string name="home_other_confirm_go">Get it ready</string>
     <string name="home_other_failed">Couldn\'t put it back</string>
     <!-- The app's own update (0.4.41, AppUpdater): a row on Home. -->
-    <string name="home_update_title">Update OneOS to %1$s</string>
+    <string name="home_update_title">Update DualOS to %1$s</string>
     <string name="home_update_downloading">Downloading… %1$d%%</string>
-    <string name="home_update_confirm">OneOS %1$s downloads %3$d MB and installs %2$s with root, or with Android\'s installer when root is off (you confirm it there). The app closes and opens again. Set up your system again afterwards: only the files that changed are downloaded.</string>
+    <string name="home_update_confirm">DualOS %1$s downloads %3$d MB and installs %2$s with root, or with Android\'s installer when root is off (you confirm it there). The app closes and opens again. Set up your system again afterwards: only the files that changed are downloaded.</string>
     <string name="home_update_run">Update</string>
     <!-- 0.4.42: the app's own update as Home's hero (title at most 40 characters). -->
-    <string name="home_app_update_title">OneOS %1$s is available</string>
+    <string name="home_app_update_title">DualOS %1$s is available</string>
     <string name="home_app_update_for_system">Update for %1$s</string>
     <string name="home_app_update_your_phone">on your %1$s</string>
-    <string name="home_app_update_line_system">OneOS %1$s changes %2$s %3$s. Update, then set it up again: only changed files download.</string>
-    <string name="home_app_update_line_notes">OneOS %1$s: %2$s</string>
-    <string name="home_app_update_line">A newer OneOS. Your systems and settings stay as they are.</string>
+    <string name="home_app_update_line_system">DualOS %1$s changes %2$s %3$s. Update, then set it up again: only changed files download.</string>
+    <string name="home_app_update_line_notes">DualOS %1$s: %2$s</string>
+    <string name="home_app_update_line">A newer DualOS. Your systems and settings stay as they are.</string>
     <string name="home_app_update_installing">Installing…</string>
     <!-- 0.4.47: the update banner on the launch screen (systems_screen.xml). -->
-    <string name="systems_update_banner_title">OneOS %1$s is available</string>
+    <string name="systems_update_banner_title">DualOS %1$s is available</string>
     <string name="systems_update_banner_for">Fixes %1$s. Tap Update: only the files that changed download.</string>
     <string name="systems_update_banner_default">Tap Update to install it. Your systems and settings stay as they are.</string>
     <string name="systems_update_banner_failed">The update didn\'t install. Tap to see why.</string>

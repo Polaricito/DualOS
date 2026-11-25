@@ -17,6 +17,7 @@ object Shipped {
     val appSources = File(System.getProperty("oneos.appSources") ?: "../../app/src")
     val switcherAssets = File(System.getProperty("oneos.switcherAssets") ?: "../../../switcher/assets")
     val installdFixture = File(System.getProperty("oneos.installdFixture") ?: "../../../switcher/patches/host_installd.txt")
+    val installdA16Fixture = File(installdFixture.parentFile, "host_installd_a16.txt")
     val runLogs = File(System.getProperty("oneos.runLogs") ?: "../../../out/logs")
 
     val rootScript: File get() = File(fullAssets, RootScript.ASSET)
@@ -65,11 +66,11 @@ class FakeRoot(
     val layout: RootScript.Layout
     val env = linkedMapOf<String, String>()
     val props = linkedMapOf(
-        "ro.build.fingerprint" to "samsung/m3qxxx/m3q:17/BP4A.251205.006/S948BXXU1AZJ1:user/release-keys",
-        "ro.product.model" to "SM-S948B",
-        "ro.product.device" to "m3q",
-        "ro.soc.model" to "SM8850",
-        "ro.build.version.sdk" to "37",
+        "ro.build.fingerprint" to "samsung/a53x/a53x:16/BP2A.250605.031.A3/A536EXXS:user/release-keys",
+        "ro.product.model" to "SM-A536E",
+        "ro.product.device" to "a53x",
+        "ro.soc.model" to "s5e8825",
+        "ro.build.version.sdk" to "36",
     )
     val frameworkJar = File(root, "system/framework/framework.jar")
 

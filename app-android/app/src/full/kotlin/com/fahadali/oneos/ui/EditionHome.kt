@@ -2,53 +2,102 @@ package com.fahadali.oneos.ui
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
-import android.os.Bundle
-import android.text.format.DateFormat
-import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuItem
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.SeslProgressBar
-import androidx.fragment.app.Fragment
-import androidx.preference.PreferenceFragmentCompat
 import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.appcompat.app.AlertDialog
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.fahadali.oneos.BuildConfig
-import com.fahadali.oneos.report.UsageCheckIn
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.device.FactProbe
 import com.fahadali.oneos.core.model.AndroidRelease
 import com.fahadali.oneos.core.model.DeviceFacts
-import com.fahadali.oneos.core.model.Finding
 import com.fahadali.oneos.core.model.FixAction
 import com.fahadali.oneos.core.model.GatePhase
 import com.fahadali.oneos.core.model.GateReport
+import com.fahadali.oneos.core.model.ImageIdentifier
 import com.fahadali.oneos.core.model.ImageRef
 import com.fahadali.oneos.core.model.Images
 import com.fahadali.oneos.core.model.Level
 import com.fahadali.oneos.core.model.PackageSets
+import com.fahadali.oneos.core.model.PhoneProfile
 import com.fahadali.oneos.core.model.Plain
-import com.fahadali.oneos.core.model.PlainMessage
 import com.fahadali.oneos.core.model.Profiles
 import com.fahadali.oneos.core.model.RootKind
 import com.fahadali.oneos.core.model.ScreenLockRule
-import com.fahadali.oneos.core.model.Sentence
 import com.fahadali.oneos.core.model.SpaceRule
 import com.fahadali.oneos.core.model.SwitchGates
 import com.fahadali.oneos.core.model.Units
-import com.fahadali.oneos.core.root.HomeCheck
-import com.fahadali.oneos.core.root.HomeInput
-import com.fahadali.oneos.core.root.HomeJob
 import com.fahadali.oneos.core.root.HomeState
-import com.fahadali.oneos.core.root.LastSession
 import com.fahadali.oneos.core.root.OldStage
 import com.fahadali.oneos.core.root.OutcomeKind
+import com.fahadali.oneos.core.root.RootProbe
+import com.fahadali.oneos.report.ReportSender
+import com.fahadali.oneos.report.UsageCheckIn
 import com.fahadali.oneos.session.AppUpdater
 import com.fahadali.oneos.session.LaunchJob
 import com.fahadali.oneos.session.LogJob
@@ -56,43 +105,29 @@ import com.fahadali.oneos.session.OldStagesJob
 import com.fahadali.oneos.session.PrepareJob
 import com.fahadali.oneos.session.QuickSwitch
 import com.fahadali.oneos.session.Readiness
+import com.fahadali.oneos.session.RemoveJob
 import com.fahadali.oneos.session.SessionPrefs
 import com.fahadali.oneos.session.StageCheck
-import dev.oneuiproject.oneui.layout.ToolbarLayout
-import java.util.Date
-import dev.oneuiproject.oneui.R as OuiIcons
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveSectionHeader
+import com.fahadali.oneos.shared.ExpressiveStatusPill
+import com.fahadali.oneos.shared.LocalDualOsStatusColors
+import java.util.concurrent.Executors
 
 /**
- * The full edition's Home (the redesign, docs/app/redesign-2.md; the spec is
- * Main.dc.html and HomeInner.dc.html): where you are and the one thing to do
- * next, as One UI cards. The state is decided by [HomeState] from the
- * automatic check ([Readiness]), the running job and the last session; the
- * one button runs [FixActions]. About and How OneOS works are in the menu.
- * The probe edition has its own object with the old rows.
+ * Full edition Material 3 Expressive 3-tab hub:
+ * - Tab 0: Systems (ROM cards, readiness checks, A53 guest capabilities, restore/update banners)
+ * - Tab 1: Settings (A53 features, session options, calls & camera, risky lock override, tools)
+ * - Tab 2: Diagnostics (Last session & logs, device details, phone tests, all checks, about)
  */
 internal object EditionHome {
-    fun onboarding(a: MainActivity) = android.content.Intent(a, OnboardingActivity::class.java)
+    fun onboarding(a: MainActivity) = Intent(a, OnboardingActivity::class.java)
 
-    fun redirect(a: MainActivity): android.content.Intent? {
-        if (a.intent.getBooleanExtra("system_detail", false)) return null
-        // The app opens on the system carousel (pull request #3's redesign). Only One UI's settings to
-        // restore open the status Home, whose hero has the Restore button. 0.4.43 also opened it after a
-        // session until Welcome back was seen, but Welcome back is marked seen only when it is the hero:
-        // with root off or an update on offer above it, every launch stayed on the status Home and the
-        // carousel looked gone (owner, 0.4.45). Welcome back stays on the status Home (Last session).
-        if (SessionPrefs.homeSnapshot(a)?.kind == HomeState.Kind.RESTORE) return null
-        return Intent(a, LauncherActivity::class.java)
-    }
+    fun redirect(a: MainActivity): Intent? = null
 
-    val layoutRes: Int get() = R.layout.activity_home
-
-    fun createFragment(): Fragment = StatusHomeFragment()
-
-    /**
-     * Every start of the launch activity (also when it redirects on): the anonymous daily usage count.
-     * The profile and the systems come from what the app already keeps (no root): the matched profile,
-     * the system on Home's last check and the last launch's.
-     */
     fun started(a: MainActivity) {
         UsageCheckIn.maybeSend(
             a,
@@ -101,844 +136,832 @@ internal object EditionHome {
         )
     }
 
-    /** On the cover the hero under the bar says "OneOS", so the bar has no title; the inner screen's bar has it. */
-    fun created(a: MainActivity) {
-        a.findViewById<ToolbarLayout>(R.id.toolbar_layout)?.setTitle(a.intent.getStringExtra("system_name") ?: a.getString(R.string.app_name))
-    }
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun Content(a: MainActivity) {
+        var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+        var tick by remember { mutableIntStateOf(0) }
+        var profile by remember { mutableStateOf<PhoneProfile?>(StageCheck.state.result?.facts?.let { Profiles.resolve(it).profile }) }
+        var profileRead by remember { mutableStateOf(profile != null) }
+        var pickTargetId by remember { mutableStateOf<String?>(null) }
 
-    fun createMenu(a: MainActivity, menu: Menu): Boolean {
-        a.menuInflater.inflate(R.menu.home, menu)
-        return true
-    }
-
-    fun menuItem(a: MainActivity, item: MenuItem): Boolean = when (item.itemId) {
-        R.id.menu_how -> {
-            a.startActivity(Intent(a, BeforeYouStartActivity::class.java))
-            true
+        val filePicker = rememberLauncherForActivityResult(SystemsNav.OpenGz()) { uri ->
+            if (uri != null) {
+                SystemsNav.persistPick(a, uri)
+                val p = profile
+                val picked = SessionPrefs.picked(a)
+                val good = if (p != null) FixActions.pickedImage(a, p) else null
+                when {
+                    p == null || picked == null -> tick++
+                    good == null -> SystemsNav.showBadPick(a, p, ImageIdentifier.identify(picked.check, p), pickTargetId) { id ->
+                        pickTargetId = id
+                        a.startActivity(Intent(a, ImageActivity::class.java))
+                    }
+                    else -> {
+                        if (pickTargetId != null && good.id != pickTargetId) {
+                            Toast.makeText(a, a.getString(R.string.systems_pick_other, Images.systemName(good, p)), Toast.LENGTH_LONG).show()
+                        }
+                        if (!PrepareJob.state.busy) FixActions.run(a, FixAction.SET_UP, good)
+                    }
+                }
+                tick++
+            }
         }
-        R.id.menu_about -> {
-            a.startActivity(Intent(a, AboutActivity::class.java))
-            true
-        }
-        else -> false
-    }
 
-    /** The shared HomeFragment is OneOS Probe's only. */
-    fun bind(f: PreferenceFragmentCompat) = Unit
-
-    fun resume(f: PreferenceFragmentCompat) = Unit
-}
-
-/**
- * Home's screen: the hero (the picture, the system or the state, one line),
- * the cards (the check tiles, the setup progress or Welcome back's session,
- * and the rows) and the one main button with the line under it. On the
- * cover it is one scrolling column with the button pinned in the footer
- * (activity_home); on the inner screen two panes, the button in the hero
- * card (layout-w600dp-h480dp). Every [HomeState.Kind] maps to the same
- * pieces, each text said once: the problem's title is the hero's line (or
- * its headline when no system is set up), its line is under the button, and
- * the technical finding is behind Details.
- */
-class StatusHomeFragment : Fragment(R.layout.home_content) {
-    private val subs = mutableListOf<() -> Unit>()
-
-    /** The launch refusal last shown as a dialog (shown once). */
-    private var shownRefusal: LaunchJob.State? = null
-
-    /** A good "Welcome back" shown now: once Home is left it becomes the "Last time" row (a bad one stays until Done). */
-    private var welcomeShownFor: String? = null
-
-    // The cards, made once (onViewCreated), shown and filled by redraw.
-    private var checksCard: LinearLayout? = null
-    private var checksGrid: LinearLayout? = null
-    private var checksLoader: View? = null
-    private var progressCard: LinearLayout? = null
-    private var welcomeCard: LinearLayout? = null
-    private var timeTile: View? = null
-    private var howTile: View? = null
-    private var rowsCard: LinearLayout? = null
-
-    private val twoPane: Boolean get() = resources.getBoolean(R.bool.home_two_pane)
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        val cards = view.findViewById<LinearLayout>(R.id.home_cards)
-        val inflater = LayoutInflater.from(view.context)
-
-        // "Your phone is ready … 4 of 4 checks": root, space, battery, screen lock.
-        val checks = Cards.section(cards, null, gapAbove = true)
-        checksGrid = Cards.tileGrid(checks, emptyList())
-        val header = checks.findViewById<LinearLayout>(R.id.oneos_section_header)
-        checksLoader = inflater.inflate(R.layout.home_header_loader, header, false).also { header.addView(it, 1) }
-        checksCard = checks
-
-        // Setting up: the bar, the time left.
-        val progress = Cards.section(cards, null, gapAbove = true)
-        progress.addView(inflater.inflate(R.layout.home_progress, progress, false))
-        progressCard = progress
-
-        // Welcome back: "Your time in …", two tiles, the logs line.
-        val welcome = Cards.section(cards, null, gapAbove = true)
-        val stats = LinearLayout(welcome.context).apply { orientation = LinearLayout.HORIZONTAL }
-        welcome.addView(stats, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        timeTile = inflater.inflate(R.layout.home_stat_tile, stats, false).also {
-            stats.addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        }
-        howTile = inflater.inflate(R.layout.home_stat_tile, stats, false).also {
-            stats.addView(
-                it,
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                    marginStart = resources.getDimension(R.dimen.oneos_tile_gap).toInt()
-                },
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    Readiness.onResume(a)
+                    AppUpdater.check(a)
+                    tick++
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            val subs = listOf(
+                StageCheck.observe { if (!it.busy) Readiness.tick(a); tick++ },
+                PrepareJob.observe { tick++ },
+                LaunchJob.observe { tick++ },
+                LogJob.observeBy({ Triple(it.phase, it.recovering, it.stopping) }) { tick++ },
+                OldStagesJob.observe { SystemManage.showResult(a); tick++ },
+                RemoveJob.observe { SystemManage.showResult(a); tick++ },
+                AppUpdater.observe { tick++ },
             )
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                subs.forEach { it() }
+            }
         }
-        welcome.addView(inflater.inflate(R.layout.home_welcome_logs, welcome, false))
-        welcomeCard = welcome
 
-        // Last time, Systems, Advanced (or Welcome back's Session details).
-        rowsCard = Cards.section(cards, null, rows = true, gapAbove = true)
-    }
-
-    override fun onDestroyView() {
-        checksCard = null
-        checksGrid = null
-        checksLoader = null
-        progressCard = null
-        welcomeCard = null
-        timeTile = null
-        howTile = null
-        rowsCard = null
-        super.onDestroyView()
-    }
-
-    /** One redraw for a burst of job updates (0.4.41): setup's byte counts arrive several times a second. */
-    private var redrawPending = false
-    private val coalescedRedraw = Runnable {
-        redrawPending = false
-        if (isAdded) {
-            redraw()
-            Readiness.tick(requireContext())
-        }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        val onChange: (Any) -> Unit = {
-            val v = view
-            if (isAdded && v != null) {
-                // While a job runs, at most every 500 ms (the 0.4.41 download froze Home and its
-                // buttons redrawing for every chunk); a job's start and end redraw at once.
-                if (PrepareJob.state.busy) {
-                    // A throttle, not a debounce: updates every 250 ms must not keep pushing it back.
-                    if (!redrawPending) { redrawPending = true; v.postDelayed(coalescedRedraw, 500) }
-                } else {
-                    v.removeCallbacks(coalescedRedraw)
-                    coalescedRedraw.run()
+        LaunchedEffect(Unit) {
+            if (!profileRead) {
+                val exec = Executors.newSingleThreadExecutor()
+                exec.execute {
+                    val f = runCatching { FactProbe(a.applicationContext).collect(RootProbe(a.applicationContext).signals()) }.getOrNull()
+                    val p = f?.let { Profiles.resolve(it).profile }
+                    a.runOnUiThread {
+                        profile = p
+                        profileRead = true
+                        tick++
+                    }
+                    exec.shutdown()
                 }
             }
         }
-        subs += StageCheck.observe(onChange)
-        subs += PrepareJob.observe(onChange)
-        subs += LaunchJob.observe(onChange)
-        // The log save reports each of its 135 steps; Home shows only that it runs (0.4.76: a row
-        // rebuilt under the finger lost its tap, and "Skip saving logs" showed nothing for half a second).
-        subs += LogJob.observeBy({ Triple(it.phase, it.recovering, it.stopping) }, onChange)
-        subs += OldStagesJob.observe(onChange)
-        subs += AppUpdater.observe(onChange)
-    }
 
-    override fun onResume() {
-        super.onResume()
-        // Back from Settings (screen lock removed?), from the root app, or a new open: read again.
-        Readiness.onResume(requireContext())
-        AppUpdater.check(requireContext())
-        redraw()
-    }
-
-    override fun onStop() {
-        view?.removeCallbacks(coalescedRedraw)
-        redrawPending = false
-        subs.forEach { it() }
-        subs.clear()
-        welcomeShownFor?.let { SessionPrefs.setWelcomeSeen(requireContext(), it) }
-        welcomeShownFor = null
-        super.onStop()
-    }
-
-    private fun lastSession(ctx: Context): LastSession? {
-        val l = SessionPrefs.lastLaunch(ctx) ?: return null
-        return LastSession(
-            sessionId = l.sessionId,
-            imageId = l.imageId,
-            dryRun = l.dryRun,
-            wallMs = l.wallMs,
-            over = l.endedSince(),
-            outcome = l.outcome?.let { o -> OutcomeKind.entries.firstOrNull { it.name == o } },
-            afterSeconds = l.afterSeconds,
-            seen = SessionPrefs.welcomeSeenFor(ctx, l.sessionId),
+        val tabTitles = listOf(
+            stringResource(R.string.app_name),
+            stringResource(R.string.nav_settings),
+            stringResource(R.string.nav_diagnostics),
         )
+
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = tabTitles[selectedTab],
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            if (selectedTab == 0) {
+                                Text(
+                                    text = profile?.label ?: stringResource(R.string.home_subtitle),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { Readiness.tick(a, force = true); tick++ }) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
+                        }
+                        IconButton(onClick = { a.startActivity(Intent(a, AboutActivity::class.java)) }) {
+                            Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.about_title))
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    ),
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    NavigationBarItem(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        icon = { Icon(DualOsIcons.Layers, contentDescription = null) },
+                        label = { Text(stringResource(R.string.nav_systems)) },
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                        label = { Text(stringResource(R.string.nav_settings)) },
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        icon = { Icon(DualOsIcons.Science, contentDescription = null) },
+                        label = { Text(stringResource(R.string.nav_diagnostics)) },
+                    )
+                }
+            },
+        ) { padding ->
+            val listPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 24.dp,
+            )
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "hub_tab",
+            ) { tab ->
+                when (tab) {
+                    0 -> SystemsHubTab(
+                        a = a,
+                        profile = profile,
+                        profileRead = profileRead,
+                        refreshTick = tick,
+                        contentPadding = listPadding,
+                        onPickFile = { id ->
+                            pickTargetId = id
+                            runCatching { filePicker.launch(Unit) }.onFailure {
+                                Toast.makeText(a, R.string.fix_no_app, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    )
+                    1 -> SettingsTabContent(activity = a, contentPadding = listPadding)
+                    else -> DiagnosticsHubTab(a = a, refreshTick = tick, contentPadding = listPadding)
+                }
+            }
+        }
     }
 
-    /** What Home shows now, and the check it was decided from (null: none yet, or the kept Home). */
-    private class Now(val state: HomeState, val report: GateReport?, val facts: DeviceFacts?)
-
-    /** What Home shows now, from the jobs' states (no root call here). */
-    private fun decide(ctx: Context): Now {
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable
+    private fun SystemsHubTab(
+        a: MainActivity,
+        profile: PhoneProfile?,
+        profileRead: Boolean,
+        refreshTick: Int,
+        contentPadding: PaddingValues,
+        onPickFile: (String?) -> Unit,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val t = refreshTick
         val check = StageCheck.state
-        val r = check.result?.takeIf { it.installd != null }
-        val facts = r?.let { FactProbe(ctx).refresh(it.facts) }
-        val report = if (r != null && facts != null) StageCheck.gates(ctx, r, GatePhase.SWITCH, screenLock = facts.screenLockSet, facts = facts) else null
         val prep = PrepareJob.state
         val launch = LaunchJob.state
         val logs = LogJob.state
-        val job = when {
-            prep.busy -> HomeJob(HomeJob.Kind.SETUP, prep.image, prep.percent)
-            launch.busy || launch.phase == LaunchJob.Phase.LAUNCHED -> HomeJob(HomeJob.Kind.SWITCH, launch.image ?: report?.image)
-            logs.busy && logs.recovering -> HomeJob(HomeJob.Kind.RESTORE)
-            else -> null
-        }
-        val state = HomeState.decide(
-            HomeInput(
-                report = report,
-                status = check.result?.status,
-                checking = check.busy || (logs.busy && !logs.recovering) || OldStagesJob.state.busy,
-                checkFailure = if (r == null && !check.busy) check.failure else null,
-                job = job,
-                last = lastSession(ctx),
-                facts = facts,
-                appVersionCode = BuildConfig.VERSION_CODE,
-                picked = FixActions.pickedImage(ctx, report?.profile),
-                // A cold start: the last known Home, read-only, until this start's first check ends.
-                cached = Readiness.coldStartHome(ctx),
-                appUpdate = appUpdateOffer(report?.image ?: check.result?.status?.marker?.imageId?.let(Images::byId), report?.profile),
-                appUpdateBusy = AppUpdater.state.phase == AppUpdater.Phase.DOWNLOADING || AppUpdater.state.phase == AppUpdater.Phase.INSTALLING,
-            ),
-        )
-        return Now(state, report, facts)
-    }
-
-    private fun redraw() {
-        val root = view ?: return
-        if (!isAdded) return
-        val ctx = requireContext()
-        val activity = activity as? MainActivity ?: return
-        val now = decide(ctx)
-        val s = now.state
-        welcomeShownFor = s.last?.takeIf { s.kind == HomeState.Kind.WELCOME_BACK && it.outcome?.good == true }?.sessionId
-
-        val tiles = tiles(ctx, now)
-        // A Home decided from a finished check is kept for the next cold start (HomeState says which).
-        if (tiles != null) s.snapshot(tiles.map { it.check }, System.currentTimeMillis())?.let { Readiness.keepHome(ctx, it) }
-        val showChecks = tiles != null && s.kind in SHOWS_CHECKS
-
-        hero(root, s, showChecks)
-        checks(activity, s, tiles?.takeIf { showChecks })
-        progress(s)
-        welcome(s)
-        rows(activity, s)
-        footer(activity, s)
-        spaceCards(root)
-        refusalDialog(activity)
-        quickSwitch(activity, s)
-    }
-
-    // Hero ===================================================================
-
-    private fun hero(root: View, s: HomeState, showChecks: Boolean) {
-        val outcome = s.last?.outcome?.takeIf { s.kind == HomeState.Kind.WELCOME_BACK }
-        // No system in play (checking, nothing set up, no root, an unsupported phone): the OneOS mark, not
-        // another system's artwork (the fallback was ColorOS's, with its name painted on; 0.4.43, UX audit).
-        val noSystem = s.image == null && outcome == null
-        root.findViewById<OsArtworkView>(R.id.home_hero_art).apply {
-            if (!noSystem) bind(s.image)
-            visibility = if (outcome == null && !noSystem) View.VISIBLE else View.GONE
-        }
-        root.findViewById<ImageView>(R.id.home_hero_badge).apply {
-            visibility = if (outcome != null || noSystem) View.VISIBLE else View.GONE
-            when {
-                outcome != null -> setImageResource(if (outcome.good) R.drawable.home_welcome_ok else R.drawable.home_welcome_warn)
-                noSystem -> setImageResource(R.drawable.ic_oneos_mark)
-            }
-        }
-        val (title, line) = heroText(s)
-        root.findViewById<TextView>(R.id.home_hero_title).text = title
-        root.findViewById<TextView>(R.id.home_hero_line).apply {
-            text = line
-            visibility = if (line.isNullOrEmpty()) View.GONE else View.VISIBLE
-        }
-        // Working, or checking with no tiles to show it on.
-        val checking = s.checking || s.cached != null
-        val busy = s.kind in WORKING || (checking && !showChecks && s.kind != HomeState.Kind.WELCOME_BACK)
-        root.findViewById<View>(R.id.home_hero_loader).visibility = if (busy && !line.isNullOrEmpty()) View.VISIBLE else View.GONE
-        root.findViewById<TextView>(R.id.home_hero_extra).apply {
-            val extra = if (twoPane && s.kind == HomeState.Kind.READY) getString(R.string.home_line_kept) else null
-            text = extra
-            visibility = if (extra != null) View.VISIBLE else View.GONE
-        }
-    }
-
-    /** The headline and the line under it: the system and its state, or the problem when no system is in play. */
-    private fun heroText(s: HomeState): Pair<String, String?> {
-        val system = Sentence.start(Images.systemName(s.image))
-        val p = s.problem
-        return when (s.kind) {
-            HomeState.Kind.CHECKING -> (if (s.image != null) system else getString(R.string.home_subtitle)) to getString(R.string.home_checking)
-            HomeState.Kind.RESTORING -> getString(R.string.home_restoring) to getString(R.string.home_line_moment)
-            HomeState.Kind.SETTING_UP ->
-                system to (s.percent?.let { getString(R.string.home_line_setting_up, it) } ?: getString(R.string.home_line_setting_up_start))
-            HomeState.Kind.SWITCHING ->
-                system to getString(if (LaunchJob.state.phase == LaunchJob.Phase.LAUNCHED) R.string.home_closing else R.string.home_line_switching)
-            HomeState.Kind.NOTHING_SET_UP ->
-                if (s.primary == FixAction.SET_UP && s.image != null) {
-                    system to getString(R.string.home_line_picked)
-                } else {
-                    getString(R.string.home_subtitle) to getString(R.string.home_line_setup_time)
-                }
-            HomeState.Kind.FIX -> system to p?.title
-            HomeState.Kind.WELCOME_BACK -> getString(R.string.home_welcome) to welcomeLine(s.last)
-            HomeState.Kind.READY -> system to s.image?.let { getString(R.string.home_line_ready, AndroidRelease.name(it.sdk)) }
-            // Restore, root, a check that failed, an unsupported phone, the old switcher, a restart, an update.
-            else -> (p?.title ?: system) to p?.line
-        }
-    }
-
-    private fun welcomeLine(last: LastSession?): String? {
-        if (last == null) return null
-        val outcome = last.outcome ?: return null
-        return if (outcome.good && outcome != OutcomeKind.DRY_RUN && !last.dryRun) {
-            getString(R.string.home_welcome_good)
-        } else {
-            sentence(outcome.title(Images.systemName(last.image)))
-        }
-    }
-
-    // Check tiles ============================================================
-
-    /** One check tile: what Home keeps ([HomeCheck]) and, from a fresh check, what a tap opens. */
-    private class Tile(val check: HomeCheck, val finding: Finding?, val plain: PlainMessage?)
-
-    /** The four tiles from the check, or as kept; null when there is neither. */
-    private fun tiles(ctx: Context, now: Now): List<Tile>? {
-        val s = now.state
-        s.cached?.let { c -> return c.checks.filter { it.id in TILE_GATES }.takeIf { it.isNotEmpty() }?.map { Tile(it, null, null) } }
-        val r = now.report ?: return null
-        // Before a setup, the space the chosen system needs (a hint only: Prepare's own check decides).
-        val setupNeed = s.image?.takeIf { s.kind == HomeState.Kind.NOTHING_SET_UP && s.primary == FixAction.SET_UP }?.let { image ->
-            SpaceRule.toStage(image, r.profile?.choice(image.id)?.packageSetId?.let { PackageSets.byId(it) })
-        }
-        return TILE_GATES.map { id -> tile(ctx, id, r, now.facts, setupNeed) }
-    }
-
-    private fun tile(ctx: Context, id: String, r: GateReport, facts: DeviceFacts?, setupNeed: Long?): Tile {
-        val f = r.find(id)?.finding
-        var level = f?.level ?: Level.INFO
-        val unknown = ctx.getString(R.string.home_value_unknown)
-        val value = when (id) {
-            SwitchGates.ID_ROOT -> when {
-                f == null -> unknown
-                f.level == Level.OK ->
-                    facts?.rootKind?.takeIf { it != RootKind.NONE && it != RootKind.OTHER }?.let { ctx.getString(R.string.home_value_root_app, it.label) }
-                        ?: ctx.getString(R.string.home_value_root_ok)
-                f.reason == SwitchGates.R_ROOT_NO_SU && (facts == null || facts.rootKind == RootKind.NONE) -> ctx.getString(R.string.home_value_root_missing)
-                else -> ctx.getString(R.string.home_value_root_denied)
-            }
-            SwitchGates.ID_SPACE -> {
-                val free = facts?.storage?.freeBytes
-                when {
-                    f == null || free == null || f.reason == SwitchGates.R_SPACE_UNKNOWN -> unknown
-                    f.level == Level.BLOCK -> ctx.getString(R.string.home_value_space_short, Units.bytes((SpaceRule.LAUNCH_BYTES - free).coerceAtLeast(0)))
-                    setupNeed != null && free < setupNeed -> {
-                        if (level == Level.OK) level = Level.WARN
-                        ctx.getString(R.string.home_value_space_setup, Units.bytes(free), Units.bytes(setupNeed))
-                    }
-                    // 0.4.11: the old copies setup kept, which the tile then opens (Free up space).
-                    oldCopies() > 0 -> ctx.getString(
-                        R.string.home_value_space_old, Units.bytes(free),
-                        ctx.resources.getQuantityString(R.plurals.home_space_old_copies, oldCopies(), oldCopies()),
-                    )
-                    else -> ctx.getString(R.string.home_value_space_free, Units.bytes(free))
-                }
-            }
-            SwitchGates.ID_BATTERY -> facts?.battery?.let { b ->
-                b.temperatureC?.let { t -> ctx.getString(R.string.home_value_battery, b.levelPercent, t.toInt()) }
-                    ?: ctx.getString(R.string.home_value_battery_no_temp, b.levelPercent)
-            } ?: unknown
-            else -> when {
-                f == null || f.reason == ScreenLockRule.R_UNKNOWN -> unknown
-                f.level == Level.OK -> ctx.getString(R.string.home_value_lock_off)
-                else -> ctx.getString(R.string.home_value_lock_on)
-            }
-        }
-        val plain = f?.takeIf { it.level == Level.BLOCK || it.level == Level.WARN }?.let { Plain.of(it, r, facts) }
-        return Tile(HomeCheck(id, level, value), f, plain)
-    }
-
-    private fun checks(activity: MainActivity, s: HomeState, tiles: List<Tile>?) {
-        val card = checksCard ?: return
-        val grid = checksGrid ?: return
-        if (tiles == null) {
-            card.visibility = View.GONE
-            return
-        }
-        card.visibility = View.VISIBLE
-        val levels = tiles.map { it.check.level }
-        val allOk = levels.none { it == Level.WARN || it == Level.BLOCK }
-        // While a check runs (or the kept Home is shown): "Checking…" with the One UI loader, not the count.
-        val checking = s.checking || s.cached != null
-        Cards.bindSection(
-            card,
-            getString(if (allOk) R.string.home_checks_ready else R.string.home_checks_fix),
-            if (checking) getString(R.string.home_checks_checking) else getString(R.string.home_checks_count, levels.count { it == Level.OK }, tiles.size),
-            if (checking) Level.INFO else Cards.worst(levels),
-        )
-        checksLoader?.visibility = if (checking) View.VISIBLE else View.GONE
-        card.findViewById<TextView>(R.id.oneos_section_trailing)?.let { t ->
-            (t.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-                lp.marginStart = ((if (checking) 6 else 12) * resources.displayMetrics.density).toInt()
-                t.layoutParams = lp
-            }
-        }
-        Cards.setTiles(
-            grid,
-            tiles.map { t ->
-                val c = t.check
-                Cards.Tile(TILE_ICONS.getValue(c.id), getString(TILE_TITLES.getValue(c.id)), c.value, c.level)
-            },
-        )
-        // A tile from the check opens its fix, else what was checked; the kept ones are only shown.
-        val views = (0 until grid.childCount).flatMap { i ->
-            val line = grid.getChildAt(i) as ViewGroup
-            (0 until line.childCount).map { line.getChildAt(it) }
-        }
-        for ((t, v) in tiles.zip(views)) {
-            val action = t.plain?.action?.takeIf { it != FixAction.NONE && it != FixAction.ACKNOWLEDGE }
-                ?: FixAction.FREE_UP_SPACE.takeIf { t.check.id == SwitchGates.ID_SPACE && oldCopies() > 0 }
-            val finding = t.finding
-            if (s.cached != null || (action == null && finding == null)) continue
-            v.foreground = selectableBackground(v.context)
-            v.clipToOutline = true
-            v.setOnClickListener {
-                if (action != null) FixActions.run(activity, action, s.image) else if (finding != null) details(finding)
-            }
-        }
-    }
-
-    /** Old copies the stage check saw (stage.old: kept copies and unfinished deletes). */
-    private fun oldCopies(): Int = StageCheck.state.result?.status?.oldStages?.size ?: 0
-
-    // The whole tile when pressed (SESL's selectableItemBackground is a small centred circle).
-    private fun selectableBackground(ctx: Context) = ctx.getDrawable(R.drawable.oneos_tile_ripple)
-
-    // Setting up, Welcome back =================================================
-
-    private fun progress(s: HomeState) {
-        val card = progressCard ?: return
-        if (s.kind != HomeState.Kind.SETTING_UP) {
-            card.visibility = View.GONE
-            return
-        }
-        card.visibility = View.VISIBLE
-        card.findViewById<SeslProgressBar>(R.id.home_progress_bar).apply {
-            setMax(100)
-            setProgress(s.percent ?: 0)
-            setProgressTintList(ColorStateList.valueOf(card.context.getColor(R.color.oneos_primary_text)))
-        }
-        card.findViewById<TextView>(R.id.home_progress_eta).text =
-            PrepareJob.state.etaSeconds?.let { getString(R.string.home_eta, (it + 59) / 60) } ?: getString(R.string.home_eta_wait)
-    }
-
-    private fun welcome(s: HomeState) {
-        val card = welcomeCard ?: return
-        val last = s.last?.takeIf { s.kind == HomeState.Kind.WELCOME_BACK }
-        val outcome = last?.outcome
-        if (last == null || outcome == null) {
-            card.visibility = View.GONE
-            return
-        }
-        card.visibility = View.VISIBLE
-        val system = Images.systemName(last.image)
-        val test = last.dryRun || outcome == OutcomeKind.DRY_RUN
-        Cards.bindSection(card, if (test) getString(R.string.home_welcome_card_test) else getString(R.string.home_welcome_card, system), null)
-        val minutes = last.afterSeconds?.takeIf { it > 0 && !test }?.let { (it + 59) / 60 }
-        timeTile?.let { t ->
-            t.visibility = if (minutes != null) View.VISIBLE else View.GONE
-            if (minutes != null) stat(t, getString(R.string.home_minutes, minutes), getString(R.string.home_welcome_in, system))
-        }
-        howTile?.let { t ->
-            t.visibility = if (test) View.GONE else View.VISIBLE
-            (t.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-                lp.marginStart = if (minutes != null) resources.getDimension(R.dimen.oneos_tile_gap).toInt() else 0
-                t.layoutParams = lp
-            }
-            stat(t, getString(howCameBack(outcome)), getString(R.string.home_welcome_how))
-        }
-    }
-
-    private fun stat(tile: View, value: String, label: String) {
-        tile.findViewById<TextView>(R.id.home_stat_value).text = value
-        tile.findViewById<TextView>(R.id.home_stat_label).text = label
-    }
-
-    private fun howCameBack(o: OutcomeKind): Int = when (o) {
-        OutcomeKind.USER_RETURN -> R.string.home_how_keys
-        OutcomeKind.APP_RETURN -> R.string.home_how_app
-        OutcomeKind.GUEST_REBOOT, OutcomeKind.GUEST_DEAD, OutcomeKind.BLACK_SCREEN, OutcomeKind.SESSION_LIMIT, OutcomeKind.BOOT_TIMEOUT ->
-            R.string.home_how_auto
-        OutcomeKind.HARD_RESET -> R.string.home_how_restart
-        OutcomeKind.GUEST_SHUTDOWN -> R.string.home_how_off
-        OutcomeKind.PREPARE_FAILED, OutcomeKind.REFUSED -> R.string.home_how_none
-        OutcomeKind.DRY_RUN -> R.string.home_how_test
-        OutcomeKind.UNKNOWN -> R.string.home_how_other
-    }
-
-    // Rows ===================================================================
-
-    private fun rows(activity: MainActivity, s: HomeState) {
-        val card = rowsCard ?: return
-        // Child 0 is the card's (hidden) header; the rows follow it.
-        while (card.childCount > 1) card.removeViewAt(card.childCount - 1)
-        val ctx = card.context
-        if (s.kind == HomeState.Kind.WELCOME_BACK) {
-            // After a session that went wrong, the report first (personal info removed).
-            if (s.last?.outcome?.good == false) {
-                Cards.row(card, OuiIcons.drawable.ic_oui_share, getString(R.string.home_send_report), getString(R.string.home_send_report_summary)) {
-                    val zip = LogJob.latestZip(ctx)
-                    if (zip != null) {
-                        startActivity(Intent(ctx, FindingsActivity::class.java).putExtra(FindingsActivity.EXTRA_ZIP, zip.path))
-                    } else {
-                        startActivity(Intent(ctx, LastSessionActivity::class.java))
-                    }
-                }
-            }
-            Cards.row(card, R.drawable.ic_home_row_session, getString(R.string.home_row_session), getString(R.string.home_row_session_summary)) {
-                startActivity(Intent(ctx, LastSessionActivity::class.java))
-            }
-            return
-        }
-        // Setup that did not finish (it stopped, or a check refused it): its plain message.
-        val prep = PrepareJob.state
-        if (!prep.busy && (prep.phase == PrepareJob.Phase.FAILED || prep.phase == PrepareJob.Phase.STOPPED)) {
-            prep.plain?.let { p ->
-                val row = Cards.row(card, R.drawable.ic_oneos_row_systems, p.title, p.line) { startActivity(Intent(ctx, SetupProgressActivity::class.java)) }
-                Cards.setRowEnd(row, Cards.badge(p.level))
-            }
-        }
-        lastRow(card, s)
-        otherSystems(activity, card, s)
-        // Another system or a downloaded file; not while checking or working, nor when the main button does the same.
-        val choosing = s.kind == HomeState.Kind.NOTHING_SET_UP && s.primary == FixAction.CHOOSE_SYSTEM
-        if (s.kind != HomeState.Kind.CHECKING && s.kind !in BUSY && !choosing) {
-            Cards.row(card, R.drawable.ic_oneos_row_systems, getString(R.string.home_row_systems), getString(R.string.home_row_systems_summary)) {
-                FixActions.run(activity, FixAction.CHOOSE_SYSTEM, s.image)
-            }
-        }
-        Cards.row(card, R.drawable.ic_oneos_row_advanced, getString(R.string.home_advanced), getString(R.string.home_row_advanced_summary)) {
-            startActivity(Intent(ctx, AdvancedActivity::class.java))
-        }
-    }
-
-    /**
-     * A newer OneOS (0.4.42, [AppUpdater]) as Home's hero: "Update for ColorOS 17" when the release
-     * changes the files of the system set up here, else "OneOS 0.4.43 is available"; its progress
-     * and a failure in the same place. Null when there is none.
-     */
-    private fun appUpdateOffer(image: ImageRef?, profile: com.fahadali.oneos.core.model.PhoneProfile?): PlainMessage? {
-        val u = AppUpdater.state
-        val next = u.update ?: return null
-        if (!next.newerThan(BuildConfig.VERSION_CODE)) return null
-        val forSystem = image != null && next.changes(image.id)
-        val phone = profile?.label?.let { getString(R.string.home_app_update_your_phone, it) }.orEmpty()
-        val title = if (forSystem) getString(R.string.home_app_update_for_system, image!!.name)
-            else getString(R.string.home_app_update_title, next.versionName)
-        val line = when (u.phase) {
-            AppUpdater.Phase.FAILED, AppUpdater.Phase.CONFIRM -> u.message
-            else -> next.notes?.let { getString(R.string.home_app_update_line_notes, next.versionName, it) }
-                ?: if (forSystem) getString(R.string.home_app_update_line_system, next.versionName, image!!.name, phone)
-                else getString(R.string.home_app_update_line)
-        }.orEmpty().take(PlainMessage.MAX_LINE)
-        val label = when (u.phase) {
-            AppUpdater.Phase.DOWNLOADING -> getString(R.string.home_update_downloading, u.percent)
-            AppUpdater.Phase.INSTALLING -> getString(R.string.home_app_update_installing)
-            AppUpdater.Phase.FAILED -> Plain.defaultLabel(FixAction.TRY_AGAIN)
-            AppUpdater.Phase.CONFIRM -> getString(R.string.home_app_update_confirm)
-            else -> Plain.defaultLabel(FixAction.APP_UPDATE)
-        }
-        return PlainMessage(title.take(PlainMessage.MAX_TITLE), line, FixAction.APP_UPDATE, label, Level.INFO)
-    }
-
-    // Quick switch (0.4.30) =====================================================
-
-    /**
-     * One row per other system set up earlier on this phone: each copy OneOS
-     * moved aside that holds a system this phone takes (the stage check reads
-     * which, stage.old_images), newest first. A tap offers Switch to it
-     * ([QuickSwitch]) or Delete it; the copy being put back shows as working.
-     */
-    private fun otherSystems(activity: MainActivity, card: LinearLayout, s: HomeState) {
-        val ctx = card.context
-        val r = StageCheck.state.result ?: return
-        val status = r.status
-        val profile = Profiles.resolve(r.facts).profile ?: return
-        val pending = QuickSwitch.pending
-        val copies = status.oldStages.map { it.substringAfterLast('/') }.distinct().mapNotNull { name ->
-            status.oldImages[name]?.let { Images.byId(it) }?.takeIf { profile.choice(it.id) != null }?.let { name to it }
-        }.sortedByDescending { setAside(it.first) ?: 0 }
-        val working = s.kind == HomeState.Kind.CHECKING || s.kind in BUSY || OldStagesJob.state.busy || pending != null
-        for ((name, image) in copies) {
-            val since = setAside(name)?.let { getString(R.string.home_other_since, DateFormat.getMediumDateFormat(ctx).format(Date(it * 1000))) }
-            if (pending?.copy == name) {
-                CardRows.tint(
-                    Cards.row(card, R.drawable.ic_oneos_row_systems, getString(R.string.home_other_getting_ready, image.name), getString(R.string.home_other_getting_ready_line)),
-                    Level.INFO,
-                )
-                continue
-            }
-            CardRows.row(
-                card, R.drawable.ic_oneos_row_systems, getString(R.string.home_other_switch, image.name),
-                listOfNotNull(since, getString(R.string.home_other_kept)).joinToString(" · "),
-                enabled = !working,
-            ) { chooseOther(activity, name, image, since) }
-        }
-    }
-
-    /** When the copy was set aside: the seconds in its name (oneos.old-<time>[-<pid>]). */
-    private fun setAside(name: String): Long? = name.removePrefix("oneos.old-").substringBefore('-').toLongOrNull()
-
-    private fun chooseOther(activity: MainActivity, name: String, image: ImageRef, since: String?) {
-        val items = arrayOf(getString(R.string.home_other_switch, image.name), getString(R.string.space_choose_delete))
-        AlertDialog.Builder(activity)
-            .setTitle(listOfNotNull(image.name, since).joinToString(", "))
-            .setItems(items) { _, i -> if (i == 0) confirmQuickSwitch(activity, name, image) else confirmDeleteOther(activity, name, image, since) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun confirmQuickSwitch(activity: MainActivity, name: String, image: ImageRef) {
-        val now = StageCheck.state.result?.status?.marker?.imageId?.let { Images.byId(it) }?.name ?: getString(R.string.home_other_current_unknown)
-        AlertDialog.Builder(activity)
-            .setTitle(getString(R.string.home_other_confirm_title, image.name))
-            .setMessage(getString(R.string.home_other_confirm_message, image.name, now))
-            .setPositiveButton(R.string.home_other_confirm_go) { _, _ ->
-                QuickSwitch.start(activity, name, image.id)
-                redraw()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun confirmDeleteOther(activity: MainActivity, name: String, image: ImageRef, since: String?) {
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.space_delete_title)
-            .setMessage(getString(R.string.space_delete_message, getString(R.string.space_delete_what_of, image.name), since ?: name))
-            .setPositiveButton(R.string.space_delete_run) { _, _ -> OldStagesJob.delete(activity, OldStage(name, 0, image.id, hasData = true, busy = false)) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    /**
-     * Quick switch's next step, from Home's redraw: once root has put the copy
-     * back and a stage check that ended after it read that system, Update when
-     * Home asks for it (once), else the Switch confirm; anything else (a check
-     * to fix first) ends it, and Home shows the problem as usual.
-     */
-    private fun quickSwitch(activity: MainActivity, s: HomeState) {
-        val p = QuickSwitch.pending ?: return
         val old = OldStagesJob.state
-        if (old.phase == OldStagesJob.Phase.RESTORING) return
-        if (old.restoreFailed) {
-            QuickSwitch.cancel()
-            AlertDialog.Builder(activity)
-                .setTitle(R.string.home_other_failed)
-                .setMessage(old.message ?: getString(R.string.space_not_restored_line))
-                .setPositiveButton(android.R.string.ok, null)
-                .show()
-            return
-        }
-        if (!old.restored) return
-        val check = StageCheck.state
-        // Only a stage check that ended after the copy came back; one that failed, or read
-        // another system, ends it (Home shows what it found).
-        if (check.busy || PrepareJob.state.busy || check.endedAt <= old.restoredAt) return
-        if (check.phase == StageCheck.Phase.FAILED || check.result?.status?.marker?.imageId != p.imageId) {
-            QuickSwitch.cancel()
-            return
-        }
-        when (s.primary) {
-            FixAction.UPDATE -> if (!p.updateStarted) {
-                p.updateStarted = true
-                FixActions.run(activity, FixAction.UPDATE, s.image)
-            } else {
-                QuickSwitch.cancel()
-            }
-            FixAction.SWITCH -> {
-                QuickSwitch.cancel()
-                FixActions.run(activity, FixAction.SWITCH, s.image)
-            }
-            else -> QuickSwitch.cancel()
-        }
-    }
+        val removing = RemoveJob.state
+        val result = check.result
+        val facts = result?.facts?.let { FactProbe(a).refresh(it) }
+        val report = if (result?.installd != null && facts != null) {
+            StageCheck.gates(a, result, GatePhase.SWITCH, screenLock = facts.screenLockSet, facts = facts)
+        } else null
 
-    /** "Last time": how long and how the last session ended (read by itself after a return), or that it is being read. */
-    private fun lastRow(card: LinearLayout, s: HomeState) {
-        val ctx = card.context
-        val last = s.last ?: return
-        val system = Images.systemName(last.image)
-        val logs = LogJob.state
-        val outcome = last.outcome
-        val summary = when {
-            logs.busy && logs.stopping -> getString(R.string.logs_stopping)
-            logs.busy && !logs.recovering -> getString(R.string.home_row_last_reading)
-            outcome != null -> listOfNotNull(
-                last.afterSeconds?.takeIf { it > 0 && !last.dryRun }?.let {
-                    getString(R.string.home_row_last_time, getString(R.string.home_minutes, (it + 59) / 60), system)
-                },
-                sentence(outcome.title(system)).trimEnd('.'),
-            ).joinToString(" · ")
-            last.over -> getString(R.string.home_row_last_unread, DateFormat.getMediumDateFormat(ctx).format(Date(last.wallMs)))
-            else -> null
-        } ?: return
-        Cards.row(card, R.drawable.ic_oneos_row_last_time, getString(R.string.home_row_last), summary) {
-            // While its logs are being saved: offer to skip that (owner, 11-08), Boot and Update wait for it.
-            if (logs.busy && logs.stopping) Unit
-            else if (logs.busy && !logs.recovering) {
-                androidx.appcompat.app.AlertDialog.Builder(ctx)
-                    .setTitle(R.string.logs_skip)
-                    .setMessage(R.string.logs_skip_summary)
-                    .setPositiveButton(R.string.logs_skip) { _, _ -> LogJob.skip() }
-                    .setNegativeButton(R.string.logs_keep, null)
-                    .show()
-            } else startActivity(Intent(ctx, LastSessionActivity::class.java))
-        }
-    }
+        val jobsBusy = prep.busy || launch.busy || logs.busy || old.busy || removing.busy
+        val st = result?.status
+        val p = profile ?: result?.facts?.let { Profiles.resolve(it).profile }
+        val available = p?.images().orEmpty()
+        val rememberedImage = EnvironmentNavigation.preparedImage(a)
+        val setUpId = st?.marker?.takeIf { st.ours && it.profileId == p?.id }?.imageId
+            ?: result?.takeIf { it.status.partial }?.let(ImageMaintenance::identifiedImage)?.id
+            ?: rememberedImage?.id?.takeIf { st?.complete != true }
+        val pickedImage = p?.let { FixActions.pickedImage(a, it) }
+        val statusColors = LocalDualOsStatusColors.current
 
-    /** The cards stand 12dp apart; on the inner screen the first one is level with the hero card. */
-    private fun spaceCards(root: View) {
-        val cards = root.findViewById<LinearLayout>(R.id.home_cards) ?: return
-        val gap = resources.getDimension(R.dimen.oneos_card_gap).toInt()
-        var first = true
-        for (i in 0 until cards.childCount) {
-            val c = cards.getChildAt(i)
-            if (c.visibility != View.VISIBLE) continue
-            val lp = c.layoutParams as? ViewGroup.MarginLayoutParams ?: continue
-            val top = if (first && twoPane) 0 else gap
-            if (lp.topMargin != top) {
-                lp.topMargin = top
-                c.layoutParams = lp
-            }
-            first = false
-        }
-    }
+        val appUpdate = AppUpdater.state.update?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }
+        val needsRestore = SessionPrefs.homeSnapshot(a)?.kind == HomeState.Kind.RESTORE || SessionRestore.offered(a)
+        val last = SessionPrefs.lastLaunch(a)
+        val showWelcome = last != null && !SessionPrefs.welcomeSeenFor(a, last.sessionId) && last.endedSince()
 
-    // The main button ==========================================================
-
-    private fun <T : View> find(id: Int): T? = view?.findViewById<T>(id) ?: activity?.findViewById<T>(id)
-
-    private fun footer(activity: MainActivity, s: HomeState) {
-        val primary = find<Button>(R.id.home_primary) ?: return
-        val action = s.primary
-        if (action == null) {
-            primary.visibility = View.GONE
-        } else {
-            primary.visibility = View.VISIBLE
-            val again = s.kind == HomeState.Kind.WELCOME_BACK && s.last?.dryRun == false
-            primary.text = if (again) getString(R.string.home_switch_again) else s.primaryLabel ?: Plain.defaultLabel(action)
-            // Off while a check or a job runs, and always on the kept Home (HomeState).
-            primary.isEnabled = s.primaryEnabled
-            primary.setOnClickListener { FixActions.run(activity, action, s.image) }
-        }
-        find<TextView>(R.id.home_caption)?.let { c ->
-            val text = when (s.kind) {
-                HomeState.Kind.READY -> getString(R.string.home_caption_switch)
-                HomeState.Kind.FIX -> s.problem?.line
-                HomeState.Kind.NOTHING_SET_UP -> if (s.primary == FixAction.SET_UP) getString(R.string.home_caption_setup) else null
-                else -> null
-            }
-            c.text = text
-            c.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
-        }
-        val secondary = find<Button>(R.id.home_secondary) ?: return
-        val last = s.last
-        val finding = s.finding?.takeIf { s.problem != null }
-        when {
-            s.kind == HomeState.Kind.WELCOME_BACK && last != null -> {
-                secondary.visibility = View.VISIBLE
-                secondary.setText(R.string.home_done)
-                secondary.setOnClickListener {
-                    SessionPrefs.setWelcomeSeen(activity, last.sessionId)
-                    redraw()
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (appUpdate != null) {
+                item {
+                    val u = AppUpdater.state
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.systems_update_banner_title, appUpdate.versionName),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            Text(
+                                text = when (u.phase) {
+                                    AppUpdater.Phase.DOWNLOADING -> stringResource(R.string.home_update_downloading, u.percent)
+                                    AppUpdater.Phase.INSTALLING -> stringResource(R.string.home_app_update_installing)
+                                    AppUpdater.Phase.FAILED -> stringResource(R.string.systems_update_banner_failed)
+                                    AppUpdater.Phase.CONFIRM -> stringResource(R.string.systems_update_banner_confirm)
+                                    else -> appUpdate.notes ?: stringResource(R.string.systems_update_banner_default)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            if (!u.busy) {
+                                Button(
+                                    onClick = { FixActions.confirmAppUpdate(a) },
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Text(stringResource(R.string.systems_update_action))
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            finding != null -> {
-                secondary.visibility = View.VISIBLE
-                secondary.setText(R.string.home_details)
-                secondary.setOnClickListener { details(finding) }
+
+            if (needsRestore && !logs.recovering) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = statusColors.warnContainer),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.last_restore_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = statusColors.warn,
+                            )
+                            Text(
+                                text = stringResource(R.string.advanced_restore_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Button(
+                                onClick = { SessionRestore.confirm(a) },
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text(stringResource(R.string.last_restore_run))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (prep.busy) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = prep.image?.name?.let { stringResource(R.string.setup_mock_title, it) }
+                                    ?: stringResource(R.string.setup_label),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            LinearWavyProgressIndicator(
+                                progress = { ((prep.percent ?: 0) / 100f).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = prep.detail ?: "${prep.percent ?: 0}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                                FilledTonalButton(
+                                    onClick = { a.startActivity(Intent(a, SetupProgressActivity::class.java)) },
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Text(stringResource(R.string.systems_show_progress))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showWelcome && last != null) {
+                item {
+                    val outcome = last.outcome?.let { o -> OutcomeKind.entries.firstOrNull { it.name == o } }
+                    val systemName = Images.systemName(Images.byId(last.imageId))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.home_welcome),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = outcome?.title(systemName) ?: stringResource(R.string.home_welcome_good),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        SessionPrefs.setWelcomeSeen(a, last.sessionId)
+                                        a.startActivity(Intent(a, LastSessionActivity::class.java))
+                                    },
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Text(stringResource(R.string.home_row_session))
+                                }
+                                OutlinedButton(
+                                    onClick = { SessionPrefs.setWelcomeSeen(a, last.sessionId) },
+                                    shape = RoundedCornerShape(14.dp),
+                                ) {
+                                    Text(stringResource(android.R.string.ok))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item { ExpressiveSectionHeader(stringResource(R.string.nav_systems)) }
+
+            if (available.isEmpty()) {
+                item {
+                    ExpressiveGroupedCard {
+                        ExpressiveListItem(
+                            title = if (!profileRead) stringResource(R.string.report_reading) else stringResource(R.string.image_no_profile_title),
+                            subtitle = if (!profileRead) null else stringResource(R.string.systems_none_line),
+                            icon = DualOsIcons.PhoneAndroid,
+                        )
+                    }
+                }
+            } else {
+                available.forEach { image ->
+                    item(key = "rom_${image.id}") {
+                        val isSetUp = image.id == setUpId && setUpId != null
+                        val isSettingUp = prep.busy && prep.image?.id == image.id
+                        val maintenance = if (isSetUp) ImageMaintenance.message(a, image, result, report) else null
+                        val savedCopy = st?.oldImages?.entries?.firstOrNull { it.value == image.id }?.key
+                        val isPicked = pickedImage?.id == image.id
+
+                        RomSystemCard(
+                            a = a,
+                            profile = p,
+                            image = image,
+                            isSetUp = isSetUp,
+                            isSettingUp = isSettingUp,
+                            isPicked = isPicked,
+                            jobsBusy = jobsBusy,
+                            maintenance = maintenance,
+                            savedCopy = savedCopy,
+                            onPickFile = { onPickFile(image.id) },
+                        )
+                    }
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = { onPickFile(null) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Text(stringResource(R.string.hub_pick_file))
+                }
+            }
+
+            item { ExpressiveSectionHeader(stringResource(R.string.a53_caps_section)) }
+            item { A53CapabilitiesCard(ctx = a, showStatusBadges = true) }
+
+            if (report != null || facts != null) {
+                item {
+                    val tiles = buildCheckTiles(a, report, facts, check.busy)
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ExpressiveSectionHeader(
+                            title = stringResource(if (tiles.none { it.level == Level.BLOCK || it.level == Level.WARN }) R.string.home_checks_ready else R.string.home_checks_fix),
+                        )
+                        CheckTilesGrid(tiles = tiles)
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun RomSystemCard(
+        a: MainActivity,
+        profile: PhoneProfile?,
+        image: ImageRef,
+        isSetUp: Boolean,
+        isSettingUp: Boolean,
+        isPicked: Boolean,
+        jobsBusy: Boolean,
+        maintenance: com.fahadali.oneos.core.model.PlainMessage?,
+        savedCopy: String?,
+        onPickFile: () -> Unit,
+    ) {
+        var menuOpen by remember { mutableStateOf(false) }
+        val statusColors = LocalDualOsStatusColors.current
+        val badgeText: String
+        val badgeColor: Color
+        when {
+            isSettingUp -> {
+                badgeText = stringResource(R.string.setup_installing)
+                badgeColor = MaterialTheme.colorScheme.primary
+            }
+            isSetUp && maintenance != null -> {
+                badgeText = stringResource(R.string.catalog_update)
+                badgeColor = statusColors.warn
+            }
+            isSetUp -> {
+                badgeText = stringResource(R.string.systems_badge_ready)
+                badgeColor = statusColors.ok
+            }
+            savedCopy != null -> {
+                badgeText = stringResource(R.string.catalog_switch)
+                badgeColor = MaterialTheme.colorScheme.secondary
+            }
+            profile?.choice(image.id)?.tested == true -> {
+                badgeText = stringResource(R.string.catalog_optimised)
+                badgeColor = MaterialTheme.colorScheme.primary
             }
             else -> {
-                secondary.visibility = View.GONE
-                secondary.setOnClickListener(null)
+                badgeText = stringResource(R.string.catalog_experimental)
+                badgeColor = MaterialTheme.colorScheme.tertiary
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                RomArtworkBanner(
+                    image = image,
+                    title = image.nameWithVariant,
+                    subtitle = "Android ${AndroidRelease.name(image.sdk)} · ${Units.bytes(image.gzBytes)} · ${image.blurb}",
+                    badge = badgeText,
+                    badgeColor = badgeColor,
+                    height = 172.dp,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val primaryText: String
+                    val primaryEnabled: Boolean
+                    val primaryAction: () -> Unit
+                    when {
+                        isSettingUp -> {
+                            primaryText = stringResource(R.string.systems_show_progress)
+                            primaryEnabled = true
+                            primaryAction = { a.startActivity(Intent(a, SetupProgressActivity::class.java)) }
+                        }
+                        isSetUp && maintenance != null -> {
+                            primaryText = maintenance.actionLabel ?: stringResource(R.string.catalog_update)
+                            primaryEnabled = !jobsBusy && StageCheck.state.phase == StageCheck.Phase.DONE
+                            primaryAction = {
+                                if (maintenance.action == FixAction.SET_UP_AGAIN) {
+                                    SystemsNav.askDownloaded(a, image, onPickFile)
+                                } else {
+                                    FixActions.run(a, maintenance.action, image)
+                                }
+                            }
+                        }
+                        isSetUp -> {
+                            primaryText = stringResource(R.string.hub_open_checks)
+                            primaryEnabled = true
+                            primaryAction = {
+                                CarouselSelection.remember(a, image)
+                                a.startActivity(EnvironmentNavigation.intent(a, image))
+                            }
+                        }
+                        savedCopy != null -> {
+                            primaryText = stringResource(R.string.catalog_switch)
+                            primaryEnabled = !jobsBusy && !StageCheck.state.busy
+                            primaryAction = {
+                                val current = StageCheck.state.result?.status?.marker?.imageId?.let(Images::byId)?.name
+                                    ?: a.getString(R.string.home_other_current_unknown)
+                                AlertDialog.Builder(a)
+                                    .setTitle(a.getString(R.string.home_other_confirm_title, image.name))
+                                    .setMessage(a.getString(R.string.home_other_confirm_message, image.name, current))
+                                    .setPositiveButton(R.string.home_other_confirm_go) { _, _ ->
+                                        OldStagesJob.restore(a, OldStage(savedCopy, 0, image.id, hasData = true, busy = false))
+                                        if (OldStagesJob.state.restoring == savedCopy && OldStagesJob.state.busy) {
+                                            a.startActivity(EnvironmentNavigation.intent(a, image))
+                                        }
+                                    }
+                                    .setNegativeButton(android.R.string.cancel, null)
+                                    .show()
+                            }
+                        }
+                        else -> {
+                            primaryText = stringResource(R.string.catalog_set_up)
+                            primaryEnabled = !jobsBusy
+                            primaryAction = {
+                                CarouselSelection.remember(a, image)
+                                if (isPicked) FixActions.run(a, FixAction.SET_UP, image)
+                                else SystemsNav.askDownloaded(a, image, onPickFile)
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = primaryAction,
+                        enabled = primaryEnabled,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(primaryText, style = MaterialTheme.typography.labelLarge)
+                    }
+
+                    if (isSetUp && maintenance != null) {
+                        FilledTonalButton(
+                            onClick = { a.startActivity(EnvironmentNavigation.intent(a, image)) },
+                            modifier = Modifier.height(48.dp),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Text("Checks")
+                        }
+                    }
+
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (isSetUp && !isSettingUp) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.manage_start_fresh)) },
+                                    onClick = { menuOpen = false; SystemManage.confirmStartFresh(a, image) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.manage_remove, image.name)) },
+                                    onClick = { menuOpen = false; SystemManage.confirmRemove(a, image) },
+                                )
+                            } else if (savedCopy != null) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.manage_delete_saved, image.name)) },
+                                    onClick = { menuOpen = false; SystemManage.confirmDeleteSaved(a, image, savedCopy) },
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.systems_download)) },
+                                    onClick = { menuOpen = false; SystemsNav.open(a, image.mirrorUrl) },
+                                )
+                                image.downloadUrl?.let { drive ->
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.systems_download_drive)) },
+                                        onClick = { menuOpen = false; SystemsNav.open(a, drive) },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.systems_have_file)) },
+                                    onClick = { menuOpen = false; onPickFile() },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.catalog_details)) },
+                                onClick = {
+                                    menuOpen = false
+                                    AlertDialog.Builder(a)
+                                        .setTitle(image.displayName)
+                                        .setMessage(image.blurb + "\n\n" + image.gzName + "\n" + Units.bytes(image.gzBytes))
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show()
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 
-    /** Root (or a gate) refused the switch: once, as a dialog with the fix (the redesign, section 2.5). */
-    private fun refusalDialog(activity: MainActivity) {
-        val st = LaunchJob.state
-        if (st.phase != LaunchJob.Phase.FAILED || st === shownRefusal) return
-        shownRefusal = st
-        val plain = st.plain ?: PlainMessage(getString(R.string.switch_not_started), st.message.orEmpty().take(PlainMessage.MAX_LINE), FixAction.NONE, null)
-        val b = AlertDialog.Builder(activity)
-            .setTitle(plain.title)
-            .setMessage(plain.line + "\n\n" + getString(R.string.confirm_refused_tail))
-            .setOnDismissListener { LaunchJob.clear() }
-        val label = plain.actionLabel
-        if (label != null && plain.action != FixAction.NONE && plain.action != FixAction.ACKNOWLEDGE) {
-            b.setPositiveButton(label) { _, _ -> FixActions.run(activity, plain.action, st.image) }
-            b.setNegativeButton(android.R.string.cancel, null)
-        } else {
-            b.setPositiveButton(android.R.string.ok, null)
+    @Composable
+    private fun DiagnosticsHubTab(
+        a: MainActivity,
+        refreshTick: Int,
+        contentPadding: PaddingValues,
+    ) {
+        @Suppress("UNUSED_VARIABLE") val t = refreshTick
+        val launch = SessionPrefs.lastLaunch(a)
+        val logs = LogJob.state
+        val latestZip = LogJob.latestZip(a)
+        val lastLine = when {
+            launch == null -> stringResource(R.string.advanced_last_none)
+            logs.busy && logs.stopping -> stringResource(R.string.logs_stopping)
+            logs.busy && !logs.recovering -> stringResource(R.string.home_row_last_reading)
+            else -> {
+                val system = Images.systemName(Images.byId(launch.imageId))
+                val outcome = launch.outcome?.let { o -> OutcomeKind.entries.firstOrNull { it.name == o } }
+                val date = formatMediumDate(a, launch.wallMs)
+                when {
+                    outcome != null -> stringResource(R.string.advanced_last_outcome, date, outcome.title(system).trimEnd('.'))
+                    launch.dryRun -> stringResource(R.string.advanced_last_test, date)
+                    else -> stringResource(R.string.home_row_last_unread, date)
+                }
+            }
         }
-        st.finding?.let { f -> b.setNeutralButton(R.string.home_details) { _, _ -> details(f) } }
-        b.show()
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { ExpressiveSectionHeader(stringResource(R.string.last_title)) }
+            item {
+                ExpressiveGroupedCard {
+                    ExpressiveListItem(
+                        title = stringResource(R.string.last_title),
+                        subtitle = lastLine,
+                        icon = DualOsIcons.History,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, LastSessionActivity::class.java)) },
+                    )
+                    if (latestZip != null && !logs.busy) {
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.last_view_title),
+                            subtitle = latestZip.name,
+                            icon = Icons.Rounded.Share,
+                            showChevron = true,
+                            onClick = { a.startActivity(Intent(a, FindingsActivity::class.java).putExtra(FindingsActivity.EXTRA_ZIP, latestZip.path)) },
+                        )
+                        if (ReportSender.offered) {
+                            ExpressiveListDivider()
+                            ExpressiveListItem(
+                                title = stringResource(R.string.send_title),
+                                subtitle = stringResource(R.string.last_send_summary),
+                                icon = DualOsIcons.OpenInNew,
+                                showChevron = true,
+                                onClick = { a.startActivity(SendReportActivity.intent(a, latestZip)) },
+                            )
+                        }
+                    }
+                    if (!logs.busy && SessionRestore.offered(a)) {
+                        ExpressiveListDivider()
+                        ExpressiveListItem(
+                            title = stringResource(R.string.last_restore_title),
+                            subtitle = stringResource(R.string.advanced_restore_summary),
+                            icon = DualOsIcons.RestartAlt,
+                            showChevron = true,
+                            onClick = { SessionRestore.confirm(a) },
+                        )
+                    }
+                }
+            }
+
+            item { ExpressiveSectionHeader(stringResource(R.string.hub_diagnostics_device)) }
+            item {
+                ExpressiveGroupedCard {
+                    ExpressiveListItem(
+                        title = stringResource(R.string.report_title),
+                        subtitle = stringResource(R.string.team_phone_summary),
+                        icon = DualOsIcons.PhoneAndroid,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, DeviceReportActivity::class.java)) },
+                    )
+                    ExpressiveListDivider()
+                    ExpressiveListItem(
+                        title = stringResource(R.string.tests_title),
+                        subtitle = stringResource(R.string.team_tests_summary),
+                        icon = DualOsIcons.Science,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, RunTestsActivity::class.java)) },
+                    )
+                    ExpressiveListDivider()
+                    ExpressiveListItem(
+                        title = stringResource(R.string.switch_title),
+                        subtitle = stringResource(R.string.team_switch_summary),
+                        icon = DualOsIcons.Power,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, SwitchActivity::class.java)) },
+                    )
+                    ExpressiveListDivider()
+                    ExpressiveListItem(
+                        title = stringResource(R.string.team_title),
+                        subtitle = stringResource(R.string.advanced_team_summary),
+                        icon = Icons.Rounded.Build,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, DebugSettingsActivity::class.java)) },
+                    )
+                }
+            }
+
+            item { ExpressiveSectionHeader(stringResource(R.string.hub_diagnostics_help)) }
+            item {
+                ExpressiveGroupedCard {
+                    ExpressiveListItem(
+                        title = stringResource(R.string.before_title),
+                        subtitle = stringResource(R.string.before_link_summary),
+                        icon = DualOsIcons.Shield,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, BeforeYouStartActivity::class.java)) },
+                    )
+                    ExpressiveListDivider()
+                    ExpressiveListItem(
+                        title = stringResource(R.string.about_title),
+                        subtitle = stringResource(R.string.advanced_about_summary),
+                        icon = Icons.Rounded.Info,
+                        showChevron = true,
+                        onClick = { a.startActivity(Intent(a, AboutActivity::class.java)) },
+                    )
+                }
+            }
+        }
     }
 
-    /** Details: the technical finding, and All checks (All checks and Test run, SwitchActivity). */
-    private fun details(f: Finding) {
-        val ctx = requireContext()
-        AlertDialog.Builder(ctx)
-            .setTitle(f.title)
-            .setMessage(f.detail.ifEmpty { f.title })
-            .setPositiveButton(android.R.string.ok, null)
-            .setNeutralButton(R.string.home_details_all) { _, _ -> startActivity(Intent(ctx, SwitchActivity::class.java)) }
-            .show()
-    }
+    private fun buildCheckTiles(
+        a: MainActivity,
+        r: GateReport?,
+        facts: DeviceFacts?,
+        checking: Boolean,
+    ): List<CheckTileUi> {
+        val unknown = a.getString(R.string.home_value_unknown)
+        val oldCount = StageCheck.state.result?.status?.oldStages?.size ?: 0
+        fun gateTile(id: String, titleRes: Int, icon: androidx.compose.ui.graphics.vector.ImageVector, value: String): CheckTileUi {
+            val f = r?.find(id)?.finding
+            val level = if (checking) Level.INFO else (f?.level ?: Level.INFO)
+            val plain = f?.takeIf { it.level == Level.BLOCK || it.level == Level.WARN }?.let { if (r != null) Plain.of(it, r, facts) else null }
+            val action = plain?.action?.takeIf { it != FixAction.NONE && it != FixAction.ACKNOWLEDGE }
+                ?: FixAction.FREE_UP_SPACE.takeIf { id == SwitchGates.ID_SPACE && oldCount > 0 }
+            val click: (() -> Unit)? = when {
+                action != null -> ({ FixActions.run(a, action, r?.image) })
+                f != null -> ({
+                    AlertDialog.Builder(a)
+                        .setTitle(f.title)
+                        .setMessage(f.detail.ifEmpty { value })
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                })
+                else -> null
+            }
+            return CheckTileUi(id, a.getString(titleRes), value, level, icon, click)
+        }
 
-    private fun sentence(t: String): String = if (t.endsWith('.')) t else "$t."
+        val rootVal = when {
+            facts == null -> unknown
+            facts.rootKind != RootKind.NONE && facts.rootKind != RootKind.OTHER -> a.getString(R.string.home_value_root_app, facts.rootKind.label)
+            r?.find(SwitchGates.ID_ROOT)?.level == Level.OK -> a.getString(R.string.home_value_root_ok)
+            else -> a.getString(R.string.home_value_root_missing)
+        }
+        val spaceVal = facts?.storage?.freeBytes?.let { free ->
+            if (oldCount > 0) a.getString(R.string.home_value_space_old, Units.bytes(free), a.resources.getQuantityString(R.plurals.home_space_old_copies, oldCount, oldCount))
+            else a.getString(R.string.home_value_space_free, Units.bytes(free))
+        } ?: unknown
+        val batVal = facts?.battery?.let { b ->
+            b.temperatureC?.let { t -> a.getString(R.string.home_value_battery, b.levelPercent, t.toInt()) }
+                ?: a.getString(R.string.home_value_battery_no_temp, b.levelPercent)
+        } ?: unknown
+        val lockVal = when (facts?.screenLockSet) {
+            false -> a.getString(R.string.home_value_lock_off)
+            true -> a.getString(R.string.home_value_lock_on)
+            null -> unknown
+        }
 
-    private companion object {
-        val BUSY = setOf(HomeState.Kind.SETTING_UP, HomeState.Kind.SWITCHING, HomeState.Kind.RESTORING)
-
-        /** The hero's line has the loader. */
-        val WORKING = setOf(HomeState.Kind.CHECKING, HomeState.Kind.SWITCHING, HomeState.Kind.RESTORING)
-
-        /** The states with the check tiles (owner, 2026-10-24: before a setup too, so a problem shows before the 15 minutes). */
-        val SHOWS_CHECKS = setOf(HomeState.Kind.READY, HomeState.Kind.FIX, HomeState.Kind.UPDATE, HomeState.Kind.NOTHING_SET_UP, HomeState.Kind.APP_UPDATE)
-
-        /** Root, space, battery, screen lock: the tiles, in the mockup's order. */
-        val TILE_GATES = listOf(SwitchGates.ID_ROOT, SwitchGates.ID_SPACE, SwitchGates.ID_BATTERY, SwitchGates.ID_SCREEN_LOCK)
-
-        val TILE_ICONS = mapOf(
-            SwitchGates.ID_ROOT to R.drawable.ic_oneos_check_root,
-            SwitchGates.ID_SPACE to R.drawable.ic_oneos_check_space,
-            SwitchGates.ID_BATTERY to R.drawable.ic_oneos_check_battery,
-            SwitchGates.ID_SCREEN_LOCK to R.drawable.ic_oneos_check_lock,
-        )
-
-        val TILE_TITLES = mapOf(
-            SwitchGates.ID_ROOT to R.string.home_tile_root,
-            SwitchGates.ID_SPACE to R.string.home_tile_space,
-            SwitchGates.ID_BATTERY to R.string.home_tile_battery,
-            SwitchGates.ID_SCREEN_LOCK to R.string.home_tile_lock,
+        return listOf(
+            gateTile(SwitchGates.ID_ROOT, R.string.home_tile_root, DualOsIcons.Security, rootVal),
+            gateTile(SwitchGates.ID_SPACE, R.string.home_tile_space, DualOsIcons.Storage, spaceVal),
+            gateTile(SwitchGates.ID_BATTERY, R.string.home_tile_battery, DualOsIcons.Battery, batVal),
+            gateTile(SwitchGates.ID_SCREEN_LOCK, R.string.home_tile_lock, Icons.Rounded.Lock, lockVal),
         )
     }
 }

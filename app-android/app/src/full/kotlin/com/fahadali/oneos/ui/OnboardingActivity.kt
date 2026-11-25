@@ -2,161 +2,279 @@ package com.fahadali.oneos.ui
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.View
-import android.view.WindowInsets
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.device.FactProbe
 import com.fahadali.oneos.core.model.RootKind
 import com.fahadali.oneos.core.model.RootRules
 import com.fahadali.oneos.core.root.RootProbe
-import dev.oneuiproject.oneui.R as OuiIcons
+import com.fahadali.oneos.shared.DualOsIcons
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveStatusPill
 
-/** Figma's welcome → prerequisites → before-you-start flow. It never relaxes the switching gates. */
-class OnboardingActivity : EdgeToEdgeActivity() {
-    private var hasResumed = false
-    private var page = 0
-    private val stepBack = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() { page--; render(animate = true) }
-    }
-    private var welcomeSpring: androidx.dynamicanimation.animation.SpringAnimation? = null
-    private var welcomeFade: android.animation.ObjectAnimator? = null
-    private val animationHandler = android.os.Handler(android.os.Looper.getMainLooper())
+/** Welcome -> Prerequisites -> Before you start flow. Never relaxes switching gates. */
+class OnboardingActivity : AppCompatActivity() {
+    private var page by mutableIntStateOf(0)
+    private var refreshTick by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         page = savedInstanceState?.getInt("page") ?: 0
-        setContentView(R.layout.activity_onboarding)
-        findViewById<View>(R.id.onboarding_root).setOnApplyWindowInsetsListener { v, insets ->
-            val b = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            v.setPadding(b.left, b.top, b.right, b.bottom)
-            insets
-        }
-        onBackPressedDispatcher.addCallback(this, stepBack)
-        findViewById<Button>(R.id.onboarding_next).setOnClickListener {
-            if (page < 2) { page++; render(animate = true) }
-            else {
-                BeforeYouStart.acknowledge(this)
-                startActivity(Intent(this, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-                finish()
+        setContent {
+            DualOsTheme {
+                Screen()
             }
         }
-        render()
     }
+
     override fun onResume() {
         super.onResume()
-        if (page != 0 || hasResumed) render()
-        hasResumed = true
-    }
-    override fun onStop() {
-        findViewById<AnimatedTitleView>(R.id.onboarding_title).cancel()
-        animationHandler.removeCallbacksAndMessages(null)
-        welcomeSpring?.cancel(); welcomeFade?.cancel()
-        super.onStop()
-    }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("page", page); super.onSaveInstanceState(outState) }
-    private fun render(animate: Boolean = false) {
-        val rows = findViewById<LinearLayout>(R.id.onboarding_rows)
-        rows.removeAllViews()
-        findViewById<View>(R.id.onboarding_icon).visibility = if (page == 0) View.VISIBLE else View.GONE
-        stepBack.isEnabled = page > 0
-        rows.visibility = if (page == 0) View.GONE else View.VISIBLE
-        val body = findViewById<LinearLayout>(R.id.onboarding_body)
-        val density = resources.displayMetrics.density
-        body.setPadding(0, if (page == 0) 0 else (94 * density).toInt(), 0, 0)
-        body.layoutParams = (body.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
-            width = minOf((480 * density).toInt(), resources.displayMetrics.widthPixels - (48 * density).toInt())
-            height = if (page == 0) android.view.ViewGroup.LayoutParams.MATCH_PARENT else android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-            gravity = android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL
-        }
-        body.gravity = if (page == 0) android.view.Gravity.CENTER else android.view.Gravity.CENTER_HORIZONTAL
-        findViewById<AnimatedTitleView>(R.id.onboarding_title).setTitle(getString(when(page) {
-            0 -> R.string.onboarding_welcome
-            1 -> R.string.onboarding_prerequisites
-            else -> R.string.before_title
-        }))
-        findViewById<Button>(R.id.onboarding_next).setText(if (page == 0) R.string.onboarding_start else R.string.before_continue)
-        animatePage(animate)
-        if (page == 0) return
-        fun row(title: Int, summary: CharSequence, icon: Int, status: CharSequence? = null, action: (() -> Unit)? = null) {
-            val item = layoutInflater.inflate(R.layout.onboarding_permission_row, rows, false) as dev.oneuiproject.oneui.widget.CardItemView
-            item.title = getString(title)
-            item.summary = listOfNotNull(summary, status).joinToString("\n")
-            item.icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(this, icon)
-            item.showTopDivider = rows.childCount > 0
-            item.isClickable = action != null
-            item.isFocusable = action != null
-            if (action != null) item.setOnClickListener { action() }
-            rows.addView(item)
-        }
-        if (page == 1) {
-            val root = RootRules.kind(RootProbe(this).signals())
-            row(R.string.onboarding_root,
-                if (root == RootKind.NONE) getString(R.string.onboarding_no_root) else getString(R.string.onboarding_root_found, root.label),
-                OuiIcons.drawable.ic_oui_security) {
-                startActivity(Intent(this, DeviceReportActivity::class.java))
-            }
-            val lockStatus = when (FactProbe.screenLockSet(this)) {
-                true -> R.string.onboarding_lock_on
-                false -> R.string.onboarding_lock_off
-                null -> R.string.environment_unknown
-            }
-            row(R.string.onboarding_lock, getString(R.string.onboarding_lock_summary), OuiIcons.drawable.ic_oui_page_lock,
-                getString(lockStatus)) {
-                startActivity(Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
-            }
-        } else {
-            row(R.string.onboarding_experimental, getString(R.string.onboarding_experimental_summary), OuiIcons.drawable.ic_oui_info_outline)
-            row(R.string.onboarding_backup, getString(R.string.onboarding_backup_summary), OuiIcons.drawable.ic_oui_folder_open)
-            row(R.string.onboarding_data, getString(R.string.onboarding_data_summary), OuiIcons.drawable.ic_oui_manage_storage_outline)
-        }
-        findViewById<ScrollView>(R.id.onboarding_card_scroll).scrollTo(0, 0)
+        refreshTick++
     }
 
-    /** Reused from Twidget: per-letter title reveal, spring button entrance, and quiet step fades. */
-    private fun animatePage(animate: Boolean) {
-        val title = findViewById<AnimatedTitleView>(R.id.onboarding_title)
-        val button = findViewById<Button>(R.id.onboarding_next)
-        val overlay = findViewById<View>(R.id.onboarding_settle_overlay)
-        animationHandler.removeCallbacksAndMessages(null)
-        welcomeSpring?.cancel(); welcomeFade?.cancel()
-        overlay.animate().cancel()
-        if (page == 2) {
-            if (animate) { overlay.alpha = 0f; overlay.animate().alpha(1f).setStartDelay(150).setDuration(1100).setInterpolator(android.view.animation.DecelerateInterpolator()).start() }
-            else overlay.alpha = 1f
-        } else overlay.alpha = 0f
-        if (page == 0) {
-            title.prepare()
-            button.alpha = 0f; button.visibility = View.INVISIBLE
-            title.onAnimationFinished = {
-                animationHandler.postDelayed({
-                    if (page != 0 || isFinishing || isDestroyed) return@postDelayed
-                    val offset = findViewById<View>(R.id.onboarding_root).height * .08f
-                    button.visibility = View.VISIBLE; button.translationY = offset
-                    welcomeSpring = androidx.dynamicanimation.animation.SpringAnimation(button, androidx.dynamicanimation.animation.DynamicAnimation.TRANSLATION_Y, 0f).apply {
-                        spring = androidx.dynamicanimation.animation.SpringForce(0f).apply { stiffness = 100f; dampingRatio = .65f }
-                        setStartValue(offset); start()
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("page", page)
+        super.onSaveInstanceState(outState)
+    }
+
+    @Composable
+    private fun Screen() {
+        @Suppress("UNUSED_VARIABLE") val t = refreshTick
+        BackHandler(enabled = page > 0) { page-- }
+
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            bottomBar = {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 24.dp, vertical = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            repeat(3) { i ->
+                                Surface(
+                                    modifier = Modifier.size(width = if (i == page) 24.dp else 8.dp, height = 8.dp),
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = if (i == page) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                ) {}
+                            }
+                        }
+                        Button(
+                            onClick = {
+                                if (page < 2) {
+                                    page++
+                                } else {
+                                    BeforeYouStart.acknowledge(this@OnboardingActivity)
+                                    startActivity(
+                                        Intent(this@OnboardingActivity, MainActivity::class.java)
+                                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                                    )
+                                    finish()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp),
+                            shape = RoundedCornerShape(20.dp),
+                        ) {
+                            Text(
+                                text = stringResource(if (page == 0) R.string.onboarding_start else R.string.before_continue),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
-                    welcomeFade = android.animation.ObjectAnimator.ofFloat(button, View.ALPHA, 0f, 1f).apply {
-                        duration = 667; interpolator = android.view.animation.PathInterpolator(.17f, .17f, .83f, .83f); start()
+                }
+            },
+        ) { padding ->
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 3 } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
                     }
-                }, 180)
-            }
-            title.post { if (page == 0 && !isFinishing && !isDestroyed) title.play() }
-        } else {
-            title.finish(); title.onAnimationFinished = null
-            button.visibility = View.VISIBLE; button.alpha = 1f; button.translationY = 0f
-            if (animate) {
-                val content = findViewById<View>(R.id.onboarding_card_scroll)
-                content.alpha = 0f; content.translationY = 18 * resources.displayMetrics.density
-                content.animate().alpha(1f).translationY(0f).setDuration(320).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
-                button.alpha = 0f; button.translationY = 12 * resources.displayMetrics.density
-                button.animate().alpha(1f).translationY(0f).setStartDelay(60).setDuration(280).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+                },
+                label = "onboarding_page",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .statusBarsPadding(),
+            ) { currentPage ->
+                when (currentPage) {
+                    0 -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 28.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(18.dp),
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.onboarding_icon),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(116.dp),
+                                )
+                                ExpressiveStatusPill(
+                                    text = "Galaxy A53 5G · DualOS 2.0",
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                                Text(
+                                    text = stringResource(R.string.onboarding_welcome),
+                                    style = MaterialTheme.typography.displaySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(R.string.about_what_summary),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    1 -> {
+                        val root = RootRules.kind(RootProbe(this@OnboardingActivity).signals())
+                        val lockStatus = when (FactProbe.screenLockSet(this@OnboardingActivity)) {
+                            true -> R.string.onboarding_lock_on
+                            false -> R.string.onboarding_lock_off
+                            null -> R.string.environment_unknown
+                        }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.onboarding_prerequisites),
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            item {
+                                ExpressiveGroupedCard {
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.onboarding_root),
+                                        subtitle = if (root == RootKind.NONE) stringResource(R.string.onboarding_no_root)
+                                        else stringResource(R.string.onboarding_root_found, root.label),
+                                        icon = DualOsIcons.Security,
+                                        showChevron = true,
+                                        onClick = { startActivity(Intent(this@OnboardingActivity, DeviceReportActivity::class.java)) },
+                                    )
+                                    ExpressiveListDivider()
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.onboarding_lock),
+                                        subtitle = stringResource(R.string.onboarding_lock_summary) + "\n" + stringResource(lockStatus),
+                                        icon = Icons.Rounded.Lock,
+                                        showChevron = true,
+                                        onClick = { startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 28.dp),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.before_title),
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            item {
+                                ExpressiveGroupedCard {
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.onboarding_experimental),
+                                        subtitle = stringResource(R.string.onboarding_experimental_summary),
+                                        icon = Icons.Rounded.Info,
+                                    )
+                                    ExpressiveListDivider()
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.onboarding_backup),
+                                        subtitle = stringResource(R.string.onboarding_backup_summary),
+                                        icon = DualOsIcons.FolderOpen,
+                                    )
+                                    ExpressiveListDivider()
+                                    ExpressiveListItem(
+                                        title = stringResource(R.string.onboarding_data),
+                                        subtitle = stringResource(R.string.onboarding_data_summary),
+                                        icon = DualOsIcons.Storage,
+                                    )
+                                }
+                            }
+                            item { Spacer(Modifier.height(12.dp)) }
+                        }
+                    }
+                }
             }
         }
     }
-
 }

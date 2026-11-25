@@ -18,11 +18,11 @@ class GuestRuntimeScriptTest {
         val shells = TestShell.available()
         assumeTrue(shells.isNotEmpty())
         shells.forEach { shell -> FakeRoot(shell).use { fr ->
-            val profile = Profiles.S_ULTRA_8850
+            val profile = Profiles.A53
             val choice = profile.choices.first()
-            val begun = fr.run(RootScript.Verb.BEGIN, "new", profile.id, choice.imageId, choice.packageSetId, "4")
+            val begun = fr.run(RootScript.Verb.BEGIN, "new", profile.id, choice.imageId, choice.packageSetId, "148")
             assertEquals(begun.toString(), 0, begun.exit)
-            fr.stage.resolve(".oneos_stage").writePrivate(StageMarker(4, profile.id, choice.imageId, choice.packageSetId, 1792000000L).toJson())
+            fr.stage.resolve(".oneos_stage").writePrivate(StageMarker(148, profile.id, choice.imageId, choice.packageSetId, 1792000000L).toJson())
             test(fr, choice.imageId)
         } }
     }

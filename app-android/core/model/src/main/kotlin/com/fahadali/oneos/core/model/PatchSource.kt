@@ -31,6 +31,6 @@ data class PatchSource(
 
     companion object {
         const val STABLE_ID = "oneos"
-        val STABLE = PatchSource(STABLE_ID, "OneOS patches (Stable)", "fahadalijaved/OneOS-files", null)
+        val STABLE = PatchSource(STABLE_ID, "DualOS patches (Stable)", "Polaricito/DualOS", null)
     }
 }

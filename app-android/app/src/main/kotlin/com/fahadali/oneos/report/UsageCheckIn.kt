@@ -33,25 +33,8 @@ object UsageCheckIn {
         s.edit().putInt("switches", (s.getInt("switches", 0) + 1).coerceAtMost(UsageHello.MAX_SWITCHES)).apply()
     }
 
-    /** From the launch activity: sends when it is due. [profile] and [systems] are read by the caller (cheap, no root). */
+    /** Upstream telemetry disabled in DualOS. */
     fun maybeSend(ctx: Context, profile: () -> String?, systems: () -> Collection<String?>) {
-        if (!ReportSender.available) return
-        val app = ctx.applicationContext
-        if (!UsageHello.due(enabled(app), p(app).getString("last_day", null), System.currentTimeMillis())) return
-        io.execute {
-            runCatching {
-                val s = p(app)
-                val now = System.currentTimeMillis()
-                if (!UsageHello.due(enabled(app), s.getString("last_day", null), now)) return@runCatching
-                val install = s.getString("install", null)?.takeIf { UsageHello.validInstall(it) }
-                    ?: UsageHello.newInstallId().also { s.edit().putString("install", it).commit() }
-                val sent = s.getInt("switches", 0)
-                val body = UsageHello.json(install, BuildConfig.VERSION_CODE, Build.MODEL, profile(), systems(), sent).toByteArray(Charsets.UTF_8)
-                if (ReportSender.post("/v1/hello", "application/json", body.size.toLong()) { it.write(body) }.first == 200) {
-                    // Switches started while this ran stay counted for the next day.
-                    s.edit().putString("last_day", UsageHello.dayOf(now)).putInt("switches", (s.getInt("switches", 0) - sent).coerceAtLeast(0)).apply()
-                }
-            }
-        }
+        return
     }
 }

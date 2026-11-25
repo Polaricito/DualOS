@@ -91,7 +91,7 @@ object Plain {
             1 -> "the Galaxy " + names.single()
             else -> "the Galaxy " + names.dropLast(1).joinToString(", ") + " and " + names.last()
         }
-        if ("OneOS works on $list.".length <= PlainMessage.MAX_LINE) return list
+        if ("DualOS works on $list.".length <= PlainMessage.MAX_LINE) return list
         val families = names.map { n -> listOf("Z Fold", "Z Flip").firstOrNull { n.startsWith(it) } ?: n.take(1) }.distinct()
         return "${names.size} Galaxy phones so far: ${families.dropLast(1).joinToString(", ")} and ${families.last()} models; the README lists them"
     }
@@ -131,12 +131,12 @@ object Plain {
 
         return when (f.id) {
             SwitchGates.ID_ROOT -> when (r) {
-                SwitchGates.R_ROOT_TIMEOUT -> m("Root didn't answer", "Allow OneOS in your root app, then try again.", FixAction.TRY_AGAIN)
+                SwitchGates.R_ROOT_TIMEOUT -> m("Root didn't answer", "Allow DualOS in your root app, then try again.", FixAction.TRY_AGAIN)
                 SwitchGates.R_ROOT_ERROR -> m("Couldn't check root", "Try again in a moment. If it keeps happening, restart your phone.", FixAction.TRY_AGAIN)
-                SwitchGates.R_ROOT_UNCHECKED -> m("Root not checked yet", "Allow OneOS when your root app asks.", FixAction.TRY_AGAIN)
+                SwitchGates.R_ROOT_UNCHECKED -> m("Root not checked yet", "Allow DualOS when your root app asks.", FixAction.TRY_AGAIN)
                 // KernelSU and APatch hide su from apps they have not allowed: with a root app found, it is a grant.
                 SwitchGates.R_ROOT_NO_SU -> if (facts.rootApp == null) {
-                    m("OneOS needs a rooted phone", "Install Magisk, KernelSU or APatch, then open OneOS again.", FixAction.TRY_AGAIN)
+                    m("DualOS needs a rooted phone", "Install Magisk, KernelSU or APatch, then open DualOS again.", FixAction.TRY_AGAIN)
                 } else {
                     allowRoot(f, facts.rootApp)
                 }
@@ -145,7 +145,7 @@ object Plain {
             SwitchGates.ID_PROFILE -> when (r) {
                 SwitchGates.R_PROFILE_DISABLED -> m(
                     "Not available on this phone yet",
-                    (phone?.let { "This version of OneOS doesn't switch on the ${it.label}." } ?: "This version of OneOS doesn't switch on it."),
+                    (phone?.let { "This version of DualOS doesn't switch on the ${it.label}." } ?: "This version of DualOS doesn't switch on it."),
                     FixAction.NONE,
                 )
                 SwitchGates.R_PROFILE_UNTESTED -> m(
@@ -153,14 +153,14 @@ object Plain {
                     SwitchGates.untestedAck(phone, image),
                     FixAction.ACKNOWLEDGE,
                 )
-                else -> m("This phone isn't supported yet", "OneOS works on ${phoneList(profiles)}.", FixAction.SEND_PHONE_DETAILS)
+                else -> m("This phone isn't supported", "DualOS works on ${phoneList(profiles)}.", FixAction.SEND_PHONE_DETAILS)
             }
             SwitchGates.ID_ANDROID -> if (r == SwitchGates.R_ANDROID_OLDER) {
                 // Every system of this phone is for a newer Android than its One UI: nothing to choose.
                 val want = (image?.sdk ?: phone?.choices?.mapNotNull { Images.byId(it.imageId)?.sdk }?.minOrNull())
                     ?.let { "Android ${AndroidRelease.name(it)}" } ?: "a newer Android"
                 val have = facts.phoneAndroid?.let { ". Your phone has Android $it: " } ?: ": "
-                m("Update One UI first", "The systems for $yourPhone need $want${have}update One UI, then open OneOS again.", FixAction.NONE)
+                m("Update One UI first", "The systems for $yourPhone need $want${have}update One UI, then open DualOS again.", FixAction.NONE)
             } else {
                 val want = image?.let { AndroidRelease.name(it.sdk) }
                 val have = facts.phoneAndroid
@@ -174,17 +174,17 @@ object Plain {
                     FixAction.CHOOSE_SYSTEM,
                 )
             }
-            SwitchGates.ID_FORM -> m("Your phone doesn't match its profile", "OneOS can't be sure it's safe here.", FixAction.SEND_PHONE_DETAILS)
+            SwitchGates.ID_FORM -> m("Your phone doesn't match its profile", "DualOS can't be sure it's safe here.", FixAction.SEND_PHONE_DETAILS)
             SwitchGates.ID_INSTALLD -> m(
                 "One UI was updated",
-                "This OneOS version doesn't know your new One UI yet. Wait for a OneOS update before switching.",
+                "This DualOS version doesn't know your new One UI yet. Wait for a DualOS update before switching.",
                 FixAction.SEND_PHONE_DETAILS,
             )
             SwitchGates.ID_OLD_SWITCHER -> when (r) {
                 SwitchGates.R_OLD_SWITCHER_UNKNOWN -> m("Couldn't check for the old switcher", "Try again in a moment.", FixAction.TRY_AGAIN)
                 else -> m(
                     "Remove the old switcher app",
-                    "The old switcher app can't be on the phone with OneOS. Uninstall it, then come back.",
+                    "The old switcher app can't be on the phone with DualOS. Uninstall it, then come back.",
                     FixAction.OPEN_OLD_SWITCHER_INFO,
                 )
             }
@@ -197,7 +197,7 @@ object Plain {
                 SwitchGates.R_STAGE_NOT_READ -> m("Couldn't check your phone", "Root didn't answer. Try again in a moment.", FixAction.TRY_AGAIN)
                 else -> m(
                     "Restart your phone first",
-                    "Part of the last session is still running. Restart, then open OneOS.",
+                    "Part of the last session is still running. Restart, then open DualOS.",
                     FixAction.NONE,
                 )
             }
@@ -240,7 +240,7 @@ object Plain {
                 )
                 else -> m(
                     "Turn off your screen lock",
-                    "Set Screen lock type to None or Swipe. OneOS can't switch while a lock is on.",
+                    "Set Screen lock type to None or Swipe. DualOS can't switch while a lock is on.",
                     FixAction.OPEN_LOCK_SETTINGS,
                 )
             }
@@ -276,17 +276,17 @@ object Plain {
             )
             SwitchGates.ID_LOGS -> m(
                 "Last session's logs aren't read yet",
-                "OneOS reads them by itself after you come back.",
+                "DualOS reads them by itself after you come back.",
                 FixAction.NONE,
             )
             CustomRomRule.ID -> when (r) {
                 CustomRomRule.R_PORT -> m(
-                    "OneOS needs stock One UI",
+                    "DualOS needs stock One UI",
                     "This phone runs One UI made for another phone. If it's stock, turn off any module that changes the model name and restart.",
                     FixAction.NONE,
                 )
-                CustomRomRule.R_NOT_ONE_UI -> m("OneOS needs stock One UI", "This phone runs a custom ROM without One UI.", FixAction.NONE)
-                else -> m("OneOS needs a Samsung phone", "It runs next to stock One UI only.", FixAction.NONE)
+                CustomRomRule.R_NOT_ONE_UI -> m("DualOS needs stock One UI", "This phone runs a custom ROM without One UI.", FixAction.NONE)
+                else -> m("DualOS needs a Samsung phone", "It runs next to stock One UI only.", FixAction.NONE)
             }
             SwitchGates.ID_ZYGISK -> m(
                 "Update Zygisk Next first",
@@ -300,9 +300,9 @@ object Plain {
 
     private fun allowRoot(f: Finding, rootApp: String?): PlainMessage =
         if (rootApp != null) {
-            PlainMessage("Allow root access", "Open $rootApp and allow OneOS, then come back.", FixAction.OPEN_ROOT_APP, "Open $rootApp", f.level)
+            PlainMessage("Allow root access", "Open $rootApp and allow DualOS, then come back.", FixAction.OPEN_ROOT_APP, "Open $rootApp", f.level)
         } else {
-            PlainMessage("Allow root access", "Open your root app and allow OneOS, then come back.", FixAction.TRY_AGAIN, defaultLabel(FixAction.TRY_AGAIN), f.level)
+            PlainMessage("Allow root access", "Open your root app and allow DualOS, then come back.", FixAction.TRY_AGAIN, defaultLabel(FixAction.TRY_AGAIN), f.level)
         }
 
     private fun image(f: Finding, system: String, sys: String, yourPhone: String, facts: PlainFacts): PlainMessage? {
@@ -313,16 +313,15 @@ object Plain {
             ImageIdentifier.R_DAMAGED -> m("The download is damaged", "It may not have finished. Download $system again.", FixAction.DOWNLOAD_AGAIN)
             ImageIdentifier.R_WRONG_PHONE -> m("That file is for another phone", "Choose the file you downloaded for $yourPhone.", FixAction.CHOOSE_FILE)
             ImageIdentifier.R_UNCOMPRESSED, ImageIdentifier.R_NOT_OURS, ImageIdentifier.R_SIZE_UNKNOWN ->
-                m("That isn't a OneOS system file", "Choose the file you downloaded for $system.", FixAction.CHOOSE_FILE)
-            ImageIdentifier.R_RETIRED -> m("OneOS no longer sets up that system", "Choose the file you downloaded for $system.", FixAction.CHOOSE_FILE)
-            ImageIdentifier.R_NOT_CHECKED -> m("The download isn't checked yet", "OneOS checks it first when you set up $system.", FixAction.NONE)
-            // An older build of the system, or none (0.4.38's full Find X9 Ultra image): setup simply
-            // replaces it, which "can't be used" made sound like a fault (a Flip5 tester asked).
+                m("That isn't a DualOS system file", "Choose the file you downloaded for $system.", FixAction.CHOOSE_FILE)
+            ImageIdentifier.R_RETIRED -> m("DualOS no longer sets up that system", "Choose the file you downloaded for $system.", FixAction.CHOOSE_FILE)
+            ImageIdentifier.R_NOT_CHECKED -> m("The download isn't checked yet", "DualOS checks it first when you set up $system.", FixAction.NONE)
+            // An older build of the system, or none: setup replaces it cleanly.
             ImageIdentifier.R_NO_RAW, ImageIdentifier.R_RAW_NOT_OURS ->
                 m("The copy on this phone gets replaced", "Pick the file you downloaded for $system, then set it up.", FixAction.CHOOSE_FILE)
             ImageIdentifier.R_RAW_WRONG_PHONE, ImageIdentifier.R_RAW_DAMAGED ->
                 m("The system on this phone can't be used", "Choose the file you downloaded for $system.", FixAction.CHOOSE_FILE)
-            SwitchGates.R_IMAGE_NOT_IN_BUILD -> m("No system for this phone in this version", "Update OneOS.", FixAction.NONE)
+            SwitchGates.R_IMAGE_NOT_IN_BUILD -> m("No system for this phone in this version", "Update DualOS.", FixAction.NONE)
             // The series download: the finding names the right one.
             SwitchGates.R_IMAGE_OTHER_SERIES -> m(f.title, f.detail, FixAction.NONE)
             // Switching: what is set up.
@@ -332,14 +331,13 @@ object Plain {
             SwitchGates.R_IMAGE_OTHER_VERSION, SwitchGates.R_IMAGE_OTHER_SET -> m(
                 "Finish updating $system",
                 if (facts.installedReusable) {
-                    "OneOS was updated. No download, about 2 minutes. Your apps and data stay."
+                    "DualOS was updated. No download, about 2 minutes. Your apps and data stay."
                 } else {
-                    "OneOS was updated. Set it up again with its download. Your apps and data stay."
+                    "DualOS was updated. Set it up again with its download. Your apps and data stay."
                 },
                 FixAction.UPDATE,
             )
-            // 0.4.38: mostly a newer OneOS build with new files for this system (testers tapped "Repair" for an update).
-            SwitchGates.R_IMAGE_FILES_CHANGED -> m("Update $sys", "OneOS has newer files for it. No download, about 2 minutes. Your apps and data stay.", FixAction.REPAIR)
+            SwitchGates.R_IMAGE_FILES_CHANGED -> m("Update $sys", "DualOS has newer files for it. No download, about 2 minutes. Your apps and data stay.", FixAction.REPAIR)
             else -> null
         }
     }
@@ -352,7 +350,7 @@ object Plain {
 
     /** A finding [of] has no message for (a fix pack's new rule): never its technical text. */
     private fun unknown(f: Finding) = PlainMessage(
-        if (f.level == Level.BLOCK) "OneOS found a problem" else "OneOS found something to check",
+        if (f.level == Level.BLOCK) "DualOS found a problem" else "DualOS found something to check",
         "Details shows what it found.",
         FixAction.NONE,
         null,
@@ -362,7 +360,7 @@ object Plain {
     /** True when [of] has a message of its own for [f] (not the fallback). */
     fun knows(f: Finding, image: ImageRef?, phone: PhoneProfile?): Boolean {
         val m = of(f, image, phone)
-        return m.title != "OneOS found a problem" && m.title != "OneOS found something to check"
+        return m.title != "DualOS found a problem" && m.title != "DualOS found something to check"
     }
 
     fun defaultLabel(a: FixAction): String? = when (a) {
@@ -402,11 +400,11 @@ object Plain {
         return when {
             "busybox" in p || "resetprop" in p -> PlainMessage(
                 "Your root app is missing a tool",
-                "OneOS needs a tool your root app doesn't have. Update Magisk, KernelSU or APatch.",
+                "DualOS needs a tool your root app doesn't have. Update Magisk, KernelSU or APatch.",
                 FixAction.NONE, null,
             )
             "volume up key" in p || "volume down key" in p -> PlainMessage(
-                "OneOS can't read the volume keys",
+                "DualOS can't read the volume keys",
                 "You need them to come back. Restart your phone and try again.",
                 FixAction.NONE, null,
             )
@@ -455,7 +453,7 @@ object Plain {
             "restart the phone" in p || "still running" in p -> gate(SwitchGates.ID_STAGE, SwitchGates.R_STAGE_RUNNING)
             "no oneos marker" in p || "prepare first" in p -> gate(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_NOTHING)
             "prepare again" in p -> gate(SwitchGates.ID_IMAGE, SwitchGates.R_IMAGE_OTHER_VERSION)
-            else -> PlainMessage("Couldn't switch", "Something didn't check out. Send a report so the OneOS team can look.", FixAction.SEND_REPORT, defaultLabel(FixAction.SEND_REPORT))
+            else -> PlainMessage("Couldn't switch", "Something didn't check out. Send a report so the DualOS team can look.", FixAction.SEND_REPORT, defaultLabel(FixAction.SEND_REPORT))
         }
     }
 
@@ -471,7 +469,7 @@ object Plain {
         return when {
             stopped -> PlainMessage("Setup stopped", "$sys isn't ready. Set it up again whenever you like.", FixAction.SET_UP_AGAIN, defaultLabel(FixAction.SET_UP_AGAIN), Level.WARN)
             "in the app is damaged" in p || "not the pinned one" in p -> PlainMessage(
-                "This copy of OneOS is damaged", "Reinstall OneOS, then set up $system again.", FixAction.NONE, null,
+                "This copy of DualOS is damaged", "Reinstall DualOS, then set up $system again.", FixAction.NONE, null,
             )
             "services.jar is not the jar" in p -> PlainMessage(
                 "One UI changed during setup", "Restart your phone and try again.", FixAction.NONE, null,
@@ -483,7 +481,7 @@ object Plain {
                 "Couldn't read the download", "Choose the file again.", FixAction.CHOOSE_FILE, defaultLabel(FixAction.CHOOSE_FILE),
             )
             else -> PlainMessage(
-                "Setup didn't finish", "One UI wasn't changed. Try again, or send a report to the OneOS team.",
+                "Setup didn't finish", "One UI wasn't changed. Try again, or send a report to the DualOS team.",
                 FixAction.SEND_REPORT, defaultLabel(FixAction.SEND_REPORT),
             )
         }

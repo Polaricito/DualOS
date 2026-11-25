@@ -1,155 +1,234 @@
 package com.fahadali.oneos.guest
 
 import android.os.Bundle
-import android.view.View
-import android.view.WindowInsets
-import android.view.Menu
-import android.view.MenuItem
-import androidx.appcompat.widget.PopupMenu
-import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SearchView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import com.fahadali.oneos.shared.DualOsIcons
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import androidx.recyclerview.widget.SimpleItemAnimator
 import com.fahadali.oneos.core.model.GuestRootPermissions as Permissions
-import dev.oneuiproject.oneui.layout.ToolbarLayout
-import dev.oneuiproject.oneui.utils.applyEdgeToEdge
+import com.fahadali.oneos.shared.DualOsTheme
+import com.fahadali.oneos.shared.ExpressiveGroupedCard
+import com.fahadali.oneos.shared.ExpressiveListDivider
+import com.fahadali.oneos.shared.ExpressiveListItem
+import com.fahadali.oneos.shared.ExpressiveLoadingBox
+import com.fahadali.oneos.shared.ExpressiveSegmentedControl
+import com.fahadali.oneos.shared.ExpressiveStatusPill
+import com.fahadali.oneos.shared.StatusTone
 
-/** Guest-only root access: recycled native app cards, search and independent filters. */
-class GuestRootActivity:AppCompatActivity() {
-    private lateinit var model:RootPermissionsModel
-    private lateinit var adapter:RootPermissionAdapter
-    private lateinit var list:RecyclerView
-    private lateinit var search:SearchView
-    private val voiceSearch=registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
-        if(result.resultCode==RESULT_OK)result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let {
-            search.setQuery(it,false);search.clearFocus()
-        }
-    }
-    private var query=""
-    private var access=Permissions.Access.ALL
-    private var kind=Permissions.Kind.USER
-    override fun onCreate(savedInstanceState:Bundle?) {
-        super.onCreate(savedInstanceState);applyEdgeToEdge();setContentView(R.layout.activity_guest_root)
-        model=ViewModelProvider(this)[RootPermissionsModel::class.java]
-        query=savedInstanceState?.getString("query").orEmpty()
-        access=Permissions.Access.entries.getOrElse(savedInstanceState?.getInt("access") ?: 0){Permissions.Access.ALL}
-        kind=Permissions.Kind.entries.getOrElse(savedInstanceState?.getInt("kind") ?: 0){Permissions.Kind.USER}
-        val toolbar=findViewById<ToolbarLayout>(R.id.root_toolbar)
-        toolbar.setTitle(getString(R.string.root_permissions_title));toolbar.showNavigationButtonAsBack=true
-        toolbar.setNavigationButtonOnClickListener { onBackPressedDispatcher.onBackPressed() }
-        toolbar.setAdaptiveMarginProvider(dev.oneuiproject.oneui.widget.AdaptiveCoordinatorLayout.MARGIN_PROVIDER_ZERO);toolbar.setEdgeInsetHorizontal(0f)
-        toolbar.setOnApplyWindowInsetsListener { view,insets ->
-            val bars=insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            val ime=insets.getInsets(WindowInsets.Type.ime())
-            view.setPadding(bars.left,bars.top,bars.right,maxOf(bars.bottom,ime.bottom))
-            if(::search.isInitialized) search.maxWidth=if(ime.bottom>0) resources.getDimensionPixelSize(androidx.appcompat.R.dimen.sesl_search_view_preferred_width) else dp(280)
-            insets
-        }
-        toolbar.findViewById<dev.oneuiproject.oneui.widget.RoundedFrameLayout>(dev.oneuiproject.oneui.design.R.id.tbl_main_content).apply { roundedCorners=0;fillHorizontalPadding=false }
-        toolbar.findViewById<View>(dev.oneuiproject.oneui.design.R.id.tbl_bottom_corners).visibility=View.GONE
-        adapter=RootPermissionAdapter { group,allowed -> model.change(group,allowed) }
-        list=findViewById<RecyclerView>(R.id.root_apps).apply {
-            layoutManager=LinearLayoutManager(this@GuestRootActivity);adapter=this@GuestRootActivity.adapter
-            (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations=false
-            seslSetFastScrollerEnabled(true);seslSetGoToTopEnabled(true)
-            seslSetOnGoToTopClickListener { recycler -> recycler.smoothScrollToPosition(0);true }
-        }
-        search=findViewById<SearchView>(R.id.root_search).apply {
-            isIconified=false;setQuery(this@GuestRootActivity.query,false);clearFocus()
-            setOnQueryTextListener(object:SearchView.OnQueryTextListener {
-                override fun onQueryTextSubmit(value:String?):Boolean { clearFocus();return true }
-                override fun onQueryTextChange(value:String?):Boolean { this@GuestRootActivity.query=value.orEmpty();render();return true }
-            })
-        }
-        search.setSearchableInfo(getSystemService(android.app.SearchManager::class.java).getSearchableInfo(componentName))
-        search.findViewById<View>(androidx.appcompat.R.id.search_voice_btn).setOnClickListener {
-            try {
-                voiceSearch.launch(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS,1)
-                })
-            } catch(_:android.content.ActivityNotFoundException) { search.requestFocus() }
-        }
-        list.viewTreeObserver.addOnPreDrawListener {
-            val listLocation=IntArray(2);val searchLocation=IntArray(2)
-            list.getLocationInWindow(listLocation);search.getLocationInWindow(searchLocation)
-            val overlap=(listLocation[1]+list.height-searchLocation[1]).coerceAtLeast(0)
-            val clearance=overlap+dp(12)
-            if(list.paddingBottom!=clearance)list.setPadding(0,0,0,clearance)
-            list.seslSetGoToTopBottomPadding(overlap+dp(8))
-            true
-        }
-        findViewById<View>(R.id.root_retry).setOnClickListener { model.refresh() }
-        render()
-    }
-    override fun onCreateOptionsMenu(menu:Menu):Boolean {
-        menu.add(Menu.NONE,R.id.root_filters_action,Menu.NONE,R.string.root_filters).apply {
-            setIcon(R.drawable.ic_root_filter)
-            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            setOnMenuItemClickListener {
-                val toolbar=findViewById<ToolbarLayout>(R.id.root_toolbar).toolbar
-                showFilters(toolbar.findViewById<View>(R.id.root_filters_action) ?: toolbar)
-                true
-            }
-        }
-        return true
-    }
-    private fun dp(value:Int)=(value*resources.displayMetrics.density+.5f).toInt()
-    private fun showFilters(anchor:View) {
-        PopupMenu(this,anchor).apply {
-            val accessMenu=menu.addSubMenu(R.string.root_access_filter)
-            resources.getStringArray(R.array.root_access_options).forEachIndexed { index,label ->
-                accessMenu.add(1,100+index,index,label).isChecked=access.ordinal==index
-            }
-            accessMenu.setGroupCheckable(1,true,true)
-            val kindMenu=menu.addSubMenu(R.string.root_kind_filter)
-            resources.getStringArray(R.array.root_kind_options).forEachIndexed { index,label ->
-                kindMenu.add(2,200+index,index,label).isChecked=kind.ordinal==index
-            }
-            kindMenu.setGroupCheckable(2,true,true)
-            setOnMenuItemClickListener { item ->
-                when(item.groupId) {
-                    1 -> access=Permissions.Access.entries[item.itemId-100]
-                    2 -> kind=Permissions.Kind.entries[item.itemId-200]
-                    else -> return@setOnMenuItemClickListener false
+/** Guest-only root access manager in Jetpack Compose + Material 3 Expressive. */
+class GuestRootActivity : ComponentActivity() {
+    private lateinit var model: RootPermissionsModel
+    private var uiState by mutableStateOf(RootPermissionsModel.State())
+    private var query by mutableStateOf("")
+    private var access by mutableStateOf(Permissions.Access.ALL)
+    private var kind by mutableStateOf(Permissions.Kind.USER)
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        model = ViewModelProvider(this)[RootPermissionsModel::class.java]
+        query = savedInstanceState?.getString("query").orEmpty()
+        access = Permissions.Access.entries.getOrElse(savedInstanceState?.getInt("access") ?: 0) { Permissions.Access.ALL }
+        kind = Permissions.Kind.entries.getOrElse(savedInstanceState?.getInt("kind") ?: 0) { Permissions.Kind.USER }
+        uiState = model.state
+
+        setContent {
+            DualOsTheme {
+                val visible = Permissions.filter(uiState.groups, query, access, kind)
+                val accessLabels = resources.getStringArray(R.array.root_access_options)
+                val kindLabels = resources.getStringArray(R.array.root_kind_options)
+
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(stringResource(R.string.root_permissions_title), fontWeight = FontWeight.SemiBold) },
+                            navigationIcon = {
+                                IconButton(onClick = { onBackPressedDispatcher.onBackPressed() }) {
+                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                        )
+                    },
+                ) { padding ->
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        item {
+                            OutlinedTextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                placeholder = { Text(stringResource(R.string.root_search_hint)) },
+                                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                trailingIcon = {
+                                    if (query.isNotEmpty()) {
+                                        IconButton(onClick = { query = "" }) {
+                                            Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.large,
+                            )
+                        }
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ExpressiveSegmentedControl(
+                                    options = Permissions.Access.entries.mapIndexed { i, v -> v to accessLabels.getOrElse(i) { v.name } },
+                                    selected = access,
+                                    onSelect = { access = it },
+                                )
+                                ExpressiveSegmentedControl(
+                                    options = Permissions.Kind.entries.mapIndexed { i, v -> v to kindLabels.getOrElse(i) { v.name } },
+                                    selected = kind,
+                                    onSelect = { kind = it },
+                                )
+                            }
+                        }
+                        when {
+                            uiState.loading && uiState.groups.isEmpty() -> item {
+                                ExpressiveLoadingBox(label = stringResource(R.string.root_loading))
+                            }
+                            visible.isEmpty() -> item {
+                                ExpressiveGroupedCard {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Text(
+                                            text = when {
+                                                uiState.error != null && uiState.groups.isEmpty() -> uiState.error!!
+                                                uiState.groups.isEmpty() -> stringResource(R.string.root_none)
+                                                else -> stringResource(R.string.root_no_matches)
+                                            },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                        if (uiState.error != null) {
+                                            Button(onClick = { model.refresh() }) {
+                                                Text(stringResource(R.string.root_retry))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else -> item {
+                                ExpressiveGroupedCard {
+                                    visible.forEachIndexed { idx, group ->
+                                        if (idx > 0) ExpressiveListDivider()
+                                        val pendingVal = uiState.pending[group.uid]
+                                        val checked = pendingVal ?: group.allowed
+                                        val sharedText = if (group.apps.size > 1) {
+                                            stringResource(R.string.root_shared, group.apps.size)
+                                        } else {
+                                            null
+                                        }
+                                        ExpressiveListItem(
+                                            title = group.primary.label,
+                                            subtitle = buildString {
+                                                append(group.primary.packageName)
+                                                append(" · ")
+                                                append(
+                                                    when {
+                                                        pendingVal != null -> stringResource(R.string.root_saving)
+                                                        checked -> stringResource(R.string.root_allowed)
+                                                        else -> stringResource(R.string.root_denied)
+                                                    },
+                                                )
+                                            },
+                                            icon = DualOsIcons.Shield,
+                                            iconTone = if (checked) StatusTone.OK else StatusTone.NEUTRAL,
+                                            badge = sharedText,
+                                            badgeTone = StatusTone.INFO,
+                                            enabled = !uiState.loading && pendingVal == null,
+                                            trailing = {
+                                                Switch(
+                                                    checked = checked,
+                                                    onCheckedChange = { model.change(group, it) },
+                                                    enabled = !uiState.loading && pendingVal == null,
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        item { Spacer(modifier = Modifier.height(16.dp)) }
+                    }
                 }
-                render();true
+
+                if (uiState.error != null && uiState.groups.isNotEmpty()) {
+                    AlertDialog(
+                        onDismissRequest = { model.dismissError() },
+                        title = { Text(stringResource(R.string.root_permissions_title)) },
+                        text = { Text(uiState.error!!) },
+                        confirmButton = {
+                            Button(onClick = { model.dismissError() }) { Text(stringResource(android.R.string.ok)) }
+                        },
+                    )
+                }
             }
-            show()
         }
     }
+
     override fun onStart() {
         super.onStart()
-        model.observer={ state ->
-            render()
-            if(state.error!=null && state.groups.isNotEmpty()) {
-                AlertDialog.Builder(this).setTitle(R.string.root_permissions_title).setMessage(state.error).setPositiveButton(android.R.string.ok,null).show()
-                model.dismissError()
-            }
-        }
-        render();model.refresh()
+        model.observer = { state -> uiState = state }
+        uiState = model.state
+        model.refresh()
     }
-    override fun onStop() { model.observer=null;super.onStop() }
-    override fun onDestroy() { adapter.close();super.onDestroy() }
-    override fun onSaveInstanceState(outState:Bundle) { outState.putString("query",query);outState.putInt("access",access.ordinal);outState.putInt("kind",kind.ordinal);super.onSaveInstanceState(outState) }
-    private fun render() {
-        if(!::adapter.isInitialized)return
-        val state=model.state
-        val visible=Permissions.filter(state.groups,query,access,kind)
-        adapter.submitList(visible.mapIndexed { index,group -> RootPermissionAdapter.Row(group,state.pending[group.uid],state.loading,index==0,index==visible.lastIndex) })
-        val empty=visible.isEmpty()
-        findViewById<View>(R.id.root_empty).visibility=if(empty)View.VISIBLE else View.GONE
-        list.visibility=if(empty)View.INVISIBLE else View.VISIBLE
-        findViewById<TextView>(R.id.root_empty_text).text=when {
-            state.loading -> getString(R.string.root_loading)
-            state.error!=null && state.groups.isEmpty() -> state.error
-            state.groups.isEmpty() -> getString(R.string.root_none)
-            else -> getString(R.string.root_no_matches)
-        }
-        findViewById<View>(R.id.root_retry).visibility=if(empty && state.error!=null)View.VISIBLE else View.GONE
+
+    override fun onStop() {
+        model.observer = null
+        super.onStop()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("query", query)
+        outState.putInt("access", access.ordinal)
+        outState.putInt("kind", kind.ordinal)
+        super.onSaveInstanceState(outState)
     }
 }

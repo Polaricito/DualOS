@@ -190,7 +190,7 @@ internal object FixActions {
                 .putExtra(SetupProgressActivity.EXTRA_REUSE_IMAGE, plan.source == SessionPrefs.Source.ON_PHONE)
                 .putExtra(SetupProgressActivity.EXTRA_IMAGE, if (updating) StageCheck.state.result?.let(ImageMaintenance::identifiedImage)?.id else null)
                 .putExtra(SetupProgressActivity.EXTRA_RETURN_TO_CHECKS, fromChecks)
-            ArtworkTransitions.start(a, intent, if (fromChecks) a.findViewById(R.id.environment_artwork) else null)
+            a.startActivity(intent)
         }
     }
 

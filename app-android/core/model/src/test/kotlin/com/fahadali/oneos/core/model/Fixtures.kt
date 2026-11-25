@@ -109,4 +109,57 @@ object Fixtures {
         inputs = listOf("hall", "certify_hall", "sec_touchscreen"),
         root = root,
     )
+
+    val A53_PANEL = Panel(0, "Built-in Screen", 1080, 2400, 405f, 405f)
+    val A53_SOC = SocProps(manufacturer = "Samsung", model = "s5e8825", platform = "s5e8825", hardware = "exynos", egl = "mali")
+    val A53_INSTALLD: InstalldDerivation by lazy {
+        val fp = "samsung/a53x/a53x:16/BP2A.250605.031.A3/A536EXXS:user/release-keys"
+        InstalldDerivation(
+            methods = InstalldTableFormat.parseLegacy(Bundles.text("host_installd_oneui80.txt")),
+            sourceJar = "/system/framework/services.jar",
+            sourceEntry = "classes.dex",
+            sourceSha256 = "a".repeat(64),
+            inputs = listOf("installd/system_framework_services.jar"),
+            error = null,
+        ).also {
+            require(it.methods.isNotEmpty())
+        }
+    }
+
+    /** Galaxy A53 5G (SM-A536E, a53x, s5e8825, One UI 8.0, SDK 36). */
+    fun a53(
+        model: String = "SM-A536E",
+        device: String = "a53x",
+        soc: SocProps = A53_SOC,
+        oneUi: String = "80000",
+        sdk: Int = 36,
+        abis64: List<String> = listOf("arm64-v8a"),
+        panels: List<Panel> = listOf(A53_PANEL),
+        hinge: Boolean? = false,
+        inputs: List<String> = listOf("sec_touchscreen", "hall"),
+        root: RootSignals = RootSignals(managerPackages = listOf("me.weishu.kernelsu")),
+        storage: StorageInfo? = StorageInfo(100_000_000_000, 128_000_000_000),
+        battery: BatteryInfo? = BatteryInfo(80, false, 30f),
+        screenLock: Boolean? = false,
+        cpu: CpuInfo? = CpuInfoParser.parse(NO_SVE_CPUINFO),
+    ): DeviceFacts = facts(
+        model = model,
+        device = device,
+        soc = soc,
+        oneUi = oneUi,
+        sdk = sdk,
+        abis64 = abis64,
+        panels = panels,
+        hinge = hinge,
+        inputs = inputs,
+        root = root,
+        storage = storage,
+        battery = battery,
+        screenLock = screenLock,
+        cpu = cpu,
+    ).copy(
+        androidRelease = if (sdk == 36) "16" else "17",
+        buildId = "BP2A.250605.031.A3",
+        fingerprint = "samsung/a53x/a53x:16/BP2A.250605.031.A3/A536EXXS:user/release-keys",
+    )
 }

@@ -34,9 +34,9 @@ class PackagesTest {
             assertEquals(s.id, ShaList.parse(list).entries["guards.txt"], Hashes.sha256(guards.readBytes()))
             assertEquals(s.id, emptyList<String>(), s.checkGuards(guards.readText(), list))
         }
-        // Never mixed: the N6 guards do not vouch for the X9U jars.
-        val x9u = PackageSets.X9U_IN_1105_SULTRA
-        assertTrue(x9u.checkGuards(File(dir, "n6-f8u.guards.txt").readText(), File(dir, "x9u-in-1105-sultra.sha256").readText()).isNotEmpty())
+        // Bad/mismatching guards refuse to verify.
+        val lineage23 = PackageSets.LINEAGE23
+        assertTrue(lineage23.checkGuards(File(dir, "lineage23.guards.txt").readText() + "${"b".repeat(64)}  OneOSGuest.apk\n", File(dir, "lineage23.sha256").readText()).isNotEmpty())
     }
 
     private val build: String get() = File(Shipped.appAssets, "../../../build.gradle.kts").readText()

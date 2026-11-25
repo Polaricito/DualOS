@@ -406,6 +406,30 @@ add)
             echo "guest_props: $RE=$REV for this session (Vulkan RenderEngine)"
         fi
     fi
+    # Dual-filter Kawase2 blur (DualOS 2.0.0): Android 16 SurfaceFlinger keeps
+    # window_blur_kawase2=false on legacy configs, so RenderEngine runs legacy
+    # Kawase passes on Mali-G68 (Exynos 1280, SkiaGL threaded — never SkiaVk).
+    # debug.renderengine.blur_algorithm=kawase2 selects BlurAlgorithm::KAWASE_DUAL_FILTER
+    # for lower GPU bandwidth and smoother blurs; return_to_oneui.sh restores all
+    # debug.* properties on return. ONEOS_GUEST_BLUR=0 leaves it unset.
+    if [ "${ONEOS_GUEST_BLUR:-1}" = 1 ]; then
+        BA=debug.renderengine.blur_algorithm
+        BAV=${ONEOS_GUEST_BLUR_ALGORITHM:-kawase2}
+        case "$BAV" in kawase|kawase2|gaussian|none) ;; *) BAV="" ;; esac
+        if [ -n "$BAV" ]; then
+            if grep -qxF "$BA" "$HOST"; then
+                hv=$(getprop "$BA")
+                if [ "$hv" != "$BAV" ] && "$RP" -n "$BA" "$BAV" 2>/dev/null; then
+                    echo "$BA=$hv" >> "$OVR"
+                    echo "guest_props: $BA=$hv overridden to $BAV for the session (dual-filter blur)"
+                fi
+            else
+                sed -i "/^debug\.renderengine\.blur_algorithm=/d" "$NEW"
+                echo "$BA=$BAV" >> "$NEW"
+                echo "guest_props: $BA=$BAV for the session (dual-filter blur)"
+            fi
+        fi
+    fi
     # The boot animation on the panel that is on. AOSP's bootanimation draws on
     # the first display persist.service.bootanim.displays lists, at that
     # display's size, else on SurfaceFlinger's primary: a Fold's inner panel.
