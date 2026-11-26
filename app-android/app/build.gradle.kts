@@ -496,8 +496,10 @@ android {
         // 0.5.18 (147): LineageOS 23, the Galaxy A53 5G's own Android 16 QPR0 GSI (the MisterZtr VANILLA build of
         // DualOS 2.0.0: Galaxy A53 5G exclusive Jetpack Compose + Material 3 Expressive redesign,
         // local guest PIN isolation, NFC, safe microSD mounts, Kawase2 blurs, ART & SELinux fixes.
-        versionCode = 200
-        versionName = "2.0.0"
+        // DualOS 2.0.1: fix false Update/Restore prompts, wall-clock session duration,
+        // per-system Kawase2 options, DynamicColors + MaterialAlertDialogBuilder across dialogs, and DualOS log branding.
+        versionCode = 201
+        versionName = "2.0.1"
         // 0.4.56 (73), TEST CHANNEL ONLY: the Find N6 set's Theme Store logs every OkHttp request and reply (n6g_r7,
         // patches/theme_store_netlog.py) for the owner's "No Data" log; the next public build goes back to n6g_r6.
         // Send to the OneOS team (0.4.29, both editions): the report service's

@@ -15,6 +15,7 @@ import com.fahadali.oneos.core.model.Plain
 import com.fahadali.oneos.core.model.PlainMessage
 import com.fahadali.oneos.core.model.ScreenLockRule
 import com.fahadali.oneos.core.model.SwitchGates
+import com.fahadali.oneos.core.model.SystemFamily
 import com.fahadali.oneos.core.model.Units
 import com.fahadali.oneos.core.root.RootProbe
 import com.fahadali.oneos.core.root.RootScript
@@ -249,7 +250,7 @@ object LaunchJob : BackgroundJob<LaunchJob.State>(State(), "oneos-launch") {
                 if (SessionPrefs.verboseBoot(app)) "1" else "0", if (SessionPrefs.fullLogs(app)) "1" else "0",
                 if (SessionPrefs.guestNfc(app)) "1" else "0",
                 SessionPrefs.guestSdCard(app).env,
-                if (SessionPrefs.guestBlur(app)) "1" else "0",
+                if (image.family == SystemFamily.INFINITYX && SessionPrefs.guestBlur(app)) "1" else "0",
             ),
             silenceMs = 5 * 60_000L,
         )

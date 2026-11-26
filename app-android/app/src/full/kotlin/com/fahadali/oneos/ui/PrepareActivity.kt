@@ -7,7 +7,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -435,7 +435,7 @@ class PrepareActivity : AppCompatActivity() {
     }
 
     private fun confirmCheck() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.prepare_check_dialog_title)
             .setMessage(R.string.prepare_check_dialog_message)
             .setPositiveButton(R.string.prepare_check_run) { _, _ -> StageCheck.start(this, StageCheck.Mode.FULL) }
@@ -453,7 +453,7 @@ class PrepareActivity : AppCompatActivity() {
             if (team) append("\n\n").append(getString(R.string.prepare_dialog_team))
         }
         val stepsHere = team
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(if (image != null) getString(R.string.confirm_setup_title, image.name) else getString(R.string.prepare_dialog_title))
             .setMessage(what)
             .setPositiveButton(R.string.confirm_setup_go) { _, _ ->
@@ -467,7 +467,7 @@ class PrepareActivity : AppCompatActivity() {
     private fun confirmDeleteGz() {
         val ctx = applicationContext
         val picked = SessionPrefs.picked(ctx) ?: return
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.prepare_delete_gz_title)
             .setMessage(getString(R.string.prepare_delete_gz_message, picked.name ?: ""))
             .setPositiveButton(R.string.delete) { _, _ ->

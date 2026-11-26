@@ -11,6 +11,10 @@ import java.io.File
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.temporal.ChronoUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -219,12 +223,12 @@ enum class OutcomeKind(val label: String) {
         return when (this) {
             USER_RETURN -> "You came back with the volume keys"
             APP_RETURN -> "You came back with Back to One UI"
-            GUEST_REBOOT -> "$sys restarted, so OneOS brought you back"
+            GUEST_REBOOT -> "$sys restarted, so DualOS brought you back"
             GUEST_SHUTDOWN -> "$sys turned the phone off"
-            GUEST_DEAD -> "$sys stopped working. OneOS brought you back."
-            BLACK_SCREEN -> "$sys's screen stayed black. OneOS brought you back."
+            GUEST_DEAD -> "$sys stopped working. DualOS brought you back."
+            BLACK_SCREEN -> "$sys's screen stayed black. DualOS brought you back."
             SESSION_LIMIT -> "The session time limit was reached"
-            BOOT_TIMEOUT -> "$sys didn't finish starting. OneOS brought you back."
+            BOOT_TIMEOUT -> "$sys didn't finish starting. DualOS brought you back."
             PREPARE_FAILED -> "The switch stopped before $system started"
             REFUSED -> "The switch didn't start. Nothing changed."
             DRY_RUN -> "Test run finished: $system can start"
@@ -250,23 +254,31 @@ data class ReturnOutcome(
     fun detail(system: String): String {
         val sys = com.fahadali.oneos.core.model.Sentence.start(system)
         return when (kind) {
-            OutcomeKind.USER_RETURN -> "You held Volume Up+Down${after()}; OneOS returned to One UI."
-            OutcomeKind.APP_RETURN -> "You tapped Back to One UI in $system${after()}; OneOS returned to One UI."
-            OutcomeKind.GUEST_REBOOT -> "$sys asked for a restart${after()} (Restart in its power menu, or a crash); OneOS returned to One UI."
+            OutcomeKind.USER_RETURN -> "You held Volume Up+Down${after()}; DualOS returned to One UI."
+            OutcomeKind.APP_RETURN -> "You tapped Back to One UI in $system${after()}; DualOS returned to One UI."
+            OutcomeKind.GUEST_REBOOT -> "$sys asked for a restart${after()} (Restart in its power menu, or a crash); DualOS returned to One UI."
             OutcomeKind.GUEST_SHUTDOWN -> "$sys asked to power off${after()} (power menu, low battery or heat); the phone powered off."
-            OutcomeKind.GUEST_DEAD -> "$sys's system stopped${after()}; OneOS returned to One UI by itself."
-            OutcomeKind.BLACK_SCREEN -> "The screen stayed black${after()}; OneOS returned to One UI by itself."
+            OutcomeKind.GUEST_DEAD -> "$sys's system stopped${after()}; DualOS returned to One UI by itself."
+            OutcomeKind.BLACK_SCREEN -> "The screen stayed black${after()}; DualOS returned to One UI by itself."
             OutcomeKind.SESSION_LIMIT -> "The session reached its time limit${after()}."
-            OutcomeKind.BOOT_TIMEOUT -> "$sys was still not started${after()}; OneOS returned to One UI by itself."
+            OutcomeKind.BOOT_TIMEOUT -> "$sys was still not started${after()}; DualOS returned to One UI by itself."
             OutcomeKind.PREPARE_FAILED -> "The switch stopped before $system started and returned to One UI."
             OutcomeKind.REFUSED -> "A check of the switch refused before anything changed; One UI kept running."
-            OutcomeKind.DRY_RUN -> "Everything was set up and checked, then OneOS returned to One UI without starting $system."
+            OutcomeKind.DRY_RUN -> "Everything was set up and checked, then DualOS returned to One UI without starting $system."
             OutcomeKind.HARD_RESET -> "No return was logged and the phone booted for another reason (${bootReason ?: "unknown"}): a force restart or a crash."
             OutcomeKind.UNKNOWN -> "The logs do not say how the session ended."
         } + (line?.let { "\n$it" } ?: "")
     }
 
-    private fun after(): String = afterSeconds?.let { " after ${it / 60} min ${it % 60} s" } ?: ""
+    private fun after(): String = afterSeconds?.let { " after ${formatDuration(it)}" } ?: ""
+
+    companion object {
+        fun formatDuration(seconds: Int): String = when {
+            seconds >= 3600 -> "${seconds / 3600} h ${(seconds % 3600) / 60} min"
+            seconds >= 60 -> "${seconds / 60} min ${seconds % 60} s"
+            else -> "$seconds s"
+        }
+    }
 }
 
 object ReturnOutcomes {
@@ -284,7 +296,37 @@ object ReturnOutcomes {
     private const val MODULES_FAILED = "Guest module installation failed"
     private const val SOFT_REBOOT_FAILED = "soft reboot failed, returning to One UI"
     private const val SESSION_HEADER = "=== OneOS session "
+    private val SESSION_HEAD_TIME = Regex("""^=== (?:OneOS|DualOS) session (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) epoch (\d+)""")
+    private val LINE_DATE_TIME = Regex("""^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+\S+\s+(\d{4})\b""")
+    private val MONTHS = mapOf("Jan" to 1, "Feb" to 2, "Mar" to 3, "Apr" to 4, "May" to 5, "Jun" to 6, "Jul" to 7, "Aug" to 8, "Sep" to 9, "Oct" to 10, "Nov" to 11, "Dec" to 12)
     private const val LAUNCH_HEADER = "=== OneOS app launch "
+
+    private fun parseLineLocalDateTime(line: String): LocalDateTime? {
+        val m = LINE_DATE_TIME.find(line) ?: return null
+        val mo = MONTHS[m.groupValues[1]] ?: return null
+        val day = m.groupValues[2].toIntOrNull() ?: return null
+        val h = m.groupValues[3].toIntOrNull() ?: return null
+        val min = m.groupValues[4].toIntOrNull() ?: return null
+        val s = m.groupValues[5].toIntOrNull() ?: return null
+        val y = m.groupValues[6].toIntOrNull() ?: return null
+        return runCatching { LocalDateTime.of(LocalDate.of(y, mo, day), LocalTime.of(h, min, s)) }.getOrNull()
+    }
+
+    private fun wallElapsedSeconds(ret: List<String>, line: String, reported: Int?): Int? {
+        val hm = ret.firstOrNull()?.let(SESSION_HEAD_TIME::find) ?: return reported
+        val startLocal = runCatching {
+            LocalDateTime.of(LocalDate.parse(hm.groupValues[1]), LocalTime.parse(hm.groupValues[2]))
+        }.getOrNull() ?: return reported
+        val endLocal = parseLineLocalDateTime(line) ?: return reported
+        val delta = ChronoUnit.SECONDS.between(startLocal, endLocal)
+        if (delta <= 0L || delta >= 30L * 86400L) return reported
+        val wall = delta.toInt()
+        return when {
+            reported == null -> wall
+            wall > reported + 120 -> wall
+            else -> reported
+        }
+    }
 
     /** The part of an appended log after its last [header] line (all of it when there is none). */
     fun lastBlock(text: String, header: String): List<String> {
@@ -312,22 +354,22 @@ object ReturnOutcomes {
         for (l in ret.asReversed()) {
             GUEST_REQ.find(l)?.let { m ->
                 val req = m.groupValues[1]
-                val t = m.groupValues[2].toIntOrNull()
+                val t = wallElapsedSeconds(ret, l.trim(), m.groupValues[2].toIntOrNull())
                 val kind = when {
                     req.startsWith("keys") -> OutcomeKind.USER_RETURN
-                    // The guest's OneOS app (Back to One UI): app:app or app:tile.
+                    // The guest's DualOS app (Back to One UI): app:app or app:tile.
                     req.startsWith("app:") -> OutcomeKind.APP_RETURN
                     req.startsWith("shutdown") -> OutcomeKind.GUEST_SHUTDOWN
                     else -> OutcomeKind.GUEST_REBOOT
                 }
                 return ReturnOutcome(kind, t, l.trim(), reason)
             }
-            DEAD.find(l)?.let { return ReturnOutcome(OutcomeKind.GUEST_DEAD, it.groupValues[1].toIntOrNull(), l.trim(), reason) }
-            BLACK.find(l)?.let { return ReturnOutcome(OutcomeKind.BLACK_SCREEN, it.groupValues[1].toIntOrNull(), l.trim(), reason) }
+            DEAD.find(l)?.let { return ReturnOutcome(OutcomeKind.GUEST_DEAD, wallElapsedSeconds(ret, l.trim(), it.groupValues[1].toIntOrNull()), l.trim(), reason) }
+            BLACK.find(l)?.let { return ReturnOutcome(OutcomeKind.BLACK_SCREEN, wallElapsedSeconds(ret, l.trim(), it.groupValues[1].toIntOrNull()), l.trim(), reason) }
             LIMIT.find(l)?.let { return ReturnOutcome(OutcomeKind.SESSION_LIMIT, it.groupValues[1].toIntOrNull(), l.trim(), reason) }
             NOT_BOOTED.find(l)?.let { return ReturnOutcome(OutcomeKind.BOOT_TIMEOUT, it.groupValues[1].toIntOrNull(), l.trim(), reason) }
-            if (l.contains(KEYS)) return ReturnOutcome(OutcomeKind.USER_RETURN, null, l.trim(), reason)
-            if (l.contains(SOFT_REBOOT_FAILED)) return ReturnOutcome(OutcomeKind.GUEST_REBOOT, null, l.trim(), reason)
+            if (l.contains(KEYS)) return ReturnOutcome(OutcomeKind.USER_RETURN, wallElapsedSeconds(ret, l.trim(), null), l.trim(), reason)
+            if (l.contains(SOFT_REBOOT_FAILED)) return ReturnOutcome(OutcomeKind.GUEST_REBOOT, wallElapsedSeconds(ret, l.trim(), null), l.trim(), reason)
         }
         return when {
             reason?.startsWith("shutdown,oneos-guest-shutdown") == true -> ReturnOutcome(OutcomeKind.GUEST_SHUTDOWN, null, null, reason)
@@ -366,7 +408,7 @@ object LogBundle {
     const val SUMMARY = "summary.txt"
     const val REDACTION = "redaction.txt"
 
-    fun name(sessionId: String): String = "oneos-logs-${sessionId.filter { it.isLetterOrDigit() || it == '-' }.take(40)}"
+    fun name(sessionId: String): String = "dualos-logs-${sessionId.filter { it.isLetterOrDigit() || it == '-' }.take(40)}"
 
     /**
      * The app build that launched the session: stage/current.json's versionCode (the root script's
@@ -387,7 +429,7 @@ object LogBundle {
             .sorted().toList()
         val ran = sessionVersionCode(folder)
         val summary = buildString {
-            append("OneOS session logs ${input.sessionId}\n")
+            append("DualOS session logs ${input.sessionId}\n")
             append("App ${input.app.versionName} (${input.app.versionCode}), profile ${input.profileId ?: "unknown"}, image ${input.imageId ?: "unknown"}")
             append(if (input.dryRun) ", dry run\n" else "\n")
             if (ran != null && ran != input.app.versionCode) {

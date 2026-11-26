@@ -5,7 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -237,7 +237,7 @@ class GuestRuntimeActivity : AppCompatActivity() {
             }
         })
         add((if (module.removing) "Cancel uninstall" else "Uninstall ${module.name}") to {
-            AlertDialog.Builder(this@GuestRuntimeActivity)
+            MaterialAlertDialogBuilder(this@GuestRuntimeActivity)
                 .setTitle(if (module.removing) "Cancel uninstall?" else "Uninstall ${module.name}?")
                 .setMessage("This change applies at the next guest restart. Module cleanup scripts run only inside the guest.")
                 .setNegativeButton(android.R.string.cancel, null)
@@ -253,6 +253,6 @@ class GuestRuntimeActivity : AppCompatActivity() {
     }
 
     private fun showError(message: String) {
-        AlertDialog.Builder(this).setTitle("Guest modules").setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+        MaterialAlertDialogBuilder(this).setTitle("Guest modules").setMessage(message).setPositiveButton(android.R.string.ok, null).show()
     }
 }

@@ -6,7 +6,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import android.content.DialogInterface
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.FragmentActivity
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.device.FactProbe
@@ -103,7 +104,7 @@ internal object SwitchConfirm {
         }
 
         val scroll = ScrollView(a).apply { addView(root) }
-        val dialog = AlertDialog.Builder(a)
+        val dialog = MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.confirm_switch_title, system))
             .setView(scroll)
             .setPositiveButton(R.string.confirm_switch_go, null)
@@ -111,7 +112,7 @@ internal object SwitchConfirm {
             .create()
 
         dialog.setOnShowListener {
-            val go = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            val go = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
             fun update() { go.isEnabled = boxes.all { it.isChecked } }
             boxes.forEach { b -> b.setOnCheckedChangeListener { _, _ -> update() } }
             update()

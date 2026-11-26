@@ -7,7 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.FragmentActivity
 import com.fahadali.oneos.BuildConfig
 import com.fahadali.oneos.R
@@ -53,7 +53,7 @@ internal object FixActions {
         val mb = (next.bytes + 999_999) / 1_000_000
         val text = a.getString(R.string.home_update_confirm, com.fahadali.oneos.BuildConfig.VERSION_NAME, next.versionName, mb)
         val why = st.message?.takeIf { st.phase == com.fahadali.oneos.session.AppUpdater.Phase.FAILED }
-        androidx.appcompat.app.AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.home_update_title, next.versionName))
             .setMessage(if (why != null) "$why\n\n$text" else text)
             .setPositiveButton(R.string.home_update_run) { _, _ -> com.fahadali.oneos.session.AppUpdater.install(a) }
@@ -123,7 +123,7 @@ internal object FixActions {
             then?.invoke()
             return
         }
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.tool_app_off_title, pkg))
             .setMessage(a.getString(R.string.tool_app_off_message, pkg))
             .setPositiveButton(R.string.tool_app_off_run) { _, _ ->
@@ -172,7 +172,7 @@ internal object FixActions {
                 }
             }
         }
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.confirm_setup_title, image.name))
             .setMessage(msg)
             .setPositiveButton(R.string.confirm_setup_go) { _, _ -> startSetup(a, PrepareJob.Plan.AUTO) }
@@ -215,7 +215,7 @@ internal object FixActions {
                 startSetup(a, PrepareJob.Plan(RootScript.BeginMode.KEEP, SessionPrefs.Source.ON_PHONE), updating = true)
             // The download is written into the stage (10 GB): confirmed first.
             SessionPrefs.picked(a)?.let { ImageIdentifier.identify(it.check, profile).image?.id == image.id } == true ->
-                AlertDialog.Builder(a)
+                MaterialAlertDialogBuilder(a)
                     .setTitle(a.getString(R.string.confirm_setup_title, system))
                     .setMessage(a.getString(R.string.confirm_setup_file, system))
                     .setPositiveButton(R.string.confirm_setup_go) { _, _ ->

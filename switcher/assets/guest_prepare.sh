@@ -2500,17 +2500,89 @@ apm_usb() {
     return 0
 }
 
+# apm_no_mmap <copy>: drop MMAP_NOIRQ mixPorts and their route links when
+# AAudio MMAP is forced off on HIDL audio HALs (DualOS 2.0.1).
+apm_no_mmap() {
+    [ "${ONEOS_GUEST_AAUDIO_MMAP:-0}" != 1 ] || return 0
+    $BB grep -qs 'MMAP_NOIRQ' "$1" || return 0
+    rm -f "$1.nommap"
+    if awk '
+        function attr(tag, name,   v, q, rest) {
+            if (!match(tag, "[ \t]" name "[ \t]*=[ \t]*\"[^\"]*\"")) return ""
+            v = substr(tag, RSTART, RLENGTH)
+            q = index(v, "\"")
+            rest = substr(v, q + 1)
+            sub(/".*/, "", rest)
+            return rest
+        }
+        BEGIN { skip_mix = 0; skip_route = 0 }
+        skip_mix {
+            if (index($0, "</mixPort>")) skip_mix = 0
+            next
+        }
+        skip_route {
+            if (index($0, "</route>") || index($0, "/>")) skip_route = 0
+            next
+        }
+        /<mixPort[ \t>]/ && /MMAP_NOIRQ/ {
+            nm = attr($0, "name")
+            if (nm != "") dropped[nm] = 1
+            if (!index($0, "/>") && !index($0, "</mixPort>")) skip_mix = 1
+            next
+        }
+        /<route[ \t>]/ {
+            sk = attr($0, "sink")
+            if (sk != "" && ((sk in dropped) || sk ~ /mmap_no_irq/)) {
+                if (!index($0, "/>") && !index($0, "</route>")) skip_route = 1
+                next
+            }
+            src = attr($0, "sources")
+            if (src != "") {
+                n = split(src, a, ",")
+                out = ""
+                changed = 0
+                for (i = 1; i <= n; i++) {
+                    s = a[i]
+                    gsub(/^[ \t]+|[ \t]+$/, "", s)
+                    if (s == "") continue
+                    if ((s in dropped) || s ~ /mmap_no_irq/) { changed = 1; continue }
+                    out = out (out == "" ? "" : ",") s
+                }
+                if (changed) {
+                    if (out == "") {
+                        if (!index($0, "/>") && !index($0, "</route>")) skip_route = 1
+                        next
+                    }
+                    line = $0
+                    sub(/sources[ \t]*=[ \t]*"[^"]*"/, "sources=\"" out "\"", line)
+                    print line
+                    next
+                }
+            }
+        }
+        { print }
+    ' "$1" > "$1.nommap" && [ -s "$1.nommap" ] && ! $BB grep -qs 'MMAP_NOIRQ' "$1.nommap"; then
+        cat "$1.nommap" > "$1"
+        APM_MMAP="MMAP audio ports stripped"
+        APM_ADDED=1
+    fi
+    rm -f "$1.nommap"
+    return 0
+}
+
 apm_copy() {
     APM_NOTE=""
     APM_USB=""
+    APM_MMAP=""
     APM_ADDED=0
-    rm -f "$2" "$2.a2dp" "$2.inc"
+    rm -f "$2" "$2.a2dp" "$2.inc" "$2.nommap"
     [ -f "$1" ] || return 1
     $BB sed -e "s#href=\"\([^/\"][^\"]*\)\"#href=\"${1%/*}/\1\"#g" "$1" > "$2" || return 1
     [ -s "$2" ] || return 1
     [ "$3" = 1 ] || return 0
     apm_a2dp "$1" "$2"
     apm_usb "$2"
+    apm_no_mmap "$2"
     [ -s "$2" ]
 }
 
@@ -2714,7 +2786,7 @@ fi
 # file; each alone leaves out its own outputs.
 GAPM=/vendor/etc/audio_policy_configuration.xml
 if [ ! -e "$MIUI_FW/miui-services.jar" ] && [ ! -L "$MIUI_FW/miui-services.jar" ] \
-   && { [ "${ONEOS_GUEST_APM_A2DP:-1}" = 1 ] || [ "${ONEOS_GUEST_APM_USB:-1}" = 1 ]; } \
+   && { [ "${ONEOS_GUEST_APM_A2DP:-1}" = 1 ] || [ "${ONEOS_GUEST_APM_USB:-1}" = 1 ] || [ "${ONEOS_GUEST_AAUDIO_MMAP:-0}" != 1 ]; } \
    && [ -f "$GAPM" ] && [ -f "$ROOTFS$GAPM" ] && [ ! -L "$ROOTFS$GAPM" ] \
    && ! "$BB" grep -rqs 'android.hardware.audio.core' /vendor/etc/vintf/; then
     rm -f "$STAGE/guest_bt_sw"
@@ -2736,11 +2808,14 @@ if [ ! -e "$MIUI_FW/miui-services.jar" ] && [ ! -L "$MIUI_FW/miui-services.jar" 
                 # What the copy has more, Bluetooth first, and what a refused bind costs.
                 case "$APM_NOTE" in
                     "Bluetooth A2DP outputs added"*)
-                        GAPM_SAID="$APM_NOTE${APM_USB:+; $APM_USB}"
+                        GAPM_SAID="$APM_NOTE${APM_USB:+; $APM_USB}${APM_MMAP:+; $APM_MMAP}"
                         GAPM_LOST="no Bluetooth audio${APM_USB:+, no USB audio}" ;;
                     *)
-                        GAPM_SAID="$APM_USB${APM_NOTE:+; $APM_NOTE}"
-                        GAPM_LOST="no USB audio" ;;
+                        GAPM_SAID="$APM_USB"
+                        [ -n "$APM_NOTE" ] && GAPM_SAID="${GAPM_SAID:+$GAPM_SAID; }$APM_NOTE"
+                        [ -n "$APM_MMAP" ] && GAPM_SAID="${GAPM_SAID:+$GAPM_SAID; }$APM_MMAP"
+                        GAPM_LOST="${APM_USB:+no USB audio}"
+                        : "${GAPM_LOST:=MMAP audio ports left in}" ;;
                 esac
                 chown 0:0 "$GAPM_OV/audio_policy_configuration.xml" && chmod 644 "$GAPM_OV/audio_policy_configuration.xml"
                 $BB chcon u:object_r:vendor_configs_file:s0 "$GAPM_OV/audio_policy_configuration.xml" 2>/dev/null || true

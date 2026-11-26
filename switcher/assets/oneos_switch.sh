@@ -2545,7 +2545,8 @@ if [ "$RETURN_MAX" -gt 0 ]; then
     $BB sh -c "
         echo \$\$ > /sys/fs/cgroup/cgroup.procs 2>/dev/null
         echo -1000 > /proc/\$\$/oom_score_adj 2>/dev/null
-        t=0; total=0; dead=0; sfgone=0; prev_failed=0; homebase=0; wmbase=0; wmseen=0
+        start_wall=\$(date +%s); t=0; total=0; dead=0; sfgone=0; prev_failed=0; homebase=0; wmbase=0; wmseen=0
+        wall_elapsed() { _wn=\$(date +%s); _we=\$((_wn - start_wall)); [ \"\$_we\" -gt \"\$t\" ] 2>/dev/null && echo \"\$_we\" || echo \"\$t\"; }
         while [ \$t -lt $RETURN_MAX ]; do
             # The 10 s wait ends early on a request. Run 34: Volume Up + Volume
             # Down were held 3 s from 16:43:56, but the request was handled only
@@ -2609,7 +2610,7 @@ if [ "$RETURN_MAX" -gt 0 ]; then
                 exec /system/bin/sh $STAGE/return_to_oneui.sh
             fi
             if [ -n \"\$req\" ]; then
-                echo \"\$(date) guest requested '\$req' after \${t}s, returning to One UI\"
+                echo \"\$(date) guest requested '\$req' after \$(wall_elapsed)s, returning to One UI\"
                 # Who asked: the guarded ShutdownThread logs under the tag OneOS (run
                 # 31 was Restart in ColorOS's power menu, seen only in the recording).
                 # 0.4.87: the system buffer on its own. Read together with main, a busy
@@ -2879,7 +2880,7 @@ if [ "$RETURN_MAX" -gt 0 ]; then
             else
                 dead=\$((dead + 10))
                 if [ \$dead -ge 30 ]; then
-                    echo \"\$(date) guest zygote/system_server gone for \${dead}s after \${t}s, returning to One UI\"
+                    echo \"\$(date) guest zygote/system_server gone for \${dead}s after \$(wall_elapsed)s, returning to One UI\"
                     exec /system/bin/sh $STAGE/return_to_oneui.sh
                 fi
             fi
@@ -2894,7 +2895,7 @@ if [ "$RETURN_MAX" -gt 0 ]; then
             else
                 sfgone=\$((sfgone + 10))
                 if [ \$sfgone -ge 30 ]; then
-                    echo \"\$(date) black screen after \${t}s (the guest's surfaceflinger gone for \${sfgone}s, nothing restarts it), returning to One UI\"
+                    echo \"\$(date) black screen after \$(wall_elapsed)s (the guest's surfaceflinger gone for \${sfgone}s, nothing restarts it), returning to One UI\"
                     exec /system/bin/sh $STAGE/return_to_oneui.sh
                 fi
             fi
@@ -2926,7 +2927,7 @@ if [ "$RETURN_MAX" -gt 0 ]; then
             ba=\$(pidof bootanimation)
             [ \$wm = 0 ] && [ \"\$(grep -c 'Dismissing bootanim' /data/local/tmp/ui_activator.log 2>/dev/null)\" -gt \"\${wmbase:-0}\" ] && wm=1
             if [ \$t -ge $RETURN_BLACK ] && { ! pidof surfaceflinger >/dev/null || [ \$new_failed -gt 100 ] || { [ \$home = 0 ] && [ -z \"\$ba\" ] && { [ \$wm = 0 ] || [ \$wmseen -ge 120 ]; }; }; }; then
-                echo \"\$(date) black screen after \${t}s (surfaceflinger: \$(pidof surfaceflinger), bootanimation: \$(pidof bootanimation), new failed frames: \$new_failed), returning to One UI\"
+                echo \"\$(date) black screen after \$(wall_elapsed)s (surfaceflinger: \$(pidof surfaceflinger), bootanimation: \$(pidof bootanimation), new failed frames: \$new_failed), returning to One UI\"
                 exec /system/bin/sh $STAGE/return_to_oneui.sh
             fi
             if [ $SESSION_MAX -gt 0 ] && [ \$total -ge $SESSION_MAX ]; then

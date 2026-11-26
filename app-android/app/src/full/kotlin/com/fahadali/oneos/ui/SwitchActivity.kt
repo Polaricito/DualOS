@@ -3,7 +3,7 @@ package com.fahadali.oneos.ui
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -260,7 +260,7 @@ class SwitchActivity : AppCompatActivity() {
             (if (!dry && setupNote) "\n\n" + getString(R.string.confirm_setup_wizard, system) else "") +
             (if (hide) "\n\n" + getString(R.string.switch_dialog_gms_hidden) else "") +
             if (!dry && !SessionPrefs.heatCap(this)) "\n\n" + getString(R.string.confirm_heat_cap_off) else ""
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(if (dry) getString(R.string.switch_dry_dialog_title) else getString(R.string.switch_go_dialog_title, system))
             .setMessage(message)
             .setPositiveButton(if (dry) getString(R.string.switch_dry_title) else getString(R.string.switch_go_title, system)) { _, _ ->

@@ -5,11 +5,12 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -157,7 +159,7 @@ class EnvironmentActivity : AppCompatActivity() {
                 if (r.message.isNotEmpty()) Toast.makeText(applicationContext, r.message, Toast.LENGTH_LONG).show()
                 catalogue()
             }
-            r.failed -> AlertDialog.Builder(this).setTitle(R.string.environment_manage_failed).setMessage(r.message)
+            r.failed -> MaterialAlertDialogBuilder(this).setTitle(R.string.environment_manage_failed).setMessage(r.message)
                 .setPositiveButton(android.R.string.ok, null).show()
             else -> if (r.message.isNotEmpty()) Toast.makeText(applicationContext, r.message, Toast.LENGTH_LONG).show()
         }
@@ -263,7 +265,7 @@ class EnvironmentActivity : AppCompatActivity() {
                             onClick = {
                                 if (fix != null) {
                                     if (fix.actionLabel == null || fix.action == FixAction.NONE || fix.action == FixAction.ACKNOWLEDGE) {
-                                        AlertDialog.Builder(this@EnvironmentActivity).setTitle(fix.title).setMessage(fix.line)
+                                        MaterialAlertDialogBuilder(this@EnvironmentActivity).setTitle(fix.title).setMessage(fix.line)
                                             .setPositiveButton(android.R.string.ok, null).show()
                                     } else {
                                         FixActions.run(this@EnvironmentActivity, fix.action, image)
@@ -287,7 +289,17 @@ class EnvironmentActivity : AppCompatActivity() {
                             shape = RoundedCornerShape(20.dp),
                         ) {
                             if (checking) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Text(
+                                        stringResource(R.string.home_checking),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             } else {
                                 Text(ctaLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             }
@@ -384,8 +396,10 @@ class EnvironmentActivity : AppCompatActivity() {
                     }
                 }
 
-                item { ExpressiveSectionHeader(stringResource(R.string.a53_caps_section)) }
-                item { A53CapabilitiesCard(ctx = this@EnvironmentActivity, showStatusBadges = true) }
+                if (image.family == com.fahadali.oneos.core.model.SystemFamily.INFINITYX) {
+                    item { ExpressiveSectionHeader(stringResource(R.string.a53_system_options_section, image.shortName)) }
+                    item { SystemSpecialFeaturesCard(ctx = this@EnvironmentActivity, image = image) }
+                }
 
                 val patchProfile = currentFacts?.let { Profiles.resolve(it).profile }
                 val patchSources = patchProfile?.let { PatchChannels.sources(this@EnvironmentActivity, it.id, image.id) }.orEmpty()
@@ -404,7 +418,7 @@ class EnvironmentActivity : AppCompatActivity() {
                                 enabled = idle,
                                 showChevron = idle,
                                 onClick = {
-                                    AlertDialog.Builder(this@EnvironmentActivity).setTitle(heading)
+                                    MaterialAlertDialogBuilder(this@EnvironmentActivity).setTitle(heading)
                                         .setSingleChoiceItems(patchSources.map { label(it) }.toTypedArray(), patchSources.indexOfFirst { it.id == source.id }) { dialog, which ->
                                             dialog.dismiss(); choosePatches(patchSources[which].id)
                                         }.setNegativeButton(android.R.string.cancel, null).show()
@@ -461,7 +475,7 @@ class EnvironmentActivity : AppCompatActivity() {
                             onClick = {
                                 val providers = listOf("zygisk_vector") + guest.modules.filter { it.framework != null }.map { it.id }.filter { it != "zygisk_vector" }
                                 val names = providers.map { guest.providerName(it) } + "Import LSPosed or Vector ZIP…"
-                                AlertDialog.Builder(this@EnvironmentActivity).setTitle("Xposed framework")
+                                MaterialAlertDialogBuilder(this@EnvironmentActivity).setTitle("Xposed framework")
                                     .setSingleChoiceItems(names.toTypedArray(), providers.indexOf(guest.selected)) { dialog, which ->
                                         dialog.dismiss()
                                         if (which == providers.size) startActivity(
@@ -500,7 +514,7 @@ class EnvironmentActivity : AppCompatActivity() {
                             icon = DualOsIcons.BugReport,
                             showChevron = true,
                             onClick = {
-                                if (preview) AlertDialog.Builder(this@EnvironmentActivity).setTitle(R.string.environment_report)
+                                if (preview) MaterialAlertDialogBuilder(this@EnvironmentActivity).setTitle(R.string.environment_report)
                                     .setMessage(R.string.environment_preview).setPositiveButton(android.R.string.ok, null).show()
                                 else FixActions.run(this@EnvironmentActivity, FixAction.SEND_REPORT, image)
                             },
@@ -521,7 +535,7 @@ class EnvironmentActivity : AppCompatActivity() {
                                     enabled = !ToolApps.state.busy,
                                     showChevron = !ToolApps.state.busy,
                                     onClick = {
-                                        AlertDialog.Builder(this@EnvironmentActivity).setMessage(getString(R.string.tool_app_on_confirm, pkg))
+                                        MaterialAlertDialogBuilder(this@EnvironmentActivity).setMessage(getString(R.string.tool_app_on_confirm, pkg))
                                             .setPositiveButton(R.string.tool_app_on_run) { _, _ -> ToolApps.turnOn(this@EnvironmentActivity, pkg) }
                                             .setNegativeButton(android.R.string.cancel, null).show()
                                     },
@@ -569,7 +583,7 @@ class EnvironmentActivity : AppCompatActivity() {
             if (!isDestroyed) {
                 rootBusy = false
                 if (next.error == null) rootState = next
-                else AlertDialog.Builder(this).setTitle("Guest root").setMessage(next.error).setPositiveButton(android.R.string.ok, null).show()
+                else MaterialAlertDialogBuilder(this).setTitle("Guest root").setMessage(next.error).setPositiveButton(android.R.string.ok, null).show()
                 tick++
             }
         }
@@ -596,7 +610,7 @@ class EnvironmentActivity : AppCompatActivity() {
                             it.versionName,
                         )
                     } ?: result.exceptionOrNull()?.message
-                    AlertDialog.Builder(this).setTitle(if (result.isSuccess) R.string.patch_channel_refresh else R.string.patch_channel_failed)
+                    MaterialAlertDialogBuilder(this).setTitle(if (result.isSuccess) R.string.patch_channel_refresh else R.string.patch_channel_failed)
                         .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
                     tick++
                 }
@@ -620,7 +634,7 @@ class EnvironmentActivity : AppCompatActivity() {
                 patchBusy = false
                 if (!isDestroyed) {
                     result.exceptionOrNull()?.let { error ->
-                        AlertDialog.Builder(this).setTitle(R.string.patch_channel_failed).setMessage(error.message)
+                        MaterialAlertDialogBuilder(this).setTitle(R.string.patch_channel_failed).setMessage(error.message)
                             .setPositiveButton(android.R.string.ok, null).show()
                     }
                     if (showResult && result.isSuccess) Toast.makeText(this, R.string.patch_channel_checked, Toast.LENGTH_LONG).show()

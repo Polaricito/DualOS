@@ -10,7 +10,8 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import android.content.DialogInterface
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.fahadali.oneos.R
 import com.fahadali.oneos.core.model.ImageRef
 import com.fahadali.oneos.core.root.OldStage
@@ -33,7 +34,7 @@ internal object SystemManage {
 
     fun confirmStartFresh(a: Activity, image: ImageRef, onDone: (Result) -> Unit = {}) {
         if (!guard(a)) return
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.manage_start_fresh_title, image.name))
             .setMessage(a.getString(R.string.manage_start_fresh_message, image.name))
             .setPositiveButton(R.string.manage_start_fresh_run) { _, _ -> run(a, RemoveJob.Kind.DATA, image, onDone) }
@@ -43,7 +44,7 @@ internal object SystemManage {
 
     fun confirmRemove(a: Activity, image: ImageRef, onDone: (Result) -> Unit = {}) {
         if (!guard(a)) return
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.manage_remove_title, image.name))
             .setMessage(a.getString(R.string.manage_remove_message, image.name))
             .setPositiveButton(R.string.remove_confirm_run) { _, _ -> run(a, RemoveJob.Kind.SYSTEM, image, onDone) }
@@ -53,7 +54,7 @@ internal object SystemManage {
 
     fun confirmDeleteSaved(a: Activity, image: ImageRef, savedCopy: String, onDone: (Result) -> Unit = {}) {
         if (!guard(a)) return
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(R.string.space_delete_title)
             .setMessage(a.getString(R.string.manage_delete_saved_message, image.name))
             .setPositiveButton(R.string.space_delete_run) { _, _ ->
@@ -148,7 +149,7 @@ internal object SystemManage {
         }
         val handler = Handler(Looper.getMainLooper())
         val since = SystemClock.elapsedRealtime()
-        val dialog = AlertDialog.Builder(a)
+        val dialog = MaterialAlertDialogBuilder(a)
             .setTitle(title)
             .setView(row)
             .setCancelable(false)
@@ -168,7 +169,7 @@ internal object SystemManage {
                 dialog.setTitle(if (r.failed) a.getString(R.string.environment_manage_failed) else a.getString(R.string.manage_progress_done))
                 step.text = r.message
                 time.text = a.getString(R.string.manage_progress_took, elapsed(since))
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+                dialog.getButton(DialogInterface.BUTTON_POSITIVE)?.apply {
                     setText(android.R.string.ok)
                     setOnClickListener { dialog.dismiss(); onDone(r) }
                 }

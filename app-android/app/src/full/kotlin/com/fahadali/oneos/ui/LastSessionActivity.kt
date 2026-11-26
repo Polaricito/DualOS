@@ -6,7 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,6 +44,7 @@ import com.fahadali.oneos.core.root.OutcomeKind
 import com.fahadali.oneos.report.ReportSender
 import com.fahadali.oneos.session.LogJob
 import com.fahadali.oneos.session.SessionPrefs
+import com.fahadali.oneos.session.StageCheck
 import com.fahadali.oneos.shared.DualOsIcons
 import com.fahadali.oneos.shared.DualOsTheme
 import com.fahadali.oneos.shared.ExpressiveGroupedCard
@@ -123,9 +124,9 @@ class LastSessionActivity : AppCompatActivity() {
                             when {
                                 launch == null -> Text(stringResource(R.string.last_none_line), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 outcome != null && !test -> {
-                                    val minutes = afterSeconds?.takeIf { it > 0 }?.let { (it + 59) / 60 }
+                                    val timeLabel = afterSeconds?.takeIf { it > 0 }?.let(::formatSessionTime)
                                     val tiles = buildList {
-                                        if (minutes != null) add(getString(R.string.home_minutes, minutes) to getString(R.string.home_welcome_in, system))
+                                        if (timeLabel != null) add(timeLabel to getString(R.string.home_welcome_in, system))
                                         if (!titleSaysHow(outcome)) add(getString(howCameBack(outcome)) to getString(R.string.home_welcome_how))
                                     }
                                     if (tiles.isNotEmpty()) {
@@ -324,6 +325,12 @@ class LastSessionActivity : AppCompatActivity() {
         }
     }
 
+    private fun formatSessionTime(seconds: Int): String = when {
+        seconds >= 3600 -> "${seconds / 3600} h ${(seconds % 3600) / 60} min"
+        seconds >= 60 -> getString(R.string.home_minutes, (seconds + 59) / 60)
+        else -> "< 1 min"
+    }
+
     private fun titleSaysHow(o: OutcomeKind): Boolean = when (o) {
         OutcomeKind.SESSION_LIMIT, OutcomeKind.PREPARE_FAILED -> false
         else -> true
@@ -341,7 +348,7 @@ class LastSessionActivity : AppCompatActivity() {
     }
 
     private fun confirmCollect() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.last_collect_dialog_title)
             .setMessage(R.string.last_collect_dialog_message)
             .setPositiveButton(R.string.last_collect_run) { _, _ -> LogJob.start(this) }
@@ -352,15 +359,17 @@ class LastSessionActivity : AppCompatActivity() {
 
 /** Restore One UI's settings after an interrupted session. */
 internal object SessionRestore {
+    private fun currentStatus() = LogJob.state.status ?: StageCheck.state.result?.status
+
     fun maybe(ctx: Context): Boolean {
         val launch = SessionPrefs.lastLaunch(ctx)
-        return LogJob.state.status == null && launch != null && !launch.dryRun && launch.endedSince()
+        return currentStatus() == null && launch != null && !launch.dryRun && launch.endedSince()
     }
 
-    fun offered(ctx: Context): Boolean = LogJob.state.status?.unfinishedSession == true || maybe(ctx)
+    fun offered(ctx: Context): Boolean = currentStatus()?.unfinishedSession == true || maybe(ctx)
 
     fun confirm(a: Activity) {
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(R.string.last_restore_title)
             .setMessage(R.string.last_restore_dialog_message)
             .setPositiveButton(R.string.last_restore_run) { _, _ -> LogJob.recover(a) }

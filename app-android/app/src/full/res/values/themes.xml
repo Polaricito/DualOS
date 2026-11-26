@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.OneOS" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.OneOS" parent="Theme.Material3Expressive.DayNight.NoActionBar">
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Material3.MaterialAlertDialog</item>
         <item name="android:windowActivityTransitions">true</item>
         <item name="android:windowContentTransitions">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

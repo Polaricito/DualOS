@@ -5,9 +5,11 @@ Exynos Mali-G68 blur/thermal handover)."""
 from pathlib import Path
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'switcher/assets'
@@ -670,6 +672,148 @@ exit 0
             self.assertIn('is a link', out1)
             self.assertTrue(victim.is_dir())
             self.assertFalse(log.exists())
+
+
+class AAudioMmapFixTests(unittest.TestCase):
+    SAMPLE_APM_XML = '''<?xml version='1.0' encoding='utf-8'?>
+<audioPolicyConfiguration version="1.0">
+    <modules>
+        <module halVersion="3.0" name="primary">
+            <mixPorts>
+                <mixPort flags="AUDIO_OUTPUT_FLAG_PRIMARY" name="primary-out" role="source">
+                    <profile channelMasks="AUDIO_CHANNEL_OUT_STEREO" format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="48000" />
+                </mixPort>
+                <mixPort flags="AUDIO_OUTPUT_FLAG_FAST" name="fast" role="source">
+                    <profile channelMasks="AUDIO_CHANNEL_OUT_STEREO" format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="48000" />
+                </mixPort>
+                <mixPort flags="AUDIO_OUTPUT_FLAG_DIRECT|AUDIO_OUTPUT_FLAG_MMAP_NOIRQ" name="mmap_no_irq_out" role="source">
+                    <profile channelMasks="AUDIO_CHANNEL_OUT_STEREO" format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="48000" />
+                </mixPort>
+                <mixPort flags="AUDIO_INPUT_FLAG_MMAP_NOIRQ" name="mmap_no_irq_in" role="sink">
+                    <profile channelMasks="AUDIO_CHANNEL_IN_MONO" format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="48000" />
+                </mixPort>
+            </mixPorts>
+            <devicePorts>
+                <devicePort role="sink" tagName="Earpiece" type="AUDIO_DEVICE_OUT_EARPIECE" />
+                <devicePort role="sink" tagName="Speaker" type="AUDIO_DEVICE_OUT_SPEAKER" />
+                <devicePort role="sink" tagName="OneOS BT A2DP Out" type="AUDIO_DEVICE_OUT_BLUETOOTH_A2DP" />
+            </devicePorts>
+            <routes>
+                <route sink="Earpiece" sources="primary-out,fast,mmap_no_irq_out" type="mix" />
+                <route sink="Speaker" sources="primary-out,fast,mmap_no_irq_out" type="mix" />
+                <route sink="OneOS BT A2DP Out" sources="primary-out,fast" type="mix" />
+                <route sink="mmap_no_irq_in" sources="Built-In Mic" type="mix" />
+            </routes>
+        </module>
+    </modules>
+</audioPolicyConfiguration>
+'''
+
+    def test_apm_no_mmap_strips_mmap_ports_and_routes_cleanly(self):
+        fn = slice_between(PREPARE, '# apm_no_mmap <copy>:', '\napm_copy() {')
+        awkgens = ['awk']
+        if shutil.which('busybox'):
+            awkgens.append('busybox awk')
+        for awk_cmd in awkgens:
+            with self.subTest(awk=awk_cmd), tempfile.TemporaryDirectory() as d:
+                base = Path(d)
+                bin_ = base / 'bin'; bin_.mkdir()
+                if awk_cmd == 'busybox awk':
+                    (bin_ / 'awk').write_text('#!/bin/sh\nexec busybox awk "$@"\n')
+                    (bin_ / 'awk').chmod(0o755)
+                xml_path = base / 'audio_policy_configuration.xml'
+                xml_path.write_text(self.SAMPLE_APM_XML)
+                script = f'''
+set -eu
+PATH="{bin_}:$PATH"
+BB=""
+APM_MMAP=""
+APM_ADDED=0
+{fn}
+apm_no_mmap "{xml_path}"
+echo "ADDED=$APM_ADDED|MMAP=$APM_MMAP"
+'''
+                res = subprocess.run(['sh', '-c', script], capture_output=True, text=True)
+                self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+                self.assertIn('ADDED=1|MMAP=MMAP audio ports stripped', res.stdout)
+                updated = xml_path.read_text()
+                self.assertNotIn('MMAP_NOIRQ', updated)
+                self.assertNotIn('mmap_no_irq_out', updated)
+                self.assertNotIn('mmap_no_irq_in', updated)
+                root = ET.fromstring(updated)
+                mix_names = [m.attrib['name'] for m in root.findall('.//mixPort')]
+                self.assertEqual(['primary-out', 'fast'], mix_names)
+                routes = {r.attrib['sink']: r.attrib['sources'] for r in root.findall('.//route')}
+                self.assertEqual({
+                    'Earpiece': 'primary-out,fast',
+                    'Speaker': 'primary-out,fast',
+                    'OneOS BT A2DP Out': 'primary-out,fast',
+                }, routes)
+
+        # Opt-in ONEOS_GUEST_AAUDIO_MMAP=1 preserves MMAP ports untouched.
+        with tempfile.TemporaryDirectory() as d:
+            xml_path = Path(d) / 'audio_policy_configuration.xml'
+            xml_path.write_text(self.SAMPLE_APM_XML)
+            res = subprocess.run(
+                ['sh', '-c', f'set -eu\nBB=""\nONEOS_GUEST_AAUDIO_MMAP=1\nAPM_MMAP=""\nAPM_ADDED=0\n{fn}\napm_no_mmap "{xml_path}"\necho "ADDED=$APM_ADDED"'],
+                capture_output=True, text=True, check=True,
+            )
+            self.assertIn('ADDED=0', res.stdout)
+            self.assertIn('MMAP_NOIRQ', xml_path.read_text())
+
+    def test_guest_props_disables_aaudio_mmap_on_hidl_only_and_return_restores(self):
+        blk = slice_between(
+            PROPS,
+            '    if [ "${ONEOS_GUEST_AAUDIO_MMAP:-0}" != 1 ] && [ -d "${ONEOS_VINTF_DIR:-/vendor/etc/vintf}" ]',
+            '\n    # The boot animation on the panel that is on.',
+        )
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            props = base / 'props'; props.mkdir()
+            vintf = base / 'vintf'; vintf.mkdir()
+            (vintf / 'manifest.xml').write_text('<hal><name>android.hardware.audio</name><version>6.0</version></hal>\n')
+            host = base / 'host'
+            new = base / 'new'
+            ovr = base / 'ovr'
+            rp = base / 'rp'
+            rp.write_text('#!/bin/sh\n[ "$1" = -n ] || exit 2\nprintf "%s" "$3" > "$PROPS/$2"\n')
+            rp.chmod(0o755)
+            prefix = f'export PROPS="{props}"\nRP="{rp}"\nHOST="{host}"\nNEW="{new}"\nOVR="{ovr}"\nONEOS_VINTF_DIR="{vintf}"\ngetprop() {{ [ -f "$PROPS/$1" ] && cat "$PROPS/$1"; }}\n'
+
+            # Case 1: HIDL host holds 2 -> overridden to 1 and backed up in $OVR.
+            (props / 'aaudio.mmap_policy').write_text('2')
+            (props / 'aaudio.mmap_exclusive_policy').write_text('2')
+            host.write_text('aaudio.mmap_policy\naaudio.mmap_exclusive_policy\n')
+            new.write_text('aaudio.mmap_policy=2\n')
+            ovr.write_text('')
+            res = subprocess.run(['sh', '-c', f'set -eu\n{prefix}{blk}\n'], capture_output=True, text=True, check=True)
+            self.assertEqual('1', (props / 'aaudio.mmap_policy').read_text())
+            self.assertEqual('1', (props / 'aaudio.mmap_exclusive_policy').read_text())
+            self.assertEqual(['aaudio.mmap_policy=2', 'aaudio.mmap_exclusive_policy=2'], ovr.read_text().splitlines())
+            self.assertIn('AAudio legacy FastMixer on HIDL audio HAL', res.stdout)
+
+            # Case 2: Host lacks keys -> written to $NEW cleanly.
+            host.write_text('other.prop\n')
+            new.write_text('aaudio.mmap_policy=2\n')
+            ovr.write_text('')
+            subprocess.run(['sh', '-c', f'set -eu\n{prefix}{blk}\n'], capture_output=True, text=True, check=True)
+            self.assertEqual(['aaudio.mmap_policy=1', 'aaudio.mmap_exclusive_policy=1'], new.read_text().splitlines())
+            self.assertEqual('', ovr.read_text())
+
+            # Case 3: AIDL audio core present -> left untouched at 2.
+            (props / 'aaudio.mmap_policy').write_text('2')
+            (props / 'aaudio.mmap_exclusive_policy').write_text('2')
+            (vintf / 'manifest_aidl.xml').write_text('<hal><name>android.hardware.audio.core</name></hal>\n')
+            host.write_text('aaudio.mmap_policy\naaudio.mmap_exclusive_policy\n')
+            subprocess.run(['sh', '-c', f'set -eu\n{prefix}{blk}\n'], capture_output=True, text=True, check=True)
+            self.assertEqual('2', (props / 'aaudio.mmap_policy').read_text())
+            self.assertEqual('2', (props / 'aaudio.mmap_exclusive_policy').read_text())
+
+        # Restore safety in return_to_oneui.sh + GAPM gate in guest_prepare.sh.
+        ret_loop = slice_between(RETURN, 'for k in ro.control_privapp_permissions', 'do\n    put_back "$k"')
+        self.assertIn('aaudio.mmap_policy', ret_loop)
+        self.assertIn('aaudio.mmap_exclusive_policy', ret_loop)
+        self.assertIn('${ONEOS_GUEST_AAUDIO_MMAP:-0}', PREPARE)
 
 
 if __name__ == '__main__':

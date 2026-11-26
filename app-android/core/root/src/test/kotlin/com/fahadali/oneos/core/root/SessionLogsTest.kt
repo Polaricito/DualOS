@@ -141,7 +141,8 @@ class SessionLogsTest {
     @Test
     fun theInGuestAppReturn() {
         fun o(ret: String) = ReturnOutcomes.parse(ret, null, "reboot,oneos-return")
-        val app = "$header\nSat Oct 24 21:04:01 +03 2026 Back to One UI asked in the guest's OneOS app (app)\n" +
+        val appHeader = "=== OneOS session 2026-10-24 20:22:10 epoch 1792862530 boot b app 1 profile f8u return max 600s black 150s keys 1 ==="
+        val app = "$appHeader\nSat Oct 24 21:04:01 +03 2026 Back to One UI asked in the guest's OneOS app (app)\n" +
             "Sat Oct 24 21:04:10 +03 2026 guest requested 'app:app' after 2520s, returning to One UI\n"
         assertEquals(OutcomeKind.APP_RETURN, o(app).kind)
         assertEquals(2520, o(app).afterSeconds)
@@ -150,7 +151,18 @@ class SessionLogsTest {
         assertEquals(OutcomeKind.GUEST_REBOOT, o("x guest requested 'reboot,userrequested' after 60s, returning to One UI\n").kind)
         assertEquals("You came back with Back to One UI", OutcomeKind.APP_RETURN.title("Pixel 11 Fold"))
         assertTrue(OutcomeKind.APP_RETURN.good)
-        assertTrue(o(app).detail("Pixel 11 Fold").startsWith("You tapped Back to One UI in Pixel 11 Fold after 42 min 0 s"))
+        assertTrue(o(app).detail("Pixel 11 Fold").startsWith("You tapped Back to One UI in Pixel 11 Fold after 42 min 0 s; DualOS returned to One UI."))
+    }
+
+    @Test
+    fun deepSleepWallClockAndHourFormatting() {
+        val longSession = "=== OneOS session 2026-11-24 21:08:47 epoch 1795576127 boot b app 1 profile a53 return max 600s black 150s keys 1 ===\n" +
+            "Wed Nov 25 15:40:28 CST 2026 guest requested 'app:app' after 590s, returning to One UI\n"
+        val parsed = ReturnOutcomes.parse(longSession, null, "reboot,")
+        assertEquals(OutcomeKind.APP_RETURN, parsed.kind)
+        assertEquals(66701, parsed.afterSeconds)
+        assertEquals("18 h 31 min", ReturnOutcome.formatDuration(66701))
+        assertTrue(parsed.detail("Infinity-X 3.5").startsWith("You tapped Back to One UI in Infinity-X 3.5 after 18 h 31 min; DualOS returned to One UI."))
     }
 
     /** The outcome texts name the system they are given, never a fixed one. */
@@ -165,8 +177,8 @@ class SessionLogsTest {
             }
             assertFalse("$k: $other", other.contains(" the other system") && other.startsWith("the"))
         }
-        assertEquals("Pixel 11 Fold didn't finish starting. OneOS brought you back.", OutcomeKind.BOOT_TIMEOUT.title("Pixel 11 Fold"))
-        assertEquals("The other system restarted, so OneOS brought you back", OutcomeKind.GUEST_REBOOT.title("the other system"))
+        assertEquals("Pixel 11 Fold didn't finish starting. DualOS brought you back.", OutcomeKind.BOOT_TIMEOUT.title("Pixel 11 Fold"))
+        assertEquals("The other system restarted, so DualOS brought you back", OutcomeKind.GUEST_REBOOT.title("the other system"))
         assertEquals("You came back with the volume keys", OutcomeKind.USER_RETURN.title("Pixel 11 Fold"))
     }
 
@@ -203,13 +215,13 @@ class SessionLogsTest {
             ZipFile(zip).use { z ->
                 val names = z.entries().toList().map { it.name }.sorted()
                 assertEquals(
-                    listOf("oneos-logs-0123456789abcdef/capture/boot.log", "oneos-logs-0123456789abcdef/redaction.txt", "oneos-logs-0123456789abcdef/report.json", "oneos-logs-0123456789abcdef/summary.txt"),
+                    listOf("dualos-logs-0123456789abcdef/capture/boot.log", "dualos-logs-0123456789abcdef/redaction.txt", "dualos-logs-0123456789abcdef/report.json", "dualos-logs-0123456789abcdef/summary.txt"),
                     names,
                 )
-                val report = z.getInputStream(z.getEntry("oneos-logs-0123456789abcdef/report.json")).readBytes().toString(Charsets.UTF_8)
+                val report = z.getInputStream(z.getEntry("dualos-logs-0123456789abcdef/report.json")).readBytes().toString(Charsets.UTF_8)
                 assertTrue(report.contains("\"schema\": \"oneos.logbundle/1\""))
                 assertTrue(report.contains("\"kind\": \"GUEST_REBOOT\""))
-                val log = z.getInputStream(z.getEntry("oneos-logs-0123456789abcdef/capture/boot.log")).readBytes().toString(Charsets.UTF_8)
+                val log = z.getInputStream(z.getEntry("dualos-logs-0123456789abcdef/capture/boot.log")).readBytes().toString(Charsets.UTF_8)
                 assertFalse(log.contains("someone@example.com"))
             }
             assertNull(LogRules.tag("not a logcat line"))
@@ -219,16 +231,17 @@ class SessionLogsTest {
             assertEquals(3, LogBundle.sessionVersionCode(folder))
             val zip2 = LogBundle.build(
                 LogBundleInput(
-                    AppInfo("com.fahadali.oneos", "0.3.0", 4, "OneOS"), "0123456789abcdef", "2026-10-23T10:00:00+03:00",
+                    AppInfo("com.fahadali.oneos", "0.3.0", 4, "DualOS"), "0123456789abcdef", "2026-10-23T10:00:00+03:00",
                     "f8u", "coloros17-findn6", "d".repeat(64), dryRun = false, outcome = outcome,
                     listSha256 = "a".repeat(64), runnerSha256 = "b".repeat(64), incomplete = emptyList(), learnedNames = 2,
                 ),
                 folder, r, stats,
             )
             ZipFile(zip2).use { z ->
-                val summary = z.getInputStream(z.getEntry("oneos-logs-0123456789abcdef/summary.txt")).readBytes().toString(Charsets.UTF_8)
+                val summary = z.getInputStream(z.getEntry("dualos-logs-0123456789abcdef/summary.txt")).readBytes().toString(Charsets.UTF_8)
+                assertTrue(summary, summary.contains("DualOS session logs 0123456789abcdef"))
                 assertTrue(summary, summary.contains("Session ran on app build 3 (stage/current.json); build 4 collected these logs"))
-                val report = z.getInputStream(z.getEntry("oneos-logs-0123456789abcdef/report.json")).readBytes().toString(Charsets.UTF_8)
+                val report = z.getInputStream(z.getEntry("dualos-logs-0123456789abcdef/report.json")).readBytes().toString(Charsets.UTF_8)
                 assertTrue(report, Regex(""""session":\s*\{\s*"versionCode":\s*3""").containsMatchIn(report))
             }
         } finally {

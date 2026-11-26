@@ -61,7 +61,9 @@ object LogJob : BackgroundJob<LogJob.State>(State(), "oneos-logs") {
     fun logsDir(ctx: Context) = FindingsActivity.logsDir(ctx)
 
     fun latestZip(ctx: Context): File? =
-        logsDir(ctx).listFiles { f -> f.isFile && f.name.startsWith("oneos-logs-") && f.name.endsWith(".zip") }?.maxByOrNull { it.lastModified() }
+        logsDir(ctx).listFiles { f ->
+            f.isFile && (f.name.startsWith("dualos-logs-") || f.name.startsWith("oneos-logs-")) && f.name.endsWith(".zip")
+        }?.maxByOrNull { it.lastModified() }
 
     @Volatile private var skipping = false
 
@@ -150,8 +152,9 @@ object LogJob : BackgroundJob<LogJob.State>(State(), "oneos-logs") {
         // (0.4.42) Only the newest bundle is kept: every earlier one (its zip and its unpacked
         // folder, 200-300 MB each on the owner's Fold) goes before collecting. The newest keeps its
         // folder: Send and the log preview read report.json and the checklist from it.
-        root.listFiles { f -> f.name.startsWith("oneos-logs-") && f.name != name && f.name != "$name.zip" }
-            ?.forEach { it.deleteRecursively() }
+        root.listFiles { f ->
+            (f.name.startsWith("dualos-logs-") || f.name.startsWith("oneos-logs-")) && f.name != name && f.name != "$name.zip"
+        }?.forEach { it.deleteRecursively() }
         val folder = File(root, name).apply {
             deleteRecursively()
             mkdirs()

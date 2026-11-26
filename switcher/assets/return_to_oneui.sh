@@ -879,6 +879,7 @@ done
 # restarted and set it once.
 for k in ro.control_privapp_permissions \
          audio.offload.disable audio.deep_buffer.media audio.offload.video vendor.audio.offload.track.enable \
+         aaudio.mmap_policy aaudio.mmap_exclusive_policy \
          service.sf.cache_dir_available \
          service.bootanim.exit oneos.guest.powerctl oneos.vivo.inner_display qemu.hw.mainkeys vold.has_adoptable; do
     put_back "$k"
@@ -1169,6 +1170,7 @@ if [ -d "$LOGS" ] && [ ! -L "$LOGS" ]; then
     "$BB" sh -c "sleep 600; [ \"\$(cat $LOGS/logcat.stop 2>/dev/null)\" = $STOP_TOKEN ] || exit 0; rm -f $LOGS/logcat.stop; pkill -f '^logcat .*/data/local/tmp/oneos_logs/boot.log'" </dev/null >/dev/null 2>&1 &
 fi
 "$BB" rm -rf $NODES
+"$BB" rm -f "$S/guest_panel_fit.sh" "$S/bring_watch.sh" 2>/dev/null || true
 echo "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) $(date +%s)" > $S/return_inplace.done
 echo oneos_return > /sys/power/wake_unlock 2>/dev/null
 say "One UI restored in place ($(getenforce))."

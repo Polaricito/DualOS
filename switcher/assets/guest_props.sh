@@ -430,6 +430,31 @@ add)
             fi
         fi
     fi
+    # AAudio MMAP on HIDL audio HALs (DualOS 2.0.1): on Samsung Exynos 1280
+    # (Galaxy A53 5G, android.hardware.audio@6.0-service without AIDL audio core),
+    # the guest loads Samsung's libGLES/vulkan fine (Roblox runs Vulkan hardware),
+    # but FMOD/Oboe opens AAudio MMAP_NOIRQ, which fails/loops in audioserver
+    # (10k+ getMmapPolicyInfos, 138k+ listAudioPorts/listAudioPatches, RBX Worker
+    # stalled in aaudio::BpAAudioService::closeStream -> ~2 FPS). Setting
+    # aaudio.mmap_policy=1 and aaudio.mmap_exclusive_policy=1 (AAUDIO_POLICY_NEVER)
+    # forces AAudio onto AudioFlinger's FastMixer path. return_to_oneui.sh restores
+    # One UI's values on return. ONEOS_GUEST_AAUDIO_MMAP=1 leaves host values.
+    if [ "${ONEOS_GUEST_AAUDIO_MMAP:-0}" != 1 ] && [ -d "${ONEOS_VINTF_DIR:-/vendor/etc/vintf}" ] &&
+       ! grep -rqs 'android.hardware.audio.core' "${ONEOS_VINTF_DIR:-/vendor/etc/vintf}/" 2>/dev/null; then
+        for k in aaudio.mmap_policy aaudio.mmap_exclusive_policy; do
+            if grep -qxF "$k" "$HOST"; then
+                hv=$(getprop "$k")
+                if [ "$hv" != 1 ] && "$RP" -n "$k" 1 2>/dev/null; then
+                    echo "$k=$hv" >> "$OVR"
+                    echo "guest_props: $k=$hv overridden to 1 for the session (AAudio legacy FastMixer on HIDL audio HAL)"
+                fi
+            else
+                sed -i "/^$(echo "$k" | sed 's/\./\\./g')=/d" "$NEW"
+                echo "$k=1" >> "$NEW"
+                echo "guest_props: $k=1 for the session (AAudio legacy FastMixer on HIDL audio HAL)"
+            fi
+        done
+    fi
     # The boot animation on the panel that is on. AOSP's bootanimation draws on
     # the first display persist.service.bootanim.displays lists, at that
     # display's size, else on SurfaceFlinger's primary: a Fold's inner panel.

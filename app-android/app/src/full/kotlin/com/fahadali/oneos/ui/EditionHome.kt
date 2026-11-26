@@ -5,7 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -340,7 +340,7 @@ internal object EditionHome {
         val statusColors = LocalDualOsStatusColors.current
 
         val appUpdate = AppUpdater.state.update?.takeIf { it.newerThan(BuildConfig.VERSION_CODE) }
-        val needsRestore = SessionPrefs.homeSnapshot(a)?.kind == HomeState.Kind.RESTORE || SessionRestore.offered(a)
+        val needsRestore = if (st != null) st.unfinishedSession else SessionPrefs.homeSnapshot(a)?.kind == HomeState.Kind.RESTORE
         val last = SessionPrefs.lastLaunch(a)
         val showWelcome = last != null && !SessionPrefs.welcomeSeenFor(a, last.sessionId) && last.endedSince()
 
@@ -559,9 +559,6 @@ internal object EditionHome {
                 }
             }
 
-            item { ExpressiveSectionHeader(stringResource(R.string.a53_caps_section)) }
-            item { A53CapabilitiesCard(ctx = a, showStatusBadges = true) }
-
             if (report != null || facts != null) {
                 item {
                     val tiles = buildCheckTiles(a, report, facts, check.busy)
@@ -679,7 +676,7 @@ internal object EditionHome {
                             primaryAction = {
                                 val current = StageCheck.state.result?.status?.marker?.imageId?.let(Images::byId)?.name
                                     ?: a.getString(R.string.home_other_current_unknown)
-                                AlertDialog.Builder(a)
+                                MaterialAlertDialogBuilder(a)
                                     .setTitle(a.getString(R.string.home_other_confirm_title, image.name))
                                     .setMessage(a.getString(R.string.home_other_confirm_message, image.name, current))
                                     .setPositiveButton(R.string.home_other_confirm_go) { _, _ ->
@@ -761,7 +758,7 @@ internal object EditionHome {
                                 text = { Text(stringResource(R.string.catalog_details)) },
                                 onClick = {
                                     menuOpen = false
-                                    AlertDialog.Builder(a)
+                                    MaterialAlertDialogBuilder(a)
                                         .setTitle(image.displayName)
                                         .setMessage(image.blurb + "\n\n" + image.gzName + "\n" + Units.bytes(image.gzBytes))
                                         .setPositiveButton(android.R.string.ok, null)
@@ -926,7 +923,7 @@ internal object EditionHome {
             val click: (() -> Unit)? = when {
                 action != null -> ({ FixActions.run(a, action, r?.image) })
                 f != null -> ({
-                    AlertDialog.Builder(a)
+                    MaterialAlertDialogBuilder(a)
                         .setTitle(f.title)
                         .setMessage(f.detail.ifEmpty { value })
                         .setPositiveButton(android.R.string.ok, null)

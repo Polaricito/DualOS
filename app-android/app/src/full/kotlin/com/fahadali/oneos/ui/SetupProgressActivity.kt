@@ -11,7 +11,7 @@ import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -281,7 +281,7 @@ class SetupProgressActivity : AppCompatActivity() {
                             if (phase == PrepareJob.Phase.DONE) {
                                 Button(
                                     onClick = {
-                                        AlertDialog.Builder(this@SetupProgressActivity)
+                                        MaterialAlertDialogBuilder(this@SetupProgressActivity)
                                             .setTitle(getString(R.string.setup_preview_boot_title, s.image?.name.orEmpty()))
                                             .setMessage(R.string.setup_preview_boot_message)
                                             .setPositiveButton(R.string.setup_preview_finish) { _, _ ->
@@ -311,7 +311,7 @@ class SetupProgressActivity : AppCompatActivity() {
                                     OutlinedButton(
                                         onClick = {
                                             val name = s.image?.name ?: getString(R.string.setup_label)
-                                            AlertDialog.Builder(this@SetupProgressActivity)
+                                            MaterialAlertDialogBuilder(this@SetupProgressActivity)
                                                 .setTitle(getString(R.string.setup_stop_title, name))
                                                 .setMessage(R.string.prepare_stop_summary)
                                                 .setPositiveButton(R.string.setup_stop) { _, _ ->
@@ -350,7 +350,7 @@ class SetupProgressActivity : AppCompatActivity() {
                                             onClick = {
                                                 val size = old.stages?.firstOrNull { it.name == aside }?.let { Units.bytes(it.kib * 1024) }
                                                     ?: getString(R.string.setup_old_size_unknown)
-                                                AlertDialog.Builder(this@SetupProgressActivity)
+                                                MaterialAlertDialogBuilder(this@SetupProgressActivity)
                                                     .setTitle(R.string.setup_delete_old_title)
                                                     .setMessage(getString(R.string.setup_delete_old_message, size))
                                                     .setPositiveButton(R.string.space_delete_run) { _, _ -> OldStagesJob.deleteAll(this@SetupProgressActivity, setOf(aside)) }

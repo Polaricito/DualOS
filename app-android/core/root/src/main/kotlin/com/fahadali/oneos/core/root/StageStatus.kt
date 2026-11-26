@@ -266,8 +266,8 @@ data class StageStatus(
          */
         val LEFTOVER = Regex("""^(.*_patched.*|.*_payload\.img|.*\.apk|.*\.jar|.*\.so|.*\.sh|.*\.tar|Fold8AngleRelay\.dex|zygote_exec|oneos_btaudio|oneos_essential_key|socket_exec|clean_apex_info_list\.xml|oneos-.*)$""")
 
-        /** Written into the stage by the session itself (guest_prepare.sh's watchdog feeder, still running after an in-place return). */
-        val RUNTIME = setOf("oneos_wdog_feeder.sh")
+        /** Written into the stage by the session scripts; removed on return, allowed if left over after an in-place return. */
+        val RUNTIME = setOf("oneos_wdog_feeder.sh", "bring_watch.sh", "guest_panel_fit.sh")
 
         /** The list's entry ids and their output files. */
         val OUTPUTS: Map<String, String> = linkedMapOf(

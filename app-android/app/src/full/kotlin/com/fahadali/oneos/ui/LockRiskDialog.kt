@@ -5,7 +5,8 @@ import android.os.CountDownTimer
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
-import androidx.appcompat.app.AlertDialog
+import android.content.DialogInterface
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.fahadali.oneos.R
 
 /**
@@ -23,7 +24,7 @@ object LockRiskDialog {
             setSpan(ForegroundColorSpan(red), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         var answered = false
-        val dialog = AlertDialog.Builder(activity)
+        val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(redText(R.string.lock_risk_title))
             .setMessage(redText(R.string.lock_risk_message))
             .setPositiveButton(activity.getString(R.string.lock_risk_accept_wait, (WAIT_MS / 1000).toInt())) { _, _ -> answered = true; onAnswer(true) }
@@ -32,7 +33,7 @@ object LockRiskDialog {
             .create()
         var timer: CountDownTimer? = null
         dialog.setOnShowListener {
-            val accept = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            val accept = dialog.getButton(DialogInterface.BUTTON_POSITIVE)
             accept.isEnabled = false
             accept.setTextColor(red)
             timer = object : CountDownTimer(WAIT_MS, 250) {

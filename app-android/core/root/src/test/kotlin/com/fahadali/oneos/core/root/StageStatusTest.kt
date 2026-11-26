@@ -230,7 +230,9 @@ class StageStatusTest {
         for (n in listOf("OneOSWallpapersFoldGrid.apk", "gmssystem_payload.img", "surfaceflinger_patched", "oplus-services_patched.jar")) {
             assertTrue(n, problems("f 0 644 10 $n\n").contains("$n is in the stage but was not prepared"))
         }
-        assertFalse(problems("f 0 700 10 oneos_wdog_feeder.sh\n").any { "oneos_wdog_feeder.sh" in it })
+        for (runtime in listOf("oneos_wdog_feeder.sh", "bring_watch.sh", "guest_panel_fit.sh")) {
+            assertFalse(runtime, problems("f 0 700 10 $runtime\n").any { runtime in it })
+        }
         assertEquals(emptyList<String>(), problems("f 0 644 10 takeover_app.log\nf 0 644 10 payload_loops\n"))
     }
 

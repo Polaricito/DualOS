@@ -83,7 +83,7 @@ class LogTrimTest {
 
     @Test
     fun shortenKeepsTheWindowsAndEveryOtherFileWhole() {
-        val dir = "oneos-logs-26ea59af970a0766"
+        val dir = "dualos-logs-26ea59af970a0766"
         val full = tmp.newFile("full.zip")
         val capture = buildString {
             append("--------- beginning of main\n")
@@ -93,7 +93,7 @@ class LogTrimTest {
         }
         ZipOutputStream(full.outputStream()).use { z ->
             for ((name, text) in listOf(
-                "$dir/summary.txt" to "OneOS session logs\n",
+                "$dir/summary.txt" to "DualOS session logs\n",
                 "$dir/stage/data_local_tmp_oneos_auto_return.log" to autoReturn,
                 "$dir/capture/data_local_tmp_oneos_logs_boot.log" to capture,
                 "$dir/boot/last_kmsg.txt" to "10-29 09:00:00.000 kept whole\n",

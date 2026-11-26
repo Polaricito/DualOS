@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.text.format.DateUtils
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -440,7 +440,7 @@ class BringAppsActivity : AppCompatActivity() {
     private fun confirmBring(split: BringApps.Ticked, system: String) {
         val fresh = split.fresh.size
         val there = split.there.size
-        val dialog = AlertDialog.Builder(this).setNegativeButton(android.R.string.cancel, null)
+        val dialog = MaterialAlertDialogBuilder(this).setNegativeButton(android.R.string.cancel, null)
         when {
             there == 0 -> dialog
                 .setTitle(getString(R.string.bring_confirm_title, system))
@@ -464,7 +464,7 @@ class BringAppsActivity : AppCompatActivity() {
 
     private fun confirmForget(pkg: String, system: String) {
         val name = label(pkg)
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.bring_forget_title, name))
             .setMessage(getString(R.string.bring_forget_confirm, name, system))
             .setPositiveButton(R.string.bring_remove_do) { _, _ -> forgetting = pkg; BringAppsJob.forget(this, pkg) }
@@ -473,7 +473,7 @@ class BringAppsActivity : AppCompatActivity() {
     }
 
     private fun confirmClear(system: String) {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.bring_remove_title)
             .setMessage(getString(R.string.bring_remove_confirm, system))
             .setPositiveButton(R.string.bring_remove_do) { _, _ -> BringAppsJob.clear(this) }

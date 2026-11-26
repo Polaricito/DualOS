@@ -5,7 +5,7 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -355,7 +355,7 @@ class ImageActivity : AppCompatActivity() {
     }
 
     private fun confirmLook() {
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.image_look_dialog_title)
             .setMessage(R.string.image_look_dialog_message)
             .setPositiveButton(R.string.image_look_run) { _, _ -> StageCheck.start(this, StageCheck.Mode.STAGE_ONLY) }

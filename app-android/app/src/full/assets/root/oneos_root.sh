@@ -542,7 +542,7 @@ check_files() { # <names>
             # return. 0.5.14: bring_watch.sh too (the Bring apps watcher): left from the last
             # session it refused the next launch ("left from an older stage") and the app asked
             # for an update after every session (A36 LineageOS, 11-15).
-            oneos_wdog_feeder.sh|bring_watch.sh) ;;
+            oneos_wdog_feeder.sh|bring_watch.sh|guest_panel_fit.sh) ;;
             *_patched*|*_payload.img|*.apk|*.jar|*.so|*.sh|*.tar|Fold8AngleRelay.dex|zygote_exec|oneos_btaudio|oneos_essential_key|socket_exec|clean_apex_info_list.xml|oneos-*)
                 in_list "$n" "$1" || refuse "$n is in the stage but was not prepared (left from an older stage)" ;;
         esac

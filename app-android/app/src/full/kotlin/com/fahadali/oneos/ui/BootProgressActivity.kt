@@ -9,7 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -78,7 +78,7 @@ class BootProgressActivity : AppCompatActivity() {
         super.onStart()
         if (preview) {
             handler.postDelayed({
-                if (!isFinishing && !isDestroyed) AlertDialog.Builder(this)
+                if (!isFinishing && !isDestroyed) MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.setup_preview_complete)
                     .setMessage(R.string.setup_preview_simulated)
                     .setPositiveButton(android.R.string.ok) { _, _ -> finish() }
@@ -95,7 +95,7 @@ class BootProgressActivity : AppCompatActivity() {
                     val img = state.image
                     val fix = plain?.takeIf { it.actionLabel != null && it.action != FixAction.NONE && it.action != FixAction.ACKNOWLEDGE }
                     val done = { LaunchJob.clear(); finish() }
-                    val b = AlertDialog.Builder(this)
+                    val b = MaterialAlertDialogBuilder(this)
                         .setTitle(plain?.title ?: getString(R.string.setup_failed_title))
                         .setMessage(plain?.line ?: refusal)
                         .setCancelable(false)

@@ -7,7 +7,7 @@ import android.os.StatFs
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.annotation.DrawableRes
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -283,13 +283,12 @@ internal fun CheckTilesGrid(
 }
 
 @Composable
-internal fun A53CapabilitiesCard(
+internal fun A53GeneralFeaturesCard(
     ctx: Context,
     showStatusBadges: Boolean = true,
 ) {
     var nfc by remember { mutableStateOf(SessionPrefs.guestNfc(ctx)) }
     var sdMode by remember { mutableStateOf(SessionPrefs.guestSdCard(ctx)) }
-    var blur by remember { mutableStateOf(SessionPrefs.guestBlur(ctx)) }
     val statusColors = LocalDualOsStatusColors.current
 
     ExpressiveGroupedCard {
@@ -347,17 +346,6 @@ internal fun A53CapabilitiesCard(
                 },
             )
         }
-        ExpressiveListDivider()
-        ExpressiveSwitchItem(
-            title = stringResource(R.string.a53_blur_title),
-            subtitle = stringResource(R.string.a53_blur_summary),
-            icon = DualOsIcons.BlurOn,
-            checked = blur,
-            onCheckedChange = {
-                blur = it
-                SessionPrefs.setGuestBlur(ctx, it)
-            },
-        )
         if (showStatusBadges) {
             ExpressiveListDivider()
             Column(
@@ -392,6 +380,27 @@ internal fun A53CapabilitiesCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun SystemSpecialFeaturesCard(
+    ctx: Context,
+    image: ImageRef,
+) {
+    if (image.family != com.fahadali.oneos.core.model.SystemFamily.INFINITYX) return
+    var blur by remember { mutableStateOf(SessionPrefs.guestBlur(ctx)) }
+    ExpressiveGroupedCard {
+        ExpressiveSwitchItem(
+            title = stringResource(R.string.a53_blur_title),
+            subtitle = stringResource(R.string.a53_blur_summary),
+            icon = DualOsIcons.BlurOn,
+            checked = blur,
+            onCheckedChange = {
+                blur = it
+                SessionPrefs.setGuestBlur(ctx, it)
+            },
+        )
     }
 }
 
@@ -473,7 +482,7 @@ internal fun SettingsTabContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { ExpressiveSectionHeader(stringResource(R.string.a53_caps_section)) }
-        item { A53CapabilitiesCard(ctx = activity, showStatusBadges = true) }
+        item { A53GeneralFeaturesCard(ctx = activity, showStatusBadges = true) }
 
         item { ExpressiveSectionHeader(stringResource(R.string.advanced_card_system)) }
         item {
@@ -531,7 +540,7 @@ internal fun SettingsTabContent(
                         if (!RemoveJob.canStart()) {
                             Toast.makeText(activity, R.string.remove_busy, Toast.LENGTH_LONG).show()
                         } else {
-                            AlertDialog.Builder(activity)
+                            MaterialAlertDialogBuilder(activity)
                                 .setTitle(R.string.remove_confirm_title)
                                 .setMessage(R.string.remove_confirm_message)
                                 .setPositiveButton(R.string.remove_confirm_run) { _, _ -> SystemManage.removeAll(activity) }

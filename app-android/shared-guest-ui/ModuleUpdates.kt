@@ -2,7 +2,7 @@ package com.fahadali.oneos.shared
 
 import android.app.Activity
 import android.net.Uri
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -54,7 +54,7 @@ object ModuleUpdates {
     fun check(activity: Activity, name: String, id: String, installedCode: Long, url: String, done: (File?) -> Unit) {
         fun finish(file: File? = null) { if (!activity.isDestroyed) done(file) else file?.delete() }
         fun failure(t: Throwable) { activity.runOnUiThread { if (!activity.isDestroyed) {
-            AlertDialog.Builder(activity).setTitle("Module update").setMessage(t.message ?: "Update failed").setPositiveButton(android.R.string.ok,null).show()
+            MaterialAlertDialogBuilder(activity).setTitle("Module update").setMessage(t.message ?: "Update failed").setPositiveButton(android.R.string.ok,null).show()
         }; finish() } }
         io.execute {
             try {
@@ -62,7 +62,7 @@ object ModuleUpdates {
                 val json = try { download(url,metadata,64*1024); JSONObject(metadata.readText()) } finally { metadata.delete() }
                 val code = json.getLong("versionCode")
                 if (code <= installedCode) { activity.runOnUiThread { if (!activity.isDestroyed)
-                    AlertDialog.Builder(activity).setTitle(name).setMessage("This module is up to date.").setPositiveButton(android.R.string.ok,null).show(); finish() }; return@execute }
+                    MaterialAlertDialogBuilder(activity).setTitle(name).setMessage("This module is up to date.").setPositiveButton(android.R.string.ok,null).show(); finish() }; return@execute }
                 val zipUrl = json.getString("zipUrl")
                 require(URI(zipUrl).scheme == "https" && !URI(zipUrl).host.isNullOrBlank()) { "Module updates require an HTTPS ZIP URL" }
                 val changelog = json.optString("changelog").takeIf { runCatching { URI(it).scheme == "https" && !URI(it).host.isNullOrBlank() }.getOrDefault(false) }.orEmpty()
@@ -71,7 +71,7 @@ object ModuleUpdates {
                 activity.runOnUiThread {
                     if (activity.isDestroyed) return@runOnUiThread
                     var accepted = false
-                    AlertDialog.Builder(activity).setTitle("Update $name?")
+                    MaterialAlertDialogBuilder(activity).setTitle("Update $name?")
                         .setMessage("${json.optString("version", code.toString())}\n\nThe update will be downloaded from ${URI(zipUrl).host} and staged for the next guest restart.")
                         .setNeutralButton(if (changelog.isNotBlank()) "Changelog" else "Details") { _,_ ->
                             if (changelog.isNotBlank()) runCatching { activity.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(changelog))) }

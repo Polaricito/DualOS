@@ -3,7 +3,7 @@ package com.fahadali.oneos.ui
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -306,7 +306,7 @@ class OldStagesActivity : AppCompatActivity() {
         }
         val items = mutableListOf(getString(R.string.space_choose_use) to { confirmRestore(s) })
         if (!s.busy) items += getString(R.string.space_choose_delete) to { confirmDelete(s) }
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(getString(R.string.space_choose_title, copyTitle(s)))
             .setItems(items.map { it.first }.toTypedArray()) { _, i -> items[i].second() }
             .setNegativeButton(android.R.string.cancel, null)
@@ -316,7 +316,7 @@ class OldStagesActivity : AppCompatActivity() {
     private fun confirmRestore(s: OldStage) {
         val name = s.imageId?.let(Images::byId)?.name ?: return
         val sizeAndDate = listOfNotNull(Units.bytes(s.kib * 1024), since(s)).joinToString(", ")
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.space_restore_title)
             .setMessage(getString(R.string.space_restore_message, name, sizeAndDate))
             .setPositiveButton(R.string.space_restore_run) { _, _ -> OldStagesJob.restore(this, s) }
@@ -326,7 +326,7 @@ class OldStagesActivity : AppCompatActivity() {
 
     private fun confirmDeleteAll(copies: List<OldStage>) {
         val what = resources.getQuantityString(R.plurals.space_delete_all_count, copies.size, copies.size)
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.space_delete_all_title)
             .setMessage(getString(R.string.space_delete_all_message, what, Units.bytes(copies.sumOf { it.kib } * 1024)))
             .setPositiveButton(R.string.space_delete_run) { _, _ -> SystemManage.deleteAllCopies(this) }
@@ -338,7 +338,7 @@ class OldStagesActivity : AppCompatActivity() {
         val name = s.imageId?.let(Images::byId)?.name
         val what = if (name != null && !s.isTrash) getString(R.string.space_delete_what_of, name) else getString(R.string.space_delete_what)
         val sizeAndDate = listOfNotNull(Units.bytes(s.kib * 1024), since(s)).joinToString(", ")
-        AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.space_delete_title)
             .setMessage(getString(R.string.space_delete_message, what, sizeAndDate))
             .setPositiveButton(R.string.space_delete_run) { _, _ -> SystemManage.deleteCopy(this, s, "$what ($sizeAndDate)") }

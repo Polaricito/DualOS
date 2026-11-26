@@ -12,7 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -285,7 +285,7 @@ open class SystemsActivity : AppCompatActivity() {
                                                 onClick = {
                                                     val current = StageCheck.state.result?.status?.marker?.imageId?.let(Images::byId)?.name
                                                         ?: getString(R.string.home_other_current_unknown)
-                                                    AlertDialog.Builder(this@SystemsActivity)
+                                                    MaterialAlertDialogBuilder(this@SystemsActivity)
                                                         .setTitle(getString(R.string.home_other_confirm_title, image.name))
                                                         .setMessage(getString(R.string.home_other_confirm_message, image.name, current))
                                                         .setPositiveButton(R.string.home_other_confirm_go) { _, _ ->
@@ -388,7 +388,7 @@ internal object SystemsNav {
 
     fun showBadPick(a: Activity, p: PhoneProfile, id: ImageIdentity, cardId: String?, onRepick: (String?) -> Unit) {
         val card = cardId?.let { cid -> p.images().firstOrNull { it.id == cid } }
-        val b = AlertDialog.Builder(a)
+        val b = MaterialAlertDialogBuilder(a)
         if (id.finding.reason == ImageIdentifier.R_SIZE_UNKNOWN) {
             b.setTitle(R.string.systems_size_unknown_title)
                 .setMessage(R.string.systems_size_unknown_line)
@@ -411,7 +411,7 @@ internal object SystemsNav {
     }
 
     fun askDownloaded(a: FragmentActivity, image: ImageRef, onHaveFile: () -> Unit) {
-        AlertDialog.Builder(a)
+        MaterialAlertDialogBuilder(a)
             .setTitle(a.getString(R.string.setup_mock_title, image.name))
             .setMessage(R.string.setup_download_question)
             .setPositiveButton(R.string.setup_download_yes) { _, _ ->
